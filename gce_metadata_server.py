@@ -54,6 +54,11 @@
 # You can extend this sample for any arbitrary metadta you are interested in emulating (eg, disks, hostname, etc).
 # Simply make an @app.route()  for the path and either use the gcloud wrapper or hardcode the response you're interested in
 
+# TODO List:
+#   * implement cache for key-value pairs and access_token
+#       (i.,e no need to keep refreshing the token...its already valid 
+#       (can check for access_token validty by calling https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=)
+
 from flask import Flask
 from flask import request, Response, render_template, jsonify
 from werkzeug.wrappers import Request
@@ -61,7 +66,6 @@ from jinja2 import Template, Environment, FileSystemLoader
 import json
 import os, logging, sys
 from gcloud_wrapper import GCloud
-
 
 app = Flask(__name__)
 
@@ -120,7 +124,6 @@ def add_meta_headers(response):
 # some gcp libraries checks the root path '/' on the metadata server for some reason...
 @app.route('/')
 def index():
-    #__setupProjectMetadata()
     return 'hello world', 200, {'Content-Type': 'text/plain; charset=utf-8'}
 
 # return the access_token that your local gcloud provides
@@ -144,11 +147,16 @@ def getProjectID():
 
 @app.route('/computeMetadata/v1/project/numeric-project-id', methods = ['GET'])
 def getNumericProjectID():
-    logging.info('Requesting numeric project_id: ')    
+    logging.info('Requesting numeric project_id: ')
+    # gcloud --configuration default config list --format 'json()'
     result = GCloud(['--configuration', gcloud_configuraiton, 'config','list','--format','json()'])
     p = json.loads(result)
-    logging.info('Requesting project-id: ' +  p['core']['numeric-project-id'])
-    return p['core']['numeric-project-id']
+    projectId = p['core']['project']
+    # gcloud --configuration default projects list --format 'value(projectNumber)' --filter 'projectId=current_projectId''
+    result = GCloud(['--configuration', gcloud_configuraiton, 'projects','list','--format','value(projectNumber)',"--filter", "projectId=" + projectId])
+    p = json.loads(result)
+    logging.info("Current numberic ID:" + str(p))
+    return str(result)
 
 # return arbitary user-defined key-value pairs
 @app.route('/computeMetadata/v1/project/attributes/<string:k>', methods = ['GET'])

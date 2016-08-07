@@ -40,6 +40,10 @@ sudo apt-get install socat
 ```
 sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:18080
 ```
+or iptables
+```
+sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 18080
+```
 
 4. Add supporting libraries for the proxy:
 ```

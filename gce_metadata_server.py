@@ -37,7 +37,7 @@
 # sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:18080
 #
 # or with iptables:
-# sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 8080
+# sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 18080
 #
 # add supporting libraries:
 # cd gce_metadata_server/

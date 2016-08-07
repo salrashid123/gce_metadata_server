@@ -65,6 +65,7 @@ from werkzeug.wrappers import Request
 from jinja2 import Template, Environment, FileSystemLoader
 import json
 import os, logging, sys
+import urllib2
 from gcloud_wrapper import GCloud
 
 app = Flask(__name__)
@@ -128,13 +129,31 @@ def index():
 
 # return the access_token that your local gcloud provides
 # NOTE: this access token is live,
-@app.route('/computeMetadata/v1/instance/service-accounts/default/token', methods = ['GET'])
-def getDefaultServiceAccountToken():
+@app.route('/computeMetadata/v1/instance/service-accounts/<string:acct>/<string:k>', methods = ['GET'])
+def getDefaultServiceAccount(acct,k):
+    logging.info('Requesting ServiceAccount : ')    
     result = GCloud(['--configuration', gcloud_configuraiton, 'auth','print-access-token','--format','json()'])
     token = json.loads(result)
-    logging.info('Requesting access_token: ' +  token )
-    f = {"access_token": token,"expires_in":3600,"token_type":"Bearer"}
-    return jsonify(**f)
+    logging.info('access_token: ' + token)     
+    r = urllib2.urlopen("https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=" + token).read()
+    r = json.loads(r)
+    logging.info (r)
+    if (k=='aliases'):
+        return acct
+    elif (k=='email'):
+        return r['email']
+    elif (k=='scopes'):
+        sret = ''
+        for s in r['scope'].split(' '):
+           sret = sret + '\n' + s
+        resp = Response(sret, status=200, mimetype='text/plain')
+        return resp
+    elif (k=='token'):
+        f = {"access_token": token,"expires_in":3600,"token_type":"Bearer"}
+        return jsonify(**f)
+    logging.info('Unknown service-account path Request')
+    resp = Response("Unknown service-account path", status=500, mimetype='text/plain')
+    return resp
 
 # return a couple of sample, well known attributes like project-id and number
 @app.route('/computeMetadata/v1/project/project-id', methods = ['GET'])

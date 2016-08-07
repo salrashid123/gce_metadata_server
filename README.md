@@ -93,6 +93,11 @@ What this script allows you to do is acquire gcloud's cli capabilities directly 
 Since GCE's metadata server listens on http for :80, this script relies on utilities like 'socat' to redirect port traffic.
 You are free to either run the script on port :80 directly (as root), or use a utilitity like iptables, HAProxy, nginx, etc to do this mapping.
 
+iptables:
+```
+sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 8080
+```
+
 #### Extending the sample
 You can extend this sample for any arbitrary metadta you are interested in emulating (eg, disks, hostname, etc).
 Simply make an @app.route()  for the path and either use the gcloud wrapper or hardcode the response you're interested in

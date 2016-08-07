@@ -36,6 +36,9 @@
 # run socat proxy:
 # sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:18080
 #
+# or with iptables:
+# sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 8080
+#
 # add supporting libraries:
 # cd gce_metadata_server/
 # virtualenv env
@@ -54,18 +57,17 @@
 # You can extend this sample for any arbitrary metadta you are interested in emulating (eg, disks, hostname, etc).
 # Simply make an @app.route()  for the path and either use the gcloud wrapper or hardcode the response you're interested in
 
-# TODO List:
-#   * implement cache for key-value pairs and access_token
-#       (i.,e no need to keep refreshing the token...its already valid 
-#       (can check for access_token validty by calling https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=)
-
 from flask import Flask
 from flask import request, Response, render_template, jsonify
 from werkzeug.wrappers import Request
 from jinja2 import Template, Environment, FileSystemLoader
 import json
-import os, logging, sys
+import os, logging, sys, time, datetime
+from time import mktime
+from datetime import datetime
+import calendar
 import urllib2
+
 from gcloud_wrapper import GCloud
 
 app = Flask(__name__)
@@ -79,6 +81,9 @@ gcloud_configuraiton = 'default'
 # If you would rather use the *live* metadata key value pairs setup for your project, see
 #  __setupProjectMetadata() below
 custom_attributes = { 'mykey1': 'myvalue1' }
+
+# dict to hold cached objects (token, projectId, etc)
+cache = {}
 
 logFormatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
@@ -131,50 +136,79 @@ def index():
 # NOTE: this access token is live,
 @app.route('/computeMetadata/v1/instance/service-accounts/<string:acct>/<string:k>', methods = ['GET'])
 def getDefaultServiceAccount(acct,k):
-    logging.info('Requesting ServiceAccount : ')    
+    logging.info('Requesting ServiceAccount : ' + acct + '/' +k )
+
+    # check if the access_token is still valid.  If it is, return from cache but first decrement
+    # the expires_in field for the remaining time.  For all other attributes, return as-is
+    try:
+       p = cache[k]
+       if (k=='token'):
+         key_expire_at = cache['token_valid_until']
+         if (int(calendar.timegm(time.gmtime()) >= key_expire_at)):     
+            logging.info('access_token expired')
+         else:
+            token_val = cache[k]
+            seconds_still_valid = key_expire_at - int(calendar.timegm(time.gmtime()))
+            logging.info('token still valid for ' + str(seconds_still_valid) )
+            token_val['expires_in']=seconds_still_valid
+            return jsonify(**token_val)
+       else:
+         return str(p)
+    except KeyError as e:
+       logging.info( k + ' not found in cache, refreshing..') 
+
+    # First acquire gcloud's access_token
     result = GCloud(['--configuration', gcloud_configuraiton, 'auth','print-access-token','--format','json()'])
     token = json.loads(result)
-    logging.info('access_token: ' + token)     
+    logging.info('access_token: ' + token)
+    # and then ask the token_info endpoint for details about it.
     r = urllib2.urlopen("https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=" + token).read()
     r = json.loads(r)
-    logging.info (r)
-    if (k=='aliases'):
-        return acct
-    elif (k=='email'):
-        return r['email']
-    elif (k=='scopes'):
-        sret = ''
-        for s in r['scope'].split(' '):
-           sret = sret + '\n' + s
-        resp = Response(sret, status=200, mimetype='text/plain')
-        return resp
-    elif (k=='token'):
-        f = {"access_token": token,"expires_in":3600,"token_type":"Bearer"}
-        return jsonify(**f)
-    logging.info('Unknown service-account path Request')
-    resp = Response("Unknown service-account path", status=500, mimetype='text/plain')
-    return resp
+    
+    cache['aliases'] = acct
+    cache['email'] = r['email']
+    cache['scopes'] = ("\n".join(r['scope'].split(' ')))
 
-# return a couple of sample, well known attributes like project-id and number
+    valid_for = r['expires_in']
+    key_expire_at = int(calendar.timegm(time.gmtime()) + int(valid_for))
+    cache['token_valid_until'] = key_expire_at
+    f = {"access_token": token,"expires_in": int(valid_for) ,"token_type":"Bearer"}
+    cache['token'] = f
+
+    if (k == 'token'): 
+        return jsonify(**f)
+    else:
+      return cache[k]
+
+# return a couple of simple, well known attributes like project-id and number
 @app.route('/computeMetadata/v1/project/project-id', methods = ['GET'])
 def getProjectID():
-    logging.info('Requesting project_id: ')  
+    logging.info('Requesting project_id')
+    try:
+       p = cache['project-id']
+       return str(p)
+    except KeyError as e:
+       logging.info('project-id not found, refreshing..')    
     result = GCloud(['--configuration', gcloud_configuraiton, 'config','list','--format','json()'])
     p = json.loads(result)
-    logging.info('Requesting project-id: ' +  p['core']['project'])
+    logging.info('Returning project-id: ' +  p['core']['project'])
+    cache['project-id'] =  p['core']['project']
     return p['core']['project']
 
 @app.route('/computeMetadata/v1/project/numeric-project-id', methods = ['GET'])
 def getNumericProjectID():
     logging.info('Requesting numeric project_id: ')
-    # gcloud --configuration default config list --format 'json()'
+    try:
+       p = cache['numeric-project-id']
+       return str(p)
+    except KeyError as e:
+       logging.info('numeric-project-id not found, refreshing..')
     result = GCloud(['--configuration', gcloud_configuraiton, 'config','list','--format','json()'])
     p = json.loads(result)
     projectId = p['core']['project']
-    # gcloud --configuration default projects list --format 'value(projectNumber)' --filter 'projectId=current_projectId''
     result = GCloud(['--configuration', gcloud_configuraiton, 'projects','list','--format','value(projectNumber)',"--filter", "projectId=" + projectId])
-    p = json.loads(result)
-    logging.info("Current numberic ID:" + str(p))
+    logging.info("Returning numeric project_id:" + str(result))
+    cache['numeric-project-id'] = str(result)    
     return str(result)
 
 # return arbitary user-defined key-value pairs
@@ -192,7 +226,7 @@ def getCustomMetadata(k):
       return str(t.render(err_path=request.path))
     return v
 
-# Optional method to initialize the scritp with your projects *live* metadata key-value pairs
+# Optional method to initialize the script with your projects *live* metadata key-value pairs
 def __setupProjectMetadata():
     logging.info('Settting up  project metadata: ')  
     result = GCloud(['--configuration', gcloud_configuraiton, 'compute','project-info','describe', '--format','json()'])

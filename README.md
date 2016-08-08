@@ -25,18 +25,18 @@ runs on a non-privleged port (default: 18080) and optionally uses a gcloud cli w
 and optional live project user-defined metadata.  You do not have to use the gcloud CLI wrapper code and simply elect to return a static access_token or metadata.
 
 
-1. You need to install a utility to map port :80 traffic since REST calls to the metadata server are HTTP.  The following use 'socat':
+*  You need to install a utility to map port :80 traffic since REST calls to the metadata server are HTTP.  The following use 'socat':
 ```
 sudo apt-get install socat
 ```
 
-2. Alter /etc/hosts
+* Alter /etc/hosts
 ```
 # /etc/hosts
 127.0.0.1       metadata metadata.google.internal
 ```
 
-3. Run socat
+* Run socat
 ```
 sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:18080
 ```
@@ -45,7 +45,7 @@ or iptables
 sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 18080
 ```
 
-4. Add supporting libraries for the proxy:
+* Add supporting libraries for the proxy:
 ```
 cd gce_metadata_server/
 virtualenv env
@@ -53,17 +53,17 @@ source env/bin/activate
 pip install -r requirements.txt
 ```
 
-5. Run the script
+* Run the script
 directly:
 ```
 python gce_metadata_server.py
 ```
-or via gcunicorn
+or via gunicorn
 ```
 gunicorn -b :18080 gce_metadata_server:app
 ```
 
-6. Test access to the metadata server
+* Test access to the metadata server
 In a new window, run
 ```
  curl -v -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
@@ -83,7 +83,7 @@ In a new window, run
 
 ### Access from containers
 If you run an app inside a docker container on your laptop that needs to access this, please be sure to enable 
-host (--net=host) access/networking:
+host (**--net=host**) access/networking:
 ```
 docker run -p host_port:container_port --net=host -t <your_image> 
 ```

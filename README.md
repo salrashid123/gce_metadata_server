@@ -33,7 +33,7 @@ sudo apt-get install socat
 2. Alter /etc/hosts
 ```
 # /etc/hosts
-# 127.0.0.1       metadata metadata.google.internal
+127.0.0.1       metadata metadata.google.internal
 ```
 
 3. Run socat

@@ -3,20 +3,24 @@
 
 
 ## Background
- This script acts as a GCE's internal metadata server for local testing/emulation.
+This script acts as a GCE's internal metadata server for local testing/emulation.
 
- This script also returns an access token that can be used directly by [Application Default Credentials](https://developers.google.com/identity/protocols/application-default-credentials).  Although applciation default credentials will return access_tokens in context with your environment, running a sample code locally is not precisely the same thing as running on GCP as the context paths differ.  For example, Application Defaults on GCE may use a gcloud credentials or JSON key file while running locally but the same code will use GCE's metadata server remotely.  You can, ofcourse, directly call [com.google.api.client.googleapis.compute.ComputeCredential](https://developers.google.com/api-client-library/java/google-api-java-client/reference/1.20.0/com/google/api/client/googleapis/compute/ComputeCredential) while on GCP but that isn't portable and will only work on GCE (without an emulator).
+It returns a live access_token that can be used directly by [Application Default Credentials](https://developers.google.com/identity/protocols/application-default-credentials) transparently.
 
- Another usecase for this is to verify how Application Defaults will behave while running a local docker container locally: A local running docker container will not have access to GCE's metadata server but by running an emulator locally and forcing the container to connect, you are basically providing the container access to a similar metadata auth_token provider. 
+ This is useful to test any script or code locally that my need to contact GCE's metadata server for custom, user-defined variables or access_tokens.
 
+ Another usecase for this is to verify how Application Defaults will behave while running a local docker container: A local running docker container will not have access to GCE's metadata server but by bridging your container to the emulator, you are basically allowing GCP API access directly from within a container on your local workstation (vs. running the code comprising the container directly on the workstation and relying on gcloud credentials (not metadata)).
+
+For more inforamtion on the request-response characteristics: 
 * [GCE Metadata Server](https://cloud.google.com/compute/docs/storing-retrieving-metadata)
 
-
  The script performs the following:
- 
-   *  returns the access_token for your the gcloud CLI.
-   *  returns project information for your environment.
-   *  return custom key-value attributes (either user-defined local or from the actual GCP project).
+	* returns the access_token provided by your desktop gcloud CLI.
+	  * (you are free to substitute any other mechanism to source tokens).
+	* returns project information for your environment.
+	  * (again, based on gcloud credentials)
+	* return custom key-value attributes 
+	  * (either user-defined local or from the actual GCP project).
 
 ## Usage
 

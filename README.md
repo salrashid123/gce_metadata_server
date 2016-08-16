@@ -21,6 +21,8 @@ For more inforamtion on the request-response characteristics:
 	  * (again, based on gcloud credentials)
 	* return custom key-value attributes 
 	  * (either user-defined local or from the actual GCP project).
+    * returns a live GCE VM's instance metadata such as its disk and networks configuration
+      * (to use this mode, you need to extend the script as described below and use the gcloud wrapper) 
 
 ## Usage
 
@@ -77,7 +79,7 @@ In a new window, run
  > If you use this token in a script to simulate delete of your GCS bucket, you'll actually delete it!! 
  > You are free to acquire an access_token by any other means and return that instead.
  > (eg. use a service account json file as shown here:
- >    github.com/salrashid: [service.py](https://github.com/salrashid123/gcpsamples/blob/master/auth/service/pyapp/service.py)  
+ >    github.com/salrashid123: [service.py](https://github.com/salrashid123/gcpsamples/blob/master/auth/service/pyapp/service.py)  
 
 
 ![Meta Proxy](images/metadata_proxy.png)
@@ -89,7 +91,7 @@ In a new window, run
 If you run an app inside a docker container on your laptop that needs to access this, please be sure to enable 
 host (**--net=host**) access/networking:
 ```
-docker run -p host_port:container_port --net=host -t <your_image> 
+docker run -p host_port:container_port --net=host -t _your_image_ 
 ```
 This will allow the container to 'see' the local interface on the laptop.
 

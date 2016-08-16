@@ -238,4 +238,6 @@ def __setupProjectMetadata():
 
 if __name__ == '__main__':
   app.wsgi_app = TransitMiddleWare(app.wsgi_app)
+  # refresh the access_token first to avoid any locks
+  getNumericProjectID()
   app.run(host='0.0.0.0', port=18080, debug=False)

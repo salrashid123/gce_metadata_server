@@ -46,6 +46,8 @@ sudo apt-get install socat
 ```
 sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:18080
 ```
+_note:_  socat is pretty much for unit testing.  For anything else, try iptables and gunicorn.
+
 or iptables
 ```
 sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 18080
@@ -64,7 +66,7 @@ directly:
 ```
 python gce_metadata_server.py
 ```
-or via gunicorn
+or **preferably** via [gunicorn](http://docs.gunicorn.org/en/stable/install.html)
 ```
 gunicorn -b :18080 gce_metadata_server:app
 ```
@@ -99,13 +101,38 @@ This will allow the container to 'see' the local interface on the laptop.
 This script utilizes [gcloud_wrapper.py](gcloud_wrapper.py) which is basically a python wrapper around the actual gcloud CLI (google cloud sdk).
 What this script allows you to do is acquire gcloud's cli capabilities directly in python code automatically.
 
+
+#### Acquire remote access_token from GCE Instance
+If you require the live access_token issued by the actual metadata server on the GCE instance, you can invoke 
+```
+def __getAccessTokenFromInstance(instance):
+    logging.info('Getting access_token from instance ' + instance)
+    
+    # if gcloud is installed remotely    
+    #token = GCloud(['--configuration', gcloud_configuraiton, 'compute','ssh', instance, 'gcloud auth print-access-token', '--format', 'json()'])
+    #logging.info('access_token: ' + str(token))
+
+    # if curl is installed remotely
+    #result = GCloud(['--configuration', gcloud_configuraiton, 'compute','ssh',instance, \
+    #  'curl -s "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" -H "Metadata-Flavor: Google"'])
+    #p = json.loads(result)
+    #token = p['access_token']
+```
+
+What that section attempts to do is invoke gcloud ssh and execute a remote command.  In this case, either try to capture the remote system's gcloud access token or run 
+curl against the real metadata server.
+
+> **NOTE** This function does not work as the remote ssh commands is not returned in gcloud but echo'd to the output.  Capturing the redirect is possible but I have not
+> spent the time to account for the redirection GCloud() itself does already.
+
 #### Port mapping :80 --> :18080
-Since GCE's metadata server listens on http for :80, this script relies on utilities like 'socat' to redirect port traffic.
+Since GCE's metadata server listens on http for :80, this script relies on utilities like 'socat' to redirect port traffic.  _socat_ has pretty
+basic connection handling so you'd be better with iptables, gunicorn.
 You are free to either run the script on port :80 directly (as root), or use a utilitity like iptables, HAProxy, nginx, etc to do this mapping.
 
 iptables:
 ```
-sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 8080
+sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 18080
 ```
 
 #### Extending the sample

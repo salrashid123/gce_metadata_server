@@ -67,6 +67,7 @@ from time import mktime
 from datetime import datetime
 import calendar
 import urllib2
+from cStringIO import StringIO
 
 from gcloud_wrapper import GCloud
 
@@ -235,6 +236,23 @@ def __setupProjectMetadata():
         if (item['key']!='sshKeys'):
           custom_attributes[item['key']] = item['value']          
     logging.info('Enabled the following custom attributes ' + str(custom_attributes))
+
+# Optional method to acquire the access_token from an instance in your project (requires gcloud or curl installed on your GCE instance)
+# TODO: the remote ssh writes to stdout and would need to capture it.  For now, I left it as-is, unimplemented :(
+def __getAccessTokenFromInstance(instance):
+    logging.info('Getting access_token from instance ' + instance)
+
+    # if gcloud is installed remotely    
+    #token = GCloud(['--configuration', gcloud_configuraiton, 'compute','ssh', instance, 'gcloud auth print-access-token', '--format', 'json()'])
+    #logging.info('access_token: ' + str(token))
+
+    # if curl is installed remotely
+    #result = GCloud(['--configuration', gcloud_configuraiton, 'compute','ssh',instance, \
+    #  'curl -s "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" -H "Metadata-Flavor: Google"'])
+    #p = json.loads(result)
+    #token = p['access_token']
+
+    logging.info('Acquired access_token from instance ' + instance)    
 
 if __name__ == '__main__':
   app.wsgi_app = TransitMiddleWare(app.wsgi_app)

@@ -104,7 +104,7 @@ What this script allows you to do is acquire gcloud's cli capabilities directly 
 
 #### Acquire remote access_token from GCE Instance
 If you require the live access_token issued by the actual metadata server on the GCE instance, you can invoke 
-```
+```python
 def __getAccessTokenFromInstance(instance):
     logging.info('Getting access_token from instance ' + instance)
     

@@ -31,18 +31,13 @@ runs on a non-privleged port (default: 18080) and optionally uses a gcloud cli w
 and optional live project user-defined metadata.  You do not have to use the gcloud CLI wrapper code and simply elect to return a static access_token or metadata.
 
 
-You need to install a utility to map port :80 traffic since REST calls to the metadata server are HTTP.  The following use 'socat':
-```
-sudo apt-get install socat
-```
-
-* Reconfigure the /etc/hosts to resolve the metadata server
+* **1. Reconfigure the /etc/hosts to resolve the metadata server**
 ```
 # /etc/hosts
 127.0.0.1       metadata metadata.google.internal
 ```
 
-* Create metadata server IP alias
+* **2. Create metadata IP alias**
 
 GCE's metadata server's IP address on GCE is 169.254.169.254.  Certain application default credential libraries for
 the metadata server by IP address.   The following steps creates an IP address alias for the local system.
@@ -66,17 +61,20 @@ curl -v -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/i
 netsh interface ipv4 add address "Loopback Pseudo-Interface 1" 169.254.169.254 255.255.0.0
 ```
 
-* Run socat or iptables
+* **3. Run socat or iptables**
+
+You need to install a utility to map port :80 traffic since REST calls to the metadata server are HTTP.  The following usees 'socat':
 ```
+sudo apt-get install socat
+
 sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:18080
 ```
-or
+but the preferred way would be to use iptables:
 ```
 sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 18080
 ```
-_note:_  socat is pretty much for unit testing.  For anything else, try iptables and gunicorn.
 
-* Add supporting libraries for the proxy:
+* **5. Add supporting libraries**
 ```
 cd gce_metadata_server/
 virtualenv env
@@ -84,7 +82,9 @@ source env/bin/activate
 pip install -r requirements.txt
 ```
 
-* Run the metadata server
+The snippet above uses virtualenv though you can just use pip install directly
+
+* **6. Run the metadata server**
 directly:
 ```
 python gce_metadata_server.py
@@ -94,7 +94,7 @@ or **preferably** via [gunicorn](http://docs.gunicorn.org/en/stable/install.html
 gunicorn -b :18080 gce_metadata_server:app
 ```
 
-* Test access to the metadata server
+* **7. Test access to the metadata server**
 In a new window, run
 ```
  curl -v -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token

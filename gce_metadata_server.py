@@ -33,6 +33,10 @@
 # /etc/hosts
 # 127.0.0.1       metadata metadata.google.internal
 #
+# add network alias interface for metadata server by IP address
+#
+# sudo ifconfig lo:0 169.254.169.254 up
+#
 # run socat proxy:
 # sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:18080
 #

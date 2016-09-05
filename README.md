@@ -31,27 +31,50 @@ runs on a non-privleged port (default: 18080) and optionally uses a gcloud cli w
 and optional live project user-defined metadata.  You do not have to use the gcloud CLI wrapper code and simply elect to return a static access_token or metadata.
 
 
-*  You need to install a utility to map port :80 traffic since REST calls to the metadata server are HTTP.  The following use 'socat':
+You need to install a utility to map port :80 traffic since REST calls to the metadata server are HTTP.  The following use 'socat':
 ```
 sudo apt-get install socat
 ```
 
-* Alter /etc/hosts
+* Reconfigure the /etc/hosts to resolve the metadata server
 ```
 # /etc/hosts
 127.0.0.1       metadata metadata.google.internal
 ```
 
-* Run socat
+* Create metadata server IP alias
+
+GCE's metadata server's IP address on GCE is 169.254.169.254.  Certain application default credential libraries for
+the metadata server by IP address.   The following steps creates an IP address alias for the local system.
+
+```bash
+sudo ifconfig lo:0 169.254.169.254 up
+```
+You can veirify the alias was created by checking _ifconfig_
+```
+/sbin/ifconfig -a
+lo:0      Link encap:Local Loopback  
+          inet addr:169.254.169.254  Mask:255.255.0.0
+          UP LOOPBACK RUNNING  MTU:65536  Metric:1
+```
+Once the interface is seetup, you can access it via the IP:
+```
+curl -v -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token
+```
+(on windows)
+```
+netsh interface ipv4 add address "Loopback Pseudo-Interface 1" 169.254.169.254 255.255.0.0
+```
+
+* Run socat or iptables
 ```
 sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:18080
 ```
-_note:_  socat is pretty much for unit testing.  For anything else, try iptables and gunicorn.
-
-or iptables
+or
 ```
 sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 18080
 ```
+_note:_  socat is pretty much for unit testing.  For anything else, try iptables and gunicorn.
 
 * Add supporting libraries for the proxy:
 ```
@@ -61,7 +84,7 @@ source env/bin/activate
 pip install -r requirements.txt
 ```
 
-* Run the script
+* Run the metadata server
 directly:
 ```
 python gce_metadata_server.py
@@ -86,16 +109,77 @@ In a new window, run
 
 ![Meta Proxy](images/metadata_proxy.png)
 
-
 ### Misc
 
 ### Access from containers
-If you run an app inside a docker container on your laptop that needs to access this, please be sure to enable 
+If you run an app inside a docker container on your laptop that needs to access the metadata server:
+
+#### Add host networking to the running Container (--net=host)
+
 host (**--net=host**) access/networking:
 ```
-docker run -p host_port:container_port --net=host -t _your_image_ 
+docker run --net=host -t _your_image_ 
 ```
-This will allow the container to 'see' the local interface on the laptop.
+This will allow the container to 'see' the local interface on the laptop.  The disadvantage is the host's interface is the containers as well
+
+> *NOTE:*   using --net=host is only recommended for testing; For more information see:
+
+* [Docker Networking](https://docs.docker.com/v1.8/articles/networking/#container-networking)
+* [Embedded DNS server in user-defined networks](https://docs.docker.com/engine/userguide/networking/configure-dns/#/embedded-dns-server-in-user-defined-networks)
+
+##### Testing Application Default Credentials through from a container
+
+The following sample details testing application default credentials from inside a docker container.  To use, you need
+to set the interface alias and edit /etc/hosts file as describe above.
+
+
+###### Dockerfile
+```
+FROM debian:latest
+
+RUN apt-get -y update
+RUN apt-get install -y curl python python-pip
+RUN pip install oauth2client google-api-python-client httplib2
+
+ADD . /app
+WORKDIR /app
+
+ENTRYPOINT ["python", "compute.py"]
+```
+
+###### compute.py
+```python
+#!/usr/bin/python
+
+import httplib2
+from apiclient.discovery import build
+from oauth2client.client import GoogleCredentials
+#from oauth2client.contrib.gce import AppAssertionCredentials
+
+scope='https://www.googleapis.com/auth/userinfo.email'
+
+#credentials = AppAssertionCredentials(scope=scope)
+credentials = GoogleCredentials.get_application_default()
+if credentials.create_scoped_required():
+  credentials = credentials.create_scoped(scope)
+
+http = httplib2.Http()
+credentials.authorize(http)
+
+service = build(serviceName='oauth2', version= 'v2',http=http)
+resp = service.userinfo().get().execute()
+print resp['email']
+```
+
+###### build
+```
+docker build -t compute .
+```
+
+###### run
+```
+docker run -t --net=host compute
+```
 
 #### gcloud CLI wrapper
 This script utilizes [gcloud_wrapper.py](gcloud_wrapper.py) which is basically a python wrapper around the actual gcloud CLI (google cloud sdk).
@@ -139,29 +223,10 @@ sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 180
 You can extend this sample for any arbitrary metadta you are interested in emulating (eg, disks, hostname, etc).
 Simply make an @app.route()  for the path and either use the gcloud wrapper or hardcode the response you're interested in
 
-#### Aliasing Metadata Servers IP
-GCE's metadata server's IP address on GCE is 169.254.169.254.  If you want to mimic accessing the metadata server directly, you need to 
-alias an interface for this address:
-
-```bash
-sudo ifconfig lo:0 169.254.169.254 up
-
-/sbin/ifconfig -a
-lo:0      Link encap:Local Loopback  
-          inet addr:169.254.169.254  Mask:255.255.0.0
-          UP LOOPBACK RUNNING  MTU:65536  Metric:1
-```
-After which you can get a token even if you run:
-```
-curl -v -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token
-```
-
-**NOTE**  It is strongly advised to access the metadata server using the hostname, not IP
-
 #### Alternatives to Metadata tokens for containers
 
 You can certainly provide environment variables on container startup and then map volumes to allow for applicaiton defaults.  (for example:)
 
- ```
+```
 docker run -p 8080:8080 -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/<YOUR_CERT_JSON_FILE>.json  -v  /tmp/:/tmp -t your_image
- ```
+```

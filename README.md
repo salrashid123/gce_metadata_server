@@ -132,6 +132,9 @@ This will allow the container to 'see' the local interface on the laptop.  The d
 The following sample details testing application default credentials from inside a docker container.  To use, you need
 to set the interface alias and edit /etc/hosts file as describe above.
 
+_Note:_  Python's application default credentials looks for the [metadata server by IP address](https://github.com/google/oauth2client/blob/master/oauth2client/client.py#L111)
+ which is why the interface alias is needed.
+
 
 ###### Dockerfile
 ```

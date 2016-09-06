@@ -52,10 +52,6 @@ lo:0      Link encap:Local Loopback
           inet addr:169.254.169.254  Mask:255.255.0.0
           UP LOOPBACK RUNNING  MTU:65536  Metric:1
 ```
-Once the interface is seetup, you can access it via the IP:
-```
-curl -v -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token
-```
 (on windows)
 ```
 netsh interface ipv4 add address "Loopback Pseudo-Interface 1" 169.254.169.254 255.255.0.0
@@ -95,7 +91,10 @@ gunicorn -b :18080 gce_metadata_server:app
 * **7. Test access to the metadata server**
 In a new window, run
 ```
- curl -v -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
+curl -v -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
+
+curl -v -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token
+
 ```
  **NOTE** 
  > the access_token returned by this script to your app is for you gcloud client and is *LIVE*.

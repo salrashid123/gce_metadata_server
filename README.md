@@ -119,6 +119,7 @@ If you run an app inside a docker container that needs to access the metadata se
 #### Add bridge networking to the running Container (--net=bridge)
 To use bridge networking, you need to first
 * create the interface alias for 169.254.169.254 --> lo:0
+* make sure ip_forward is enabled  _sudo sysctl -w net.ipv4.ip\_forward=1_
 * run socat or iptables to forward 80-->18080
 * start the container and pass in the host files pointing to the local emulator's ip address:
 

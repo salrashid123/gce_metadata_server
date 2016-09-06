@@ -61,7 +61,7 @@ curl -v -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/i
 netsh interface ipv4 add address "Loopback Pseudo-Interface 1" 169.254.169.254 255.255.0.0
 ```
 
-* **3. Run socat or iptables**
+* **3. Run socat**
 
 You need to install a utility to map port :80 traffic since REST calls to the metadata server are HTTP.  The following usees 'socat':
 ```
@@ -69,10 +69,8 @@ sudo apt-get install socat
 
 sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:18080
 ```
-but the preferred way would be to use iptables:
-```
-sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 18080
-```
+_Note:_ iptables would also work.
+
 
 * **5. Add supporting libraries**
 ```
@@ -120,7 +118,7 @@ If you run an app inside a docker container that needs to access the metadata se
 To use bridge networking, you need to first
 * create the interface alias for 169.254.169.254 --> lo:0
 * make sure ip_forward is enabled  _sudo sysctl -w net.ipv4.ip\_forward=1_
-* run socat or iptables to forward 80-->18080
+* run socat to forward 80-->18080
 * start the container and pass in the host files pointing to the local emulator's ip address:
 
 ```
@@ -238,15 +236,9 @@ Since GCE's metadata server listens on http for :80, this script relies on utili
 basic connection handling so you'd be better with iptables, gunicorn.
 You are free to either run the script on port :80 directly (as root), or use a utilitity like iptables, HAProxy, nginx, etc to do this mapping.
 
-iptables:
+The following example of an iptables route 80 -> 18080 on the local interface
 ```
 sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 18080
-```
-#### Use iptables instead of virtual interface
-
-You can also use iptables to redirect traffic to a local interface.
-```
-iptables -t nat -A OUTPUT -d 169.254.169.254 -j DNAT --to-destination 127.0.0.1
 ```
 
 #### Allowing all firewall policies

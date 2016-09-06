@@ -40,9 +40,6 @@
 # run socat proxy:
 # sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:18080
 #
-# or with iptables:
-# sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 18080
-#
 # add supporting libraries:
 # cd gce_metadata_server/
 # virtualenv env
@@ -56,7 +53,9 @@
 #     gunicorn -b :18080 gce_metadata_server:app
 # 
 #  or if you run an app inside a docker container on your laptop that needs to access this, please be sure to enable
-# host (--net=host) access/networking:
+# host (--net=host) or bridge (--net=bridge) access/networking:
+#   eg  docker run -t --net=bridge --add-host metadata.google.internal:169.254.169.254 --add-host metadata:169.254.169.254 compute
+# or
 #   eg  docker run -p host_port:container_port --net=host -t <your_image> 
 # You can extend this sample for any arbitrary metadta you are interested in emulating (eg, disks, hostname, etc).
 # Simply make an @app.route()  for the path and either use the gcloud wrapper or hardcode the response you're interested in

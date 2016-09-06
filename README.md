@@ -112,13 +112,26 @@ In a new window, run
 ### Misc
 
 ### Access from containers
-If you run an app inside a docker container on your laptop that needs to access the metadata server:
+If you run an app inside a docker container that needs to access the metadata server, there are two options:
+* use bridge networking (preferred)
+* use host networking
+
+#### Add bridge networking to the running Container (--net=bridge)
+To use bridge networking, you need to first
+* create the interface alias for 169.254.169.254 --> lo:0
+* run socat or iptables to forward 80-->18080
+* start the container and pass in the host files pointing to the local emulator's ip address:
+
+```
+docker run -t --net=bridge --add-host metadata.google.internal:169.254.169.254 --add-host metadata:169.254.169.254 _your-image_
+```
+You may need to drop existing firewall rules and then restart the docker daemon to prevent conflicts or overrides.
 
 #### Add host networking to the running Container (--net=host)
 
 host (**--net=host**) access/networking:
 ```
-docker run --net=host -t _your_image_ 
+docker run --net=host -t _your-image_ 
 ```
 This will allow the container to 'see' the local interface on the laptop.  The disadvantage is the host's interface is the containers as well
 
@@ -180,6 +193,13 @@ docker build -t compute .
 ```
 
 ###### run
+
+With default bridge networking 
+```
+docker run -t --net=bridge --add-host metadata.google.internal:169.254.169.254 --add-host metadata:169.254.169.254 compute
+```
+
+or with host networking
 ```
 docker run -t --net=host compute
 ```
@@ -220,6 +240,30 @@ You are free to either run the script on port :80 directly (as root), or use a u
 iptables:
 ```
 sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 18080
+```
+#### Use iptables instead of virtual interface
+
+You can also use iptables to redirect traffic to a local interface.
+```
+iptables -t nat -A OUTPUT -d 169.254.169.254 -j DNAT --to-destination 127.0.0.1
+```
+
+#### Allowing all firewall policies
+
+The following set of command resets all firewall policies to allow all.
+
+```bash
+#!/bin/sh
+echo "Stopping firewall and allowing everyone..."
+iptables -F
+iptables -X
+iptables -t nat -F
+iptables -t nat -X
+iptables -t mangle -F
+iptables -t mangle -X
+iptables -P INPUT ACCEPT
+iptables -P FORWARD ACCEPT
+iptables -P OUTPUT ACCEPT
 ```
 
 #### Extending the sample

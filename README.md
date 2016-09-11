@@ -193,12 +193,12 @@ docker build -t compute .
 ###### run
 
 With default bridge networking 
-```
+```bash
 docker run -t --net=bridge --add-host metadata.google.internal:169.254.169.254 --add-host metadata:169.254.169.254 compute
 ```
 
 or with host networking
-```
+```bash
 docker run -t --net=host compute
 ```
 
@@ -206,6 +206,93 @@ docker run -t --net=host compute
 This script utilizes [gcloud_wrapper.py](gcloud_wrapper.py) which is basically a python wrapper around the actual gcloud CLI (google cloud sdk).
 What this script allows you to do is acquire gcloud's cli capabilities directly in python code automatically.
 
+#### Running metadata server emulator in containers
+
+Its possible to run the metadata server emulator itself in a container.  To do this, you need to pass in credentials in the form of a cert file for 
+the project you would like to emulate and use the following image that already has cloud SDK:
+
+> [https://hub.docker.com/r/google/cloud-sdk/](https://hub.docker.com/r/google/cloud-sdk/)
+
+* Download a .p12 certificate from the cloud console.  see: [Creating Service accounts](https://developers.google.com/identity/protocols/OAuth2ServiceAccount#creatinganaccount)
+
+* Copy the certificate to _$HOME/emulators_  and note the certificate service account name.
+
+  In the example, below, the service account name and cert file is:   _svc-2-429@mineral-minutia-820.iam.gserviceaccount.com_ and _GCPNETAppID-e4536f3eed76.p12_
+
+* Generate a Volume:
+
+```
+docker run -t -v $HOME/emulators/:/data -i --name gcloud-config google/cloud-sdk gcloud auth activate-service-account svc-2-429@mineral-minutia-820.iam.gserviceaccount.com --key-file /data/GCPNETAppID-e4536f3eed76.p12 --project mineral-minutia-820
+
+Activated service account credentials for: [svc-2-429@mineral-minutia-820.iam.gserviceaccount.com]
+```
+
+* Verify volume is initialized:
+```bash
+docker run --rm -ti --volumes-from gcloud-config google/cloud-sdk gcloud config list
+```
+
+You should see:
+```
+[component_manager]
+disable_update_check = true
+[core]
+account = svc-2-429@mineral-minutia-820.iam.gserviceaccount.com
+disable_usage_reporting = False
+project = mineral-minutia-820
+```
+
+* Create the metadata server by extending the image:
+Dockerfile
+```
+FROM google/cloud-sdk
+RUN apt-get -y update
+RUN apt-get install -y curl python python-pip python-dev build-essential git
+RUN pip install Flask
+RUN git clone https://github.com/salrashid123/gce_metadata_server.git
+WORKDIR /gce_metadata_server
+ENTRYPOINT ["python", "gce_metadata_server.py"]
+```
+* build
+
+```
+docker build -t metadata_container .
+```
+
+* Run metadata server image
+```
+docker run -p 18080:18080 --rm -t --volumes-from gcloud-config metadata_container
+```
+
+At this point, any metadata server request should go to the container and retrun an access token for the credential and project inside the container:
+eg:
+
+```
+curl -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
+
+{
+  "access_token": "ya29.CjBbA6WsVY0-vT-ryIJ6vWYAcyUFN1a0afMvcAsywwZKwc5U9XX2SA5redacted", 
+  "expires_in": 3600, 
+  "token_type": "Bearer"
+}
+```
+
+and then verify who owns the token:
+```
+curl https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=ya29.CjBbA6WsVY0-vT-ryIJ6vWYAcyUFN1a0afMvcAsywwZKwc5U9XX2SA5redacted
+{
+ "azp": "100147106996764479085",
+ "aud": "100147106996764479085",
+ "scope": "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/appengine.admin https://www.googleapis.com/auth/compute",
+ "exp": "1473628884",
+ "expires_in": "3469",
+ "email": "svc-2-429@mineral-minutia-820.iam.gserviceaccount.com",
+ "email_verified": "true",
+ "access_type": "offline"
+}
+```
+
+> *NOTE:* the token is owned by _svc-2-429@mineral-minutia-820.iam.gserviceaccount.com_
 
 #### Acquire remote access_token from GCE Instance
 If you require the live access_token issued by the actual metadata server on the GCE instance, you can invoke 

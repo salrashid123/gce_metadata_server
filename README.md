@@ -256,12 +256,13 @@ ENTRYPOINT ["python", "gce_metadata_server.py"]
 * build
 
 ```
-docker build -t metadata_container .
+docker build -t gcemetadataserver .
 ```
+(this image is also available on Dockerhub as [salrashid123/gcemetadataserver](https://hub.docker.com/r/salrashid123/gcemetadataserver/)
 
 * Run metadata server image
 ```
-docker run -p 18080:18080 --rm -t --volumes-from gcloud-config metadata_container
+docker run -p 18080:18080 --rm -t --volumes-from gcloud-config gcemetadataserver
 ```
 
 At this point, any metadata server request should go to the container and retrun an access token for the credential and project inside the container:

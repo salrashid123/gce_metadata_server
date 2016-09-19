@@ -173,8 +173,7 @@ def getDefaultServiceAccount(acct,k):
        logging.info( k + ' not found in cache, refreshing..') 
 
     # First acquire gcloud's access_token
-    result = GCloud(['--configuration', gcloud_configuraiton, 'auth','print-access-token','--format','json()'])
-    token = json.loads(result)
+    token = GCloud(['--configuration', gcloud_configuraiton, 'auth','print-access-token'])
     logging.info('access_token: ' + token)
     # and then ask the token_info endpoint for details about it.
     r = urllib2.urlopen("https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=" + token).read()

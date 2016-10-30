@@ -81,6 +81,13 @@ app = Flask(__name__)
 # to local testing (eg, for a service_account file that you enabled on gcloud)
 gcloud_configuraiton = 'default'
 
+# If for whatever reason gcloud client isn't setup, this script will read the follwoing Environment
+# variables and return its value for the access_token, proejctID and numeric projectID
+# see __getStaticMetadataValue
+GOOGLE_PROJECT_ID = 'GOOGLE_PROJECT_ID'
+GOOGLE_NUMERIC_PROJECT_ID = 'GOOGLE_NUMERIC_PROJECT_ID'
+GOOGLE_ACCESS_TOKEN = 'GOOGLE_ACCESS_TOKEN'
+
 # dict of custom attributes to return
 # If you would rather use the *live* metadata key value pairs setup for your project, see
 #  __setupProjectMetadata() below
@@ -173,26 +180,30 @@ def getDefaultServiceAccount(acct,k):
        logging.info( k + ' not found in cache, refreshing..') 
 
     # First acquire gcloud's access_token
-    token = GCloud(['--configuration', gcloud_configuraiton, 'auth','print-access-token'])
-    logging.info('access_token: ' + token)
-    # and then ask the token_info endpoint for details about it.
-    r = urllib2.urlopen("https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=" + token).read()
-    r = json.loads(r)
-    
-    cache['aliases'] = acct
-    cache['email'] = r['email']
-    cache['scopes'] = ("\n".join(r['scope'].split(' ')))
+    try:
+        token = GCloud(['--configuration', gcloud_configuraiton, 'auth','print-access-token'])
+        logging.info('access_token: ' + token)
+        # and then ask the token_info endpoint for details about it.
+        r = urllib2.urlopen("https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=" + token).read()
+        r = json.loads(r)
+        
+        cache['aliases'] = acct
+        cache['email'] = r['email']
+        cache['scopes'] = ("\n".join(r['scope'].split(' ')))
 
-    valid_for = r['expires_in']
-    key_expire_at = int(calendar.timegm(time.gmtime()) + int(valid_for))
-    cache['token_valid_until'] = key_expire_at
-    f = {"access_token": token,"expires_in": int(valid_for) ,"token_type":"Bearer"}
-    cache['token'] = f
+        valid_for = r['expires_in']
+        key_expire_at = int(calendar.timegm(time.gmtime()) + int(valid_for))
+        cache['token_valid_until'] = key_expire_at
+        f = {"access_token": token,"expires_in": int(valid_for) ,"token_type":"Bearer"}
+        cache['token'] = f
 
-    if (k == 'token'): 
-        return jsonify(**f)
-    else:
-      return cache[k]
+        if (k == 'token'): 
+            return jsonify(**f)
+        else:
+          return cache[k]
+    except:
+        logging.error("gcloud not initialized, attempting to return static access_token from environment")
+        return __getStaticMetadataValue(GOOGLE_ACCESS_TOKEN) 
 
 # return a couple of simple, well known attributes like project-id and number
 @app.route('/computeMetadata/v1/project/project-id', methods = ['GET'])
@@ -205,9 +216,13 @@ def getProjectID():
        logging.info('project-id not found, refreshing..')    
     result = GCloud(['--configuration', gcloud_configuraiton, 'config','list','--format','json()'])
     p = json.loads(result)
-    logging.info('Returning project-id: ' +  p['core']['project'])
-    cache['project-id'] =  p['core']['project']
-    return p['core']['project']
+    try: 
+        logging.info('Returning project-id: ' +  p['core']['project'])
+        cache['project-id'] =  p['core']['project']
+        return p['core']['project']
+    except KeyError as e:
+        logging.info('project-id not found or not set in gcloud')
+        return __getStaticMetadataValue(GOOGLE_PROJECT_ID)
 
 @app.route('/computeMetadata/v1/project/numeric-project-id', methods = ['GET'])
 def getNumericProjectID():
@@ -219,11 +234,15 @@ def getNumericProjectID():
        logging.info('numeric-project-id not found, refreshing..')
     result = GCloud(['--configuration', gcloud_configuraiton, 'config','list','--format','json()'])
     p = json.loads(result)
-    projectId = p['core']['project']
-    result = GCloud(['--configuration', gcloud_configuraiton, 'projects','list','--format','value(projectNumber)',"--filter", "projectId=" + projectId])
-    logging.info("Returning numeric project_id:" + str(result))
-    cache['numeric-project-id'] = str(result)    
-    return str(result)
+    try:
+        projectId = p['core']['project']
+        result = GCloud(['--configuration', gcloud_configuraiton, 'projects','list','--format','value(projectNumber)',"--filter", "projectId=" + projectId])
+        logging.info("Returning numeric project_id:" + str(result))
+        cache['numeric-project-id'] = str(result)
+        return str(result)
+    except KeyError as e:
+       logging.info('numeric-project-id not found or not set in gcloud') 
+       return __getStaticMetadataValue(GOOGLE_NUMERIC_PROJECT_ID)   
 
 # return arbitary user-defined key-value pairs
 @app.route('/computeMetadata/v1/project/attributes/<string:k>', methods = ['GET'])
@@ -266,6 +285,17 @@ def __getAccessTokenFromInstance(instance):
     #token = p['access_token']
 
     logging.info('Acquired access_token from instance ' + instance)    
+
+# Lookup environment variables incase gcloud cli isn't setup'
+def __getStaticMetadataValue(k):
+    logging.info('Returning static value for key ' + k)
+    try:
+        v = os.environ[k]
+        return v
+    except KeyError as e:
+       logging.info('Static value not found, returning null')
+       return  "Static Key not found " + k    
+    
 
 if __name__ == '__main__':
   app.wsgi_app = TransitMiddleWare(app.wsgi_app)

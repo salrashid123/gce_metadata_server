@@ -143,6 +143,21 @@ def add_meta_headers(response):
 def index():
     return 'hello world', 200, {'Content-Type': 'text/plain; charset=utf-8'}
 
+# hack: gsutil makes this special request
+@app.route('/computeMetadata/v1/instance/service-accounts', methods = ['GET'])
+def getServiceAccountListRedirect():
+   return redirect("/computeMetadata/v1/instance/service-accounts/", code=301)
+
+# hack: list service accounts that are active...since we use gsutil in default configuration, 
+# i'm just going to consider displaying the default only because the way this script is coded,
+# i use the --configuration and its default identity...
+@app.route('/computeMetadata/v1/instance/service-accounts/', methods = ['GET'])
+def getServiceAccountList():
+    logging.info('Requesting Service Account List' )
+    resp = Response()
+    resp.headers['Content-Type'] ='application/text'
+    return 'default/'
+
 @app.route('/computeMetadata/v1/instance/service-accounts/<string:acct>/', methods = ['GET'])
 def getDefaultServiceList(acct):
   logging.info('Returning default list')

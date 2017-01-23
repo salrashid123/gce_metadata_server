@@ -1,0 +1,13 @@
+google.internal.      IN      SOA     ns.google.internal. admin.google.internal. (
+                                                        2006081401
+                                                        28800
+                                                        3600
+                                                        604800
+                                                        38400
+ )
+
+google.internal.      IN      NS              ns.google.internal.
+
+ns                  IN      A     169.254.169.254
+metadata            IN      A     169.254.169.254
+

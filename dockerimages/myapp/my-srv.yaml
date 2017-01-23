@@ -1,0 +1,17 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: myapp-srv
+  labels:
+    type: myapp-srv
+spec:
+  #type: LoadBalancer
+  type: NodePort
+  ports:
+  - name: my-srv-port
+    protocol: TCP  
+    port: 8080
+    targetPort: 8080
+  selector:
+    type: myapp

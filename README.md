@@ -36,6 +36,7 @@ and optional live project user-defined metadata.  You do not have to use the gcl
 # /etc/hosts
 127.0.0.1       metadata metadata.google.internal
 ```
+> Note: [dockerimages/metadatadns/](dockerimages/metadatadns/) contains a DNS server with the __google.internal__ as a zone.  You can use that as well (described at the end of this document).
 
 * **2. Create metadata IP alias**
 
@@ -65,8 +66,13 @@ sudo apt-get install socat
 
 sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:18080
 ```
-_Note:_ iptables would also work.
 
+
+Alternatively, you can create an OUTPUT iptables rule to intercept and redirect the metadata traffic.
+
+```
+iptables -t nat -A OUTPUT -p tcp -d 169.254.169.254 --dport 80 -j REDIRECT --to-port 18080
+```
 
 * **5. Add supporting libraries**
 ```
@@ -243,14 +249,19 @@ project = mineral-minutia-820
 ```
 
 * Create the metadata server by extending the image:
-Dockerfile
+[Dockerfile](dockerimages/metadataserver/Dockerfile)
 ```
-FROM google/cloud-sdk
+FROM debian:latest
+
 RUN apt-get -y update
-RUN apt-get install -y curl python python-pip python-dev build-essential git
+RUN apt-get install -y curl python python-pip git
+RUN curl https://sdk.cloud.google.com | bash
+
 RUN pip install Flask
 RUN git clone https://github.com/salrashid123/gce_metadata_server.git
+
 WORKDIR /gce_metadata_server
+ENV PATH /root/google-cloud-sdk/bin/:$PATH
 ENTRYPOINT ["python", "gce_metadata_server.py"]
 ```
 * build
@@ -357,3 +368,96 @@ You can certainly provide environment variables on container startup and then ma
 ```
 docker run -p 8080:8080 -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/<YOUR_CERT_JSON_FILE>.json  -v  /tmp/:/tmp -t your_image
 ```
+
+#### Using the metadataDNS server container
+Instead of editing the /etc/hosts, you can alter the containers' or laptop's /etc/resolv.conf to point to you own DNS server that understands
+metadata.google.internal.
+
+```
+sudo docker run -t -p 53:53  -p 53:53/udp  salrashid123/metadatadns
+```
+The default image has the Google DNS as a forwarder:
+[dockerimages/metadatadns/named.conf.options](dockerimages/metadatadns/named.conf.options):
+```
+forwarders {
+    8.8.8.8;
+};
+```
+If you need your forward to your own DNS servers, can rebuild the docker image and adjust the named.conf.options file accordingly.
+
+You can verify the DNS server is running by accessing it at:
+```
+nslookup -port=53 metadata.google.internal  ip-address-of-your-laptop
+```
+
+#### Accessing the emulator from minikube
+The following describes one way to run some code inside a [Minikube]() cluster but still have access to the metadata server on your laptop.  When you run minikube, the Kubernetes pods
+exist within a VirtualBox environment so accessing the metadata server by IP and hostname (metadata.google.internal) requires a couple of steps.
+
+The approach descibed below is to basically reroute the IP for the metadata server to the emulator via iptables on the host.
+To account for the DNS server, we run a local Bind9 server in a container.  The DNS server has a zones file for .google.internal and then we edit the /etc/resolv.conf file on the minikube node.
+Since each pod picks up the DNS servers from the pod, each container knows about your DNS server.
+
+The steps to follow:
+
+1.  Find the ip address for your laptop (wlan0 or eth0):
+```
+    /sbin/ifconfig -a
+```
+
+2. Start the MetadataServer DNS Server 
+
+3. Start minikube
+```
+     minikube start
+```
+
+4. SSH in
+```
+     minikube ssh
+```
+
+5. DELETE /etc/resolv.conf 
+
+6. vi /etc/resolv.conf
+   and add the following
+```
+nameserver ip_address_on_your_laptop_from_step_1
+nameserver 8.8.8.8
+```
+> Note, on way to override the the /etc/resolv.conf file on the node is to use the kubelet --resolv-conf= directive:
+```
+     minikube start --extra-config kubelet.ResolverConfig=$PATH_TO_CONFIG_IN_VM
+```
+
+7. Exit the VM 
+
+8. Start the cluster again to pickup the changes
+```
+     minikube start
+```
+At this point the minikube cluster should be able to contact the metadata emulator and even resolve metadata.google.internal.
+
+9. Now create create the rc and service 
+```
+     kubectl create -f my-rs.yaml -f my-srv.yaml
+```
+
+     I've written some sample containers which uses Application Default credentials here:
+     [salrashid123/myapp](https://hub.docker.com/r/salrashid123/myapp/).  
+     
+     my-rs.yaml and my-srv.yaml is listed below under [dockerimages/myapp](dockerimages/myapp).
+   
+10. Get the service url
+```
+$ minikube service myapp-srv --url
+http://192.168.99.104:31085
+```
+
+11. Verify application default credentials works
+```
+$ curl http://192.168.99.104:31085/authz
+<< you should see the email address associated with your gcloud >>
+```
+
+What step 11 shows is your replicaiton controller contacting the metadata server to return an access_token to the container.

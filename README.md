@@ -391,7 +391,7 @@ nslookup -port=53 metadata.google.internal  ip-address-of-your-laptop
 ```
 
 #### Accessing the emulator from minikube
-The following describes one way to run some code inside a [Minikube]() cluster but still have access to the metadata server on your laptop.  When you run minikube, the Kubernetes pods
+The following describes one way to run some code inside a [Minikube](https://github.com/kubernetes/minikube) cluster but still have access to the metadata server on your laptop.  When you run minikube, the Kubernetes pods
 exist within a VirtualBox environment so accessing the metadata server by IP and hostname (metadata.google.internal) requires a couple of steps.
 
 The approach descibed below is to basically reroute the IP for the metadata server to the emulator via iptables on the host.
@@ -406,6 +406,11 @@ The steps to follow:
 ```
 
 * Start the MetadataServer DNS Server 
+
+Described in the seciton above.  Recommend starting the container via docker
+```
+sudo docker run -t -p 53:53  -p 53:53/udp  salrashid123/metadatadns
+```
 
 * Start minikube
 ```
@@ -447,17 +452,17 @@ At this point the minikube cluster should be able to contact the metadata emulat
 I've written some sample containers which uses Application Default credentials here:
      [salrashid123/myapp](https://hub.docker.com/r/salrashid123/myapp/).  
      
-     my-rs.yaml and my-srv.yaml is listed below under [dockerimages/myapp](dockerimages/myapp).
+and the source for my-rs.yaml and my-srv.yaml is listed below under [dockerimages/myapp](dockerimages/myapp).
    
 * Get the service url
 ```
 $ minikube service myapp-srv --url
-http://192.168.99.104:31085
+http://host:port
 ```
 
 * Verify application default credentials works
 ```
-$ curl http://192.168.99.104:31085/authz
+$ curl http://host:port/authz
 << you should see the email address associated with your gcloud >>
 ```
 

@@ -400,26 +400,26 @@ Since each pod picks up the DNS servers from the pod, each container knows about
 
 The steps to follow:
 
-1.  Find the ip address for your laptop (wlan0 or eth0):
+*  Find the ip address for your laptop (wlan0 or eth0):
 ```
     /sbin/ifconfig -a
 ```
 
-2. Start the MetadataServer DNS Server 
+* Start the MetadataServer DNS Server 
 
-3. Start minikube
+* Start minikube
 ```
      minikube start
 ```
 
-4. SSH in
+* SSH in
 ```
      minikube ssh
 ```
 
-5. DELETE /etc/resolv.conf 
+* DELETE /etc/resolv.conf 
 
-6. vi /etc/resolv.conf
+* vi /etc/resolv.conf
    and add the following
 ```
 nameserver ip_address_on_your_laptop_from_step_1
@@ -430,34 +430,35 @@ nameserver 8.8.8.8
      minikube start --extra-config kubelet.ResolverConfig=$PATH_TO_CONFIG_IN_VM
 ```
 
-7. Exit the VM 
+* Exit the VM 
 
-8. Start the cluster again to pickup the changes
+* Start the cluster again to pickup the changes
 ```
      minikube start
 ```
 At this point the minikube cluster should be able to contact the metadata emulator and even resolve metadata.google.internal.
 
-9. Now create create the rc and service 
+* Now create create the rc and service 
+
 ```
      kubectl create -f my-rs.yaml -f my-srv.yaml
 ```
 
-     I've written some sample containers which uses Application Default credentials here:
+I've written some sample containers which uses Application Default credentials here:
      [salrashid123/myapp](https://hub.docker.com/r/salrashid123/myapp/).  
      
      my-rs.yaml and my-srv.yaml is listed below under [dockerimages/myapp](dockerimages/myapp).
    
-10. Get the service url
+* Get the service url
 ```
 $ minikube service myapp-srv --url
 http://192.168.99.104:31085
 ```
 
-11. Verify application default credentials works
+* Verify application default credentials works
 ```
 $ curl http://192.168.99.104:31085/authz
 << you should see the email address associated with your gcloud >>
 ```
 
-What step 11 shows is your replicaiton controller contacting the metadata server to return an access_token to the container.
+What the previous step shows is your replicaiton controller contacting the metadata server to return an access_token to the container.

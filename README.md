@@ -116,8 +116,9 @@ curl -v -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/i
 
 ### Access from containers
 If you run an app inside a docker container that needs to access the metadata server, there are two options:
-* use bridge networking (preferred)
+* use bridge networking
 * use host networking
+* create a custom network and run the metadata server in a container ((preferred).
 
 #### Add bridge networking to the running Container (--net=bridge)
 To use bridge networking, you need to first
@@ -144,75 +145,8 @@ This will allow the container to 'see' the local interface on the laptop.  The d
 * [Docker Networking](https://docs.docker.com/v1.8/articles/networking/#container-networking)
 * [Embedded DNS server in user-defined networks](https://docs.docker.com/engine/userguide/networking/configure-dns/#/embedded-dns-server-in-user-defined-networks)
 
-##### Testing Application Default Credentials through from a container
 
-The following sample details testing application default credentials from inside a docker container.  To use, you need
-to set the interface alias and edit /etc/hosts file as describe above.
-
-_Note:_  Python's application default credentials looks for the [metadata server by IP address](https://github.com/google/oauth2client/blob/master/oauth2client/client.py#L111)
- which is why the interface alias is needed.
-
-
-###### Dockerfile
-```
-FROM debian:latest
-
-RUN apt-get -y update
-RUN apt-get install -y curl python python-pip
-RUN pip install oauth2client google-api-python-client httplib2
-
-ADD . /app
-WORKDIR /app
-
-ENTRYPOINT ["python", "compute.py"]
-```
-
-###### compute.py
-```python
-#!/usr/bin/python
-
-import httplib2
-from apiclient.discovery import build
-from oauth2client.client import GoogleCredentials
-#from oauth2client.contrib.gce import AppAssertionCredentials
-
-scope='https://www.googleapis.com/auth/userinfo.email'
-
-#credentials = AppAssertionCredentials(scope=scope)
-credentials = GoogleCredentials.get_application_default()
-if credentials.create_scoped_required():
-  credentials = credentials.create_scoped(scope)
-
-http = httplib2.Http()
-credentials.authorize(http)
-
-service = build(serviceName='oauth2', version= 'v2',http=http)
-resp = service.userinfo().get().execute()
-print resp['email']
-```
-
-###### build
-```
-docker build -t compute .
-```
-
-###### run
-
-With default bridge networking 
-```bash
-docker run -t --net=bridge --add-host metadata.google.internal:169.254.169.254 --add-host metadata:169.254.169.254 compute
-```
-
-or with host networking
-```
-docker run -t --net=host compute
-```
-
-#### gcloud CLI wrapper
-This script utilizes [gcloud_wrapper.py](gcloud_wrapper.py) which is basically a python wrapper around the actual gcloud CLI (google cloud sdk).
-What this script allows you to do is acquire gcloud's cli capabilities directly in python code automatically.
-
-#### Running metadata server emulator in containers
+#### Running metadata server emulator in containers via custom networks
 
 Its possible to run the metadata server emulator itself in a container.  To do this, you need to pass in credentials in the form of a cert file for 
 the project you would like to emulate and then perform a couple of steps to account for the IP and network:
@@ -313,6 +247,77 @@ curl http://localhost:8080/authz
 ```
 
 What you should see is the service account email address acquired from the metadata servers's token service.  The code for [salrashid123/myapp](dockerimages/myapp)
+
+![Meta Proxy](images/metadata_proxy_2.png)
+
+
+##### Testing Application Default Credentials from a container
+
+The following sample details testing application default credentials from inside a docker container while the emulator runs directly on the Host system (your laptop.  To use, you need
+to set the interface alias and edit /etc/hosts file as describe above.
+
+_Note:_  Python's application default credentials looks for the [metadata server by IP address](https://github.com/google/oauth2client/blob/master/oauth2client/client.py#L111)
+ which is why the interface alias is needed.
+
+
+###### Dockerfile
+```
+FROM debian:latest
+
+RUN apt-get -y update
+RUN apt-get install -y curl python python-pip
+RUN pip install oauth2client google-api-python-client httplib2
+
+ADD . /app
+WORKDIR /app
+
+ENTRYPOINT ["python", "compute.py"]
+```
+
+###### compute.py
+```python
+#!/usr/bin/python
+
+import httplib2
+from apiclient.discovery import build
+from oauth2client.client import GoogleCredentials
+#from oauth2client.contrib.gce import AppAssertionCredentials
+
+scope='https://www.googleapis.com/auth/userinfo.email'
+
+#credentials = AppAssertionCredentials(scope=scope)
+credentials = GoogleCredentials.get_application_default()
+if credentials.create_scoped_required():
+  credentials = credentials.create_scoped(scope)
+
+http = httplib2.Http()
+credentials.authorize(http)
+
+service = build(serviceName='oauth2', version= 'v2',http=http)
+resp = service.userinfo().get().execute()
+print resp['email']
+```
+
+###### build
+```
+docker build -t compute .
+```
+
+###### run
+
+With default bridge networking 
+```bash
+docker run -t --net=bridge --add-host metadata.google.internal:169.254.169.254 --add-host metadata:169.254.169.254 compute
+```
+
+or with host networking
+```
+docker run -t --net=host compute
+```
+
+#### gcloud CLI wrapper
+This script utilizes [gcloud_wrapper.py](gcloud_wrapper.py) which is basically a python wrapper around the actual gcloud CLI (google cloud sdk).
+What this script allows you to do is acquire gcloud's cli capabilities directly in python code automatically.
 
 
 #### Acquire remote access_token from GCE Instance

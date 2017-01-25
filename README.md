@@ -204,7 +204,7 @@ docker run -t --net=bridge --add-host metadata.google.internal:169.254.169.254 -
 ```
 
 or with host networking
-```bash
+```
 docker run -t --net=host compute
 ```
 
@@ -215,27 +215,51 @@ What this script allows you to do is acquire gcloud's cli capabilities directly 
 #### Running metadata server emulator in containers
 
 Its possible to run the metadata server emulator itself in a container.  To do this, you need to pass in credentials in the form of a cert file for 
-the project you would like to emulate and use the following image that already has cloud SDK:
+the project you would like to emulate and then perform a couple of steps to account for the IP and network:
 
-> [https://hub.docker.com/r/google/cloud-sdk/](https://hub.docker.com/r/google/cloud-sdk/)
 
-* Download a .p12 certificate from the cloud console.  see: [Creating Service accounts](https://developers.google.com/identity/protocols/OAuth2ServiceAccount#creatinganaccount)
+* Create the metadata server by extending the image:
+[Dockerfile](dockerimages/metadataserver/Dockerfile).  Note, the ENTRYPOINT is commented out so you need to execute the metadata server at run.
+```
+FROM debian:latest
+
+RUN apt-get -y update
+RUN apt-get install -y curl python python-pip git
+RUN curl https://sdk.cloud.google.com | bash
+
+RUN pip install Flask pyopenssl
+RUN git clone https://github.com/salrashid123/gce_metadata_server.git
+
+WORKDIR /gce_metadata_server
+ENV PATH /root/google-cloud-sdk/bin/:$PATH
+RUN gcloud config set --installation component_manager/disable_update_check true
+VOLUME ["/root/.config"]
+#ENTRYPOINT ["python", "gce_metadata_server.py"]
+```
+* Build the baseline image
+
+```
+docker build -t gcemetadataserver .
+```
+(this image is also available on Dockerhub as [salrashid123/gcemetadataserver](https://hub.docker.com/r/salrashid123/gcemetadataserver/)
+
+* Download a JSON certificate from the cloud console.  see: [Creating Service accounts](https://developers.google.com/identity/protocols/OAuth2ServiceAccount#creatinganaccount)
 
 * Copy the certificate to _$HOME/emulators_  and note the certificate service account name.
 
-  In the example, below, the service account name and cert file is:   _svc-2-429@mineral-minutia-820.iam.gserviceaccount.com_ and _GCPNETAppID-e4536f3eed76.p12_
+  In the example, below, the service account name and cert file is:   _svc-2-429@mineral-minutia-820.iam.gserviceaccount.com_ and _GCPNETAppID-e65deccae47b.json_
 
 * Generate a Volume:
 
 ```
-docker run -t -v $HOME/emulators/:/data -i --name gcloud-config google/cloud-sdk gcloud auth activate-service-account svc-2-429@mineral-minutia-820.iam.gserviceaccount.com --key-file /data/GCPNETAppID-e4536f3eed76.p12 --project mineral-minutia-820
-
-Activated service account credentials for: [svc-2-429@mineral-minutia-820.iam.gserviceaccount.com]
+docker run -t -v $HOME/emulators/:/data --name gcloud-config gcemetadataserver gcloud auth activate-service-account svc-2-429@mineral-minutia-820.iam.gserviceaccount.com --key-file /data/GCPNETAppID-e65deccae47b.json --project mineral-minutia-820
 ```
 
+Activated service account credentials for: [svc-2-429@mineral-minutia-820.iam.gserviceaccount.com]
+
 * Verify volume is initialized:
-```bash
-docker run --rm -ti --volumes-from gcloud-config google/cloud-sdk gcloud config list
+```
+docker run --rm -ti --volumes-from gcloud-config gcemetadataserver gcloud config list
 ```
 
 You should see:
@@ -248,63 +272,48 @@ disable_usage_reporting = False
 project = mineral-minutia-820
 ```
 
-* Create the metadata server by extending the image:
-[Dockerfile](dockerimages/metadataserver/Dockerfile)
+* Create a network for the metadataserver
 ```
-FROM debian:latest
-
-RUN apt-get -y update
-RUN apt-get install -y curl python python-pip git
-RUN curl https://sdk.cloud.google.com | bash
-
-RUN pip install Flask
-RUN git clone https://github.com/salrashid123/gce_metadata_server.git
-
-WORKDIR /gce_metadata_server
-ENV PATH /root/google-cloud-sdk/bin/:$PATH
-ENTRYPOINT ["python", "gce_metadata_server.py"]
-```
-* build
-
-```
-docker build -t gcemetadataserver .
-```
-(this image is also available on Dockerhub as [salrashid123/gcemetadataserver](https://hub.docker.com/r/salrashid123/gcemetadataserver/)
-
-* Run metadata server image
-```
-docker run -p 18080:18080 --rm -t --volumes-from gcloud-config gcemetadataserver
+docker network create --subnet=169.254.169.0/24 metadatanetwork
 ```
 
-At this point, any metadata server request should go to the container and retrun an access token for the credential and project inside the container:
+* Run the metadata emulator with the mapped volume
+
+```
+docker run -p 18080:80 --net metadatanetwork --ip 169.254.169.254  --volumes-from gcloud-config salrashid123/gcemetadataserver python gce_metadata_server.py -h 0.0.0.0 -p 80
+```
+
+* Run your application container and attach it to the same network
+```
+docker run -t -p 8080:8080 --net metadatanetwork --add-host metadata.google.internal:169.254.169.254 --add-host metadata:169.254.169.254 salrashid123/myapp
+```
+or 
+run the container and attach to the metadatanetwork later:
+```
+docker run -t -p 8080:8080 --add-host metadata.google.internal:169.254.169.254 --add-host metadata:169.254.169.254 salrashid123/myapp
+```
+then list the running containers
+```
+docker ps
+CONTAINER ID        IMAGE                            COMMAND                  CREATED             STATUS              PORTS                             NAMES
+5fb1b790f4ad        salrashid123/myapp               "python main.py"         38 seconds ago      Up 37 seconds       0.0.0.0:8080->8080/tcp            dreamy_bohr
+aee1828a882b        salrashid123/gcemetadataserver   "python gce_metadata_"   10 minutes ago      Up 10 minutes       8080/tcp, 0.0.0.0:18080->80/tcp   berserk_ardinghelli
+```
+Attach the networks
+``` 
+docker network connect metadatanetwork 5fb1b790f4ad
+```
+
+
+At this point, any metadata server request should go to the container and retrun an access token for the credential and project inside the container (you do not need to run socat or edit your hosts /etc/hosts file):
 eg:
 
 ```
-curl -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
-
-{
-  "access_token": "ya29.CjBbA6WsVY0-vT-ryIJ6vWYAcyUFN1a0afMvcAsywwZKwc5U9XX2SA5redacted", 
-  "expires_in": 3600, 
-  "token_type": "Bearer"
-}
+curl http://localhost:8080/authz
 ```
 
-and then verify who owns the token:
-```
-curl https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=ya29.CjBbA6WsVY0-vT-ryIJ6vWYAcyUFN1a0afMvcAsywwZKwc5U9XX2SA5redacted
-{
- "azp": "100147106996764479085",
- "aud": "100147106996764479085",
- "scope": "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/appengine.admin https://www.googleapis.com/auth/compute",
- "exp": "1473628884",
- "expires_in": "3469",
- "email": "svc-2-429@mineral-minutia-820.iam.gserviceaccount.com",
- "email_verified": "true",
- "access_type": "offline"
-}
-```
+What you should see is the service account email address acquired from the metadata servers's token service.  The code for [salrashid123/myapp](dockerimages/myapp)
 
-> *NOTE:* the token is owned by _svc-2-429@mineral-minutia-820.iam.gserviceaccount.com_
 
 #### Acquire remote access_token from GCE Instance
 If you require the live access_token issued by the actual metadata server on the GCE instance, you can invoke 
@@ -368,6 +377,41 @@ You can certainly provide environment variables on container startup and then ma
 ```
 docker run -p 8080:8080 -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/<YOUR_CERT_JSON_FILE>.json  -v  /tmp/:/tmp -t your_image
 ```
+#### Using static environment variables
+If you do not have access to certificate files or an already initialized gcloud cli, the metadata server supports the following environment variables as substitutions.
+
+That is, if you have not initialized gcloud, the metadata server will look for these environment vairables instead as fallback.
+```
+GOOGLE_PROJECT_ID = 'GOOGLE_PROJECT_ID'
+GOOGLE_NUMERIC_PROJECT_ID = 'GOOGLE_NUMERIC_PROJECT_ID'
+GOOGLE_ACCESS_TOKEN = 'GOOGLE_ACCESS_TOKEN'
+```
+
+for example,
+```
+docker run -p 18080:18080 -e GOOGLE_ACCESS_TOKEN=some_static_token -e GOOGLE_NUMERIC_PROJECT_ID=12345 -e GOOGLE_PROJECT_ID=my_project salrashid123/gcemetadataserver python gce_metadata_server.py -h 0.0.0.0 -p 18080
+```
+
+```
+curl -v -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
+
+some_static_token
+```
+
+while the emulator logs will show 
+
+```
+2017-01-25 17:16:37,775 - ERROR - gcloud not initialized, attempting to return static access_token from environment
+2017-01-25 17:16:37,776 - INFO - Returning static value for key GOOGLE_ACCESS_TOKEN
+2017-01-25 17:16:37,777 - INFO - 172.17.0.1 - - [25/Jan/2017 17:16:37] "GET /computeMetadata/v1/instance/service-accounts/default/token HTTP/1.1" 200 -
+```
+
+One such usecase is running the emulator in a container without mapping a configured volume or certificate.
+
+```
+docker run -t -p 80:18080 -e GOOGLE_ACCESS_TOKEN=`gcloud auth print-access-token` salrashid123/gcemetadataserver python gce_metadata_server.py -h 0.0.0.0 -p 18080
+```
+> Note: these tokens will be valid for upto one hour
 
 #### Using the metadataDNS server container
 Instead of editing the /etc/hosts, you can alter the containers' or laptop's /etc/resolv.conf to point to you own DNS server that understands

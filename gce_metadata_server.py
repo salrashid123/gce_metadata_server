@@ -65,7 +65,7 @@ from flask import request, Response, render_template, jsonify
 from werkzeug.wrappers import Request
 from jinja2 import Template, Environment, FileSystemLoader
 import json
-import os, logging, sys, time, datetime
+import os, logging, sys, time, datetime, getopt
 from time import mktime
 from datetime import datetime
 import calendar
@@ -313,5 +313,16 @@ def __getStaticMetadataValue(k):
     
 
 if __name__ == '__main__':
+  host='0.0.0.0'
+  port=18080
+ 
+  myopts, args = getopt.getopt(sys.argv[1:],"h:p:")
+ 
+  for o, a in myopts:
+    if o == '-h':
+        host=a
+    elif o == '-p':
+        port=a
+
   app.wsgi_app = TransitMiddleWare(app.wsgi_app)
-  app.run(host='0.0.0.0', port=18080, debug=False)
+  app.run(host=host, port=port, debug=False)

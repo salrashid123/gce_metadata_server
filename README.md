@@ -253,11 +253,10 @@ docker build -t gcemetadataserver .
 
 ```
 docker run -t -v $HOME/emulators/:/data --name gcloud-config gcemetadataserver gcloud auth activate-service-account svc-2-429@mineral-minutia-820.iam.gserviceaccount.com --key-file /data/GCPNETAppID-e65deccae47b.json --project mineral-minutia-820
+Activated service account credentials for: [svc-2-429@mineral-minutia-820.iam.gserviceaccount.com]
 ```
 
-Activated service account credentials for: [svc-2-429@mineral-minutia-820.iam.gserviceaccount.com]
-
-* Verify volume is initialized:
+* Verify the volume is initialized:
 ```
 docker run --rm -ti --volumes-from gcloud-config gcemetadataserver gcloud config list
 ```
@@ -284,6 +283,8 @@ docker run -p 18080:80 --net metadatanetwork --ip 169.254.169.254  --volumes-fro
 ```
 
 * Run your application container and attach it to the same network
+There are two ways to do this:
+
 ```
 docker run -t -p 8080:8080 --net metadatanetwork --add-host metadata.google.internal:169.254.169.254 --add-host metadata:169.254.169.254 salrashid123/myapp
 ```
@@ -292,18 +293,17 @@ run the container and attach to the metadatanetwork later:
 ```
 docker run -t -p 8080:8080 --add-host metadata.google.internal:169.254.169.254 --add-host metadata:169.254.169.254 salrashid123/myapp
 ```
-then list the running containers
+You should then see both containers initialized
 ```
 docker ps
 CONTAINER ID        IMAGE                            COMMAND                  CREATED             STATUS              PORTS                             NAMES
 5fb1b790f4ad        salrashid123/myapp               "python main.py"         38 seconds ago      Up 37 seconds       0.0.0.0:8080->8080/tcp            dreamy_bohr
 aee1828a882b        salrashid123/gcemetadataserver   "python gce_metadata_"   10 minutes ago      Up 10 minutes       8080/tcp, 0.0.0.0:18080->80/tcp   berserk_ardinghelli
 ```
-Attach the networks
+Finally, attach the networks
 ``` 
 docker network connect metadatanetwork 5fb1b790f4ad
 ```
-
 
 At this point, any metadata server request should go to the container and retrun an access token for the credential and project inside the container (you do not need to run socat or edit your hosts /etc/hosts file):
 eg:

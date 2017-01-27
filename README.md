@@ -148,8 +148,9 @@ This will allow the container to 'see' the local interface on the laptop.  The d
 
 #### Running metadata server emulator in containers via custom networks
 
-Its possible to run the metadata server emulator itself in a container.  To do this, you need to pass in credentials in the form of a cert file for 
-the project you would like to emulate and then perform a couple of steps to account for the IP and network:
+Its possible to run the metadata server emulator itself in a container.  To do this, you need can either create a docker volume to pass in credentials in the form of a cert file for 
+the project you would like to emulate.  Alternatively, you can just pass in static variables for the metadata server described at the end of this doc.  Finally, you need perform a couple 
+of steps to account for the IP and network:
 
 
 * Create the metadata server by extending the image:
@@ -176,6 +177,17 @@ VOLUME ["/root/.config"]
 docker build -t gcemetadataserver .
 ```
 (this image is also available on Dockerhub as [salrashid123/gcemetadataserver](https://hub.docker.com/r/salrashid123/gcemetadataserver/)
+
+##### Usign staic access_tokens
+You can bypass the gcloud initialization the metadata server uses by passing in static access_tokens and project information directly.
+The following command shows how you can use the emulator without passing in a credential certificate file.
+
+```
+docker run -p 18080:80 --net metadatanetwork --ip 169.254.169.254  -e GOOGLE_ACCESS_TOKEN=`gcloud auth print-access-token`  -e GOOGLE_NUMERIC_PROJECT_ID=1071284184436 -e GOOGLE_PROJECT_ID=mineral-minutia-820   salrashid123/gcemetadataserver python gce_metadata_server.py -h 0.0.0.0 -p 80
+```
+This mechanism is described below in this document.
+
+##### Using certificate files in volumes for access_tokens
 
 * Download a JSON certificate from the cloud console.  see: [Creating Service accounts](https://developers.google.com/identity/protocols/OAuth2ServiceAccount#creatinganaccount)
 
@@ -210,10 +222,15 @@ project = mineral-minutia-820
 docker network create --subnet=169.254.169.0/24 metadatanetwork
 ```
 
-* Run the metadata emulator with the mapped volume
+* If you used the static volume, run the metadata emulator with the mapped volume
 
 ```
 docker run -p 18080:80 --net metadatanetwork --ip 169.254.169.254  --volumes-from gcloud-config salrashid123/gcemetadataserver python gce_metadata_server.py -h 0.0.0.0 -p 80
+```
+
+* If you want to use static access_token, run the emulator and pass in the variables
+```
+docker run -p 18080:80 --net metadatanetwork --ip 169.254.169.254  -e GOOGLE_ACCESS_TOKEN=`gcloud auth print-access-token`  -e GOOGLE_NUMERIC_PROJECT_ID=YOUR_PROJECT -e GOOGLE_PROJECT_ID=YOUR_PROJECT_ID   salrashid123/gcemetadataserver python gce_metadata_server.py -h 0.0.0.0 -p 80
 ```
 
 * Run your application container and attach it to the same network

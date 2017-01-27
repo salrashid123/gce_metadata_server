@@ -9,7 +9,8 @@ import httplib2
 from apiclient.discovery import build
 from oauth2client.client import GoogleCredentials
 from oauth2client.client import ApplicationDefaultCredentialsError
-from google.cloud import pubsub
+from google.cloud import storage
+import google.auth
 
 
 import os
@@ -56,6 +57,17 @@ def authcheck():
     service = build(serviceName='oauth2', version= 'v2',http=http)
     resp = service.userinfo().get().execute()
     return resp['email']
+
+@app.route('/gcloudauthz')
+def gcloudauthcheck():
+
+  credentials, project = google.auth.default()    
+  client = storage.Client(credentials=credentials)
+  buckets = client.list_buckets()
+  r = 'bucket names'
+  for bkt in buckets:
+    r = r + bkt.name + '\n'
+  return r
 
 @app.route('/hostz')
 def get_host():

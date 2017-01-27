@@ -196,7 +196,11 @@ def getDefaultServiceAccount(acct,k):
     # First acquire gcloud's access_token
     try:
         token = GCloud(['--configuration', gcloud_configuraiton, 'auth','print-access-token'])
-        logging.info('access_token: ' + token)
+    except:
+        logging.error("gcloud not initialized, attempting to return static access_token from environment")
+        token = __getStaticMetadataValue(GOOGLE_ACCESS_TOKEN)
+    logging.info('access_token: ' + token)
+    try:
         # and then ask the token_info endpoint for details about it.
         r = urllib2.urlopen("https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=" + token).read()
         r = json.loads(r)
@@ -216,8 +220,9 @@ def getDefaultServiceAccount(acct,k):
         else:
           return cache[k]
     except:
-        logging.error("gcloud not initialized, attempting to return static access_token from environment")
-        return __getStaticMetadataValue(GOOGLE_ACCESS_TOKEN) 
+        logging.error("Unable to interrogate tokeninfo endpoint for token details; bailing..")
+        # TODO:  we could try to fake a response (eg, while running this in disconnected mode...but lets just bail for now
+        return "Unable to acquire access_token", 500
 
 # return a couple of simple, well known attributes like project-id and number
 @app.route('/computeMetadata/v1/project/project-id', methods = ['GET'])

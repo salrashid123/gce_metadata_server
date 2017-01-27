@@ -15,14 +15,14 @@ For more inforamtion on the request-response characteristics:
 * [GCE Metadata Server](https://cloud.google.com/compute/docs/storing-retrieving-metadata)
 
  The script performs the following:
-	* returns the access_token provided by your desktop gcloud CLI.
-	  * (you are free to substitute any other mechanism to source tokens).
-	* returns project information for your environment.
-	  * (again, based on gcloud credentials)
-	* return custom key-value attributes 
-	  * (either user-defined local or from the actual GCP project).
-    * returns a live GCE VM's instance metadata such as its disk and networks configuration
-      * (to use this mode, you need to extend the script as described below and use the gcloud wrapper) 
+ * returns the access_token provided by your desktop gcloud CLI.
+  * (you are free to substitute any other mechanism to source tokens).
+* returns project information for your environment.
+  * (again, based on gcloud credentials)
+* return custom key-value attributes 
+  * (either user-defined local or from the actual GCP project).
+* returns a live GCE VM's instance metadata such as its disk and networks configuration
+  * (to use this mode, you need to extend the script as described below and use the gcloud wrapper) 
 
 ## Usage
 
@@ -30,7 +30,12 @@ This script runs a basic webserver and responds back as the Google Compute Engin
 runs on a non-privleged port (default: 18080) and optionally uses a gcloud cli wrapper to recall the current contexts/configurations for the access_token 
 and optional live project user-defined metadata.  You do not have to use the gcloud CLI wrapper code and simply elect to return a static access_token or metadata.
 
+You can run the emulator either directloy on your laptop or within a docker container running locally as well.
 
+### Running the metadata server directly
+
+The following steps details how you can run the emulator on your laptop. 
+ 
 * **1. Reconfigure the /etc/hosts to resolve the metadata server**
 ```
 # /etc/hosts
@@ -112,33 +117,30 @@ curl -v -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/i
 
 ![Meta Proxy](images/metadata_proxy.png)
 
-### Misc
-
-### Access from containers
+#### Access the local emulator _from_ containers
 If you run an app inside a docker container that needs to access the metadata server, there are two options:
-* use bridge networking
-* use host networking
-* create a custom network and run the metadata server in a container ((preferred).
+1. use bridge networking
+2. use host networking
+3. create a custom network and run the metadata server in a container ((preferred).
 
-#### Add bridge networking to the running Container (--net=bridge)
+##### Add bridge networking to the running Container (--net=bridge)
 To use bridge networking, you need to first
-* create the interface alias for 169.254.169.254 --> lo:0
-* make sure ip_forward is enabled  _sudo sysctl -w net.ipv4.ip\_forward=1_
-* run socat to forward 80-->18080
-* start the container and pass in the host files pointing to the local emulator's ip address:
+1. create the interface alias for 169.254.169.254 --> lo:0
+2. make sure ip_forward is enabled  _sudo sysctl -w net.ipv4.ip\_forward=1_
+3. run socat to forward 80-->18080
+4. start the container and pass in the host files pointing to the local emulator's ip address:
 
 ```
 docker run -t --net=bridge --add-host metadata.google.internal:169.254.169.254 --add-host metadata:169.254.169.254 _your-image_
 ```
 You may need to drop existing firewall rules and then restart the docker daemon to prevent conflicts or overrides.
 
-#### Add host networking to the running Container (--net=host)
+##### Add host networking to the running Container (--net=host)
 
-host (**--net=host**) access/networking:
+This will allow the container to 'see' the local interface on the laptop.  The disadvantage is the host's interface is the containers as well
 ```
 docker run --net=host -t _your-image_ 
 ```
-This will allow the container to 'see' the local interface on the laptop.  The disadvantage is the host's interface is the containers as well
 
 > *NOTE:*   using --net=host is only recommended for testing; For more information see:
 
@@ -146,14 +148,18 @@ This will allow the container to 'see' the local interface on the laptop.  The d
 * [Embedded DNS server in user-defined networks](https://docs.docker.com/engine/userguide/networking/configure-dns/#/embedded-dns-server-in-user-defined-networks)
 
 
-#### Running metadata server emulator in containers via custom networks
+#### Run the emulator _within_ a container
 
 Its possible to run the metadata server emulator itself in a container.  To do this, you need can either create a docker volume to pass in credentials in the form of a cert file for 
 the project you would like to emulate.  Alternatively, you can just pass in static variables for the metadata server described at the end of this doc.  Finally, you need perform a couple 
 of steps to account for the IP and network:
 
+![Meta Proxy](images/metadata_proxy_2.png)
 
-* Create the metadata server by extending the image:
+##### Running metadata server emulator in containers via custom networks
+
+* 1. Create the metadata server by extending the image:
+
 [Dockerfile](dockerimages/metadataserver/Dockerfile).  Note, the ENTRYPOINT is commented out so you need to execute the metadata server at run.
 ```
 FROM debian:latest
@@ -171,14 +177,15 @@ RUN gcloud config set --installation component_manager/disable_update_check true
 VOLUME ["/root/.config"]
 #ENTRYPOINT ["python", "gce_metadata_server.py"]
 ```
-* Build the baseline image
+* 2.  Build the baseline image
 
 ```
 docker build -t gcemetadataserver .
 ```
 (this image is also available on Dockerhub as [salrashid123/gcemetadataserver](https://hub.docker.com/r/salrashid123/gcemetadataserver/)
 
-##### Usign staic access_tokens
+* 3a.  Usign staic access_tokens
+
 You can bypass the gcloud initialization the metadata server uses by passing in static access_tokens and project information directly.
 The following command shows how you can use the emulator without passing in a credential certificate file.
 
@@ -187,22 +194,24 @@ docker run -p 18080:80 --net metadatanetwork --ip 169.254.169.254  -e GOOGLE_ACC
 ```
 This mechanism is described below in this document.
 
-##### Using certificate files in volumes for access_tokens
+* 3b. Usign certificate files and volumes
 
-* Download a JSON certificate from the cloud console.  see: [Creating Service accounts](https://developers.google.com/identity/protocols/OAuth2ServiceAccount#creatinganaccount)
+**Alternatively**, you can use a certificate file in volumes to get an access_token
 
-* Copy the certificate to _$HOME/emulators_  and note the certificate service account name.
+ - Download a JSON certificate from the cloud console.  see: [Creating Service accounts](https://developers.google.com/identity/protocols/OAuth2ServiceAccount#creatinganaccount)
+
+ - Copy the certificate to _$HOME/emulators_  and note the certificate service account name.
 
   In the example, below, the service account name and cert file is:   _svc-2-429@mineral-minutia-820.iam.gserviceaccount.com_ and _GCPNETAppID-e65deccae47b.json_
 
-* Generate a Volume:
+ - Generate a Volume:
 
 ```
 docker run -t -v $HOME/emulators/:/data --name gcloud-config gcemetadataserver gcloud auth activate-service-account svc-2-429@mineral-minutia-820.iam.gserviceaccount.com --key-file /data/GCPNETAppID-e65deccae47b.json --project mineral-minutia-820
 Activated service account credentials for: [svc-2-429@mineral-minutia-820.iam.gserviceaccount.com]
 ```
 
-* Verify the volume is initialized:
+Verify the volume is initialized:
 ```
 docker run --rm -ti --volumes-from gcloud-config gcemetadataserver gcloud config list
 ```
@@ -216,44 +225,31 @@ account = svc-2-429@mineral-minutia-820.iam.gserviceaccount.com
 disable_usage_reporting = False
 project = mineral-minutia-820
 ```
+ 
+* 4. Create a network for the metadataserver
 
-* Create a network for the metadataserver
 ```
 docker network create --subnet=169.254.169.0/24 metadatanetwork
 ```
 
-* If you used the static volume, run the metadata emulator with the mapped volume
+- 5a. If you want to use static access_token, run the emulator and pass in the variables
+
+```
+docker run -p 18080:80 --net metadatanetwork --ip 169.254.169.254  -e GOOGLE_ACCESS_TOKEN=`gcloud auth print-access-token`  -e GOOGLE_NUMERIC_PROJECT_ID=YOUR_PROJECT -e GOOGLE_PROJECT_ID=YOUR_PROJECT_ID   salrashid123/gcemetadataserver python gce_metadata_server.py -h 0.0.0.0 -p 80
+```
+
+* 5b.  **Alternatively**, if you used the static volume, run the metadata emulator with the mapped volume
 
 ```
 docker run -p 18080:80 --net metadatanetwork --ip 169.254.169.254  --volumes-from gcloud-config salrashid123/gcemetadataserver python gce_metadata_server.py -h 0.0.0.0 -p 80
 ```
 
-* If you want to use static access_token, run the emulator and pass in the variables
-```
-docker run -p 18080:80 --net metadatanetwork --ip 169.254.169.254  -e GOOGLE_ACCESS_TOKEN=`gcloud auth print-access-token`  -e GOOGLE_NUMERIC_PROJECT_ID=YOUR_PROJECT -e GOOGLE_PROJECT_ID=YOUR_PROJECT_ID   salrashid123/gcemetadataserver python gce_metadata_server.py -h 0.0.0.0 -p 80
-```
+* 6. Run your application container and attach it to the same network
 
-* Run your application container and attach it to the same network
-There are two ways to do this:
 
+Run your app directly with the network
 ```
 docker run -t -p 8080:8080 --net metadatanetwork --add-host metadata.google.internal:169.254.169.254 --add-host metadata:169.254.169.254 salrashid123/myapp
-```
-or 
-run the container and attach to the metadatanetwork later:
-```
-docker run -t -p 8080:8080 --add-host metadata.google.internal:169.254.169.254 --add-host metadata:169.254.169.254 salrashid123/myapp
-```
-You should then see both containers initialized
-```
-docker ps
-CONTAINER ID        IMAGE                            COMMAND                  CREATED             STATUS              PORTS                             NAMES
-5fb1b790f4ad        salrashid123/myapp               "python main.py"         38 seconds ago      Up 37 seconds       0.0.0.0:8080->8080/tcp            dreamy_bohr
-aee1828a882b        salrashid123/gcemetadataserver   "python gce_metadata_"   10 minutes ago      Up 10 minutes       8080/tcp, 0.0.0.0:18080->80/tcp   berserk_ardinghelli
-```
-Finally, attach the networks
-``` 
-docker network connect metadatanetwork 5fb1b790f4ad
 ```
 
 At this point, any metadata server request should go to the container and retrun an access token for the credential and project inside the container (you do not need to run socat or edit your hosts /etc/hosts file):
@@ -265,72 +261,6 @@ curl http://localhost:8080/authz
 
 What you should see is the service account email address acquired from the metadata servers's token service.  The code for [salrashid123/myapp](dockerimages/myapp)
 
-![Meta Proxy](images/metadata_proxy_2.png)
-
-
-##### Testing Application Default Credentials from a container
-
-The following sample details testing application default credentials from inside a docker container while the emulator runs directly on the Host system (your laptop.  To use, you need
-to set the interface alias and edit /etc/hosts file as describe above.
-
-_Note:_  Python's application default credentials looks for the [metadata server by IP address](https://github.com/google/oauth2client/blob/master/oauth2client/client.py#L111)
- which is why the interface alias is needed.
-
-
-###### Dockerfile
-```
-FROM debian:latest
-
-RUN apt-get -y update
-RUN apt-get install -y curl python python-pip
-RUN pip install oauth2client google-api-python-client httplib2
-
-ADD . /app
-WORKDIR /app
-
-ENTRYPOINT ["python", "compute.py"]
-```
-
-###### compute.py
-```python
-#!/usr/bin/python
-
-import httplib2
-from apiclient.discovery import build
-from oauth2client.client import GoogleCredentials
-#from oauth2client.contrib.gce import AppAssertionCredentials
-
-scope='https://www.googleapis.com/auth/userinfo.email'
-
-#credentials = AppAssertionCredentials(scope=scope)
-credentials = GoogleCredentials.get_application_default()
-if credentials.create_scoped_required():
-  credentials = credentials.create_scoped(scope)
-
-http = httplib2.Http()
-credentials.authorize(http)
-
-service = build(serviceName='oauth2', version= 'v2',http=http)
-resp = service.userinfo().get().execute()
-print resp['email']
-```
-
-###### build
-```
-docker build -t compute .
-```
-
-###### run
-
-With default bridge networking 
-```bash
-docker run -t --net=bridge --add-host metadata.google.internal:169.254.169.254 --add-host metadata:169.254.169.254 compute
-```
-
-or with host networking
-```
-docker run -t --net=host compute
-```
 
 #### gcloud CLI wrapper
 This script utilizes [gcloud_wrapper.py](gcloud_wrapper.py) which is basically a python wrapper around the actual gcloud CLI (google cloud sdk).

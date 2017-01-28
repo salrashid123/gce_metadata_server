@@ -31,6 +31,7 @@ runs on a non-privleged port (default: 18080) and optionally uses a gcloud cli w
 and optional live project user-defined metadata.  You do not have to use the gcloud CLI wrapper code and simply elect to return a static access_token or metadata.
 
 You can run the emulator either:
+
 1.  directly on your laptop
 2.  within a docker container running locally.
 
@@ -123,12 +124,14 @@ curl -v -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/i
 
 #### Access the local emulator _from_ containers
 If you run an app inside a docker container that needs to access the metadata server, there are two options:
+
 1. use bridge networking
 2. use host networking
 3. create a custom network and run the metadata server in a container ((preferred).
 
 ##### Add bridge networking to the running Container (--net=bridge)
 To use bridge networking, you need to first
+
 1. create the interface alias for 169.254.169.254 --> lo:0
 2. make sure ip_forward is enabled  _sudo sysctl -w net.ipv4.ip\_forward=1_
 3. run socat to forward 80-->18080

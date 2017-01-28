@@ -30,7 +30,9 @@ This script runs a basic webserver and responds back as the Google Compute Engin
 runs on a non-privleged port (default: 18080) and optionally uses a gcloud cli wrapper to recall the current contexts/configurations for the access_token 
 and optional live project user-defined metadata.  You do not have to use the gcloud CLI wrapper code and simply elect to return a static access_token or metadata.
 
-You can run the emulator either directloy on your laptop or within a docker container running locally as well.
+You can run the emulator either:
+1.  directly on your laptop
+2.  within a docker container running locally.
 
 ### Running the metadata server directly
 
@@ -116,6 +118,8 @@ curl -v -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/i
 
 
 ![Meta Proxy](images/metadata_proxy.png)
+
+### Run the metadata server with containers
 
 #### Access the local emulator _from_ containers
 If you run an app inside a docker container that needs to access the metadata server, there are two options:

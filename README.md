@@ -7,6 +7,23 @@ This script acts as a GCE's internal metadata server for local testing/emulation
 
 It returns a live access_token that can be used directly by [Application Default Credentials](https://developers.google.com/identity/protocols/application-default-credentials) transparently.
 
+For example, you can use `ComputeCredentials` on your laptop:
+
+```python
+#!/usr/bin/python
+
+import google.auth.compute_engine
+import google.auth.transport.requests
+
+creds = google.auth.compute_engine.Credentials()
+request = google.auth.transport.requests.Request()
+creds.refresh(request)
+
+session = google.auth.transport.requests.AuthorizedSession(creds)
+r = session.get('https://www.googleapis.com/userinfo/v2/me').json()
+print str(r)
+```
+
  This is useful to test any script or code locally that my need to contact GCE's metadata server for custom, user-defined variables or access_tokens.
 
  Another usecase for this is to verify how Application Defaults will behave while running a local docker container: A local running docker container will not have access to GCE's metadata server but by bridging your container to the emulator, you are basically allowing GCP API access directly from within a container on your local workstation (vs. running the code comprising the container directly on the workstation and relying on gcloud credentials (not metadata)).
@@ -75,12 +92,14 @@ sudo apt-get install socat
 sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:18080
 ```
 
+- ![images/setup_1.png](images/setup_1.png)
 
 Alternatively, you can create an OUTPUT iptables rule to intercept and redirect the metadata traffic.
 
 ```
 iptables -t nat -A OUTPUT -p tcp -d 169.254.169.254 --dport 80 -j REDIRECT --to-port 18080
 ```
+
 
 * **5. Add supporting libraries**
 ```
@@ -102,6 +121,16 @@ or **preferably** via [gunicorn](http://docs.gunicorn.org/en/stable/install.html
 gunicorn -b :18080 gce_metadata_server:app
 ```
 
+Statup
+
+- ![images/setup_2.png](images/setup_2.png)
+
+Running
+
+- ![images/setup_5.png](images/setup_5.png)
+
+
+
 * **7. Test access to the metadata server**
 In a new window, run
 ```
@@ -110,13 +139,16 @@ curl -v -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMeta
 curl -v -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token
 
 ```
+
+- ![images/setup_3.png](images/setup_3.png)
+
+- ![images/setup_4.png](images/setup_4.png)
+
  **NOTE** 
  > the access_token returned by this script to your app is for you gcloud client and is *LIVE*.
  > If you use this token in a script to simulate delete of your GCS bucket, you'll actually delete it!! 
  > You are free to acquire an access_token by any other means and return that instead.
- > (eg. use a service account json file as shown here:
- >    github.com/salrashid123: [service.py](https://github.com/salrashid123/gcpsamples/blob/master/auth/service/pyapp/service.py)  
-
+ > (eg. use a service account with gcloud)
 
 ![Meta Proxy](images/metadata_proxy.png)
 

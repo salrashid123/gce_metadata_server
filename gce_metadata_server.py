@@ -195,7 +195,7 @@ def getDefaultServiceAccount(acct,k):
 
     # First acquire gcloud's access_token
     try:
-        token = GCloud(['--configuration', gcloud_configuraiton, 'auth','print-access-token'])
+        token = (GCloud(['--configuration', gcloud_configuraiton, 'auth','print-access-token'])).rstrip()
     except:
         logging.error("gcloud not initialized, attempting to return static access_token from environment")
         token = __getStaticMetadataValue(GOOGLE_ACCESS_TOKEN)

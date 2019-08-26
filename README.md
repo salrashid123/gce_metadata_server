@@ -32,11 +32,12 @@ For more inforamtion on the request-response characteristics:
 * [GCE Metadata Server](https://cloud.google.com/compute/docs/storing-retrieving-metadata)
 
  The script performs the following:
- * returns the access_token provided by the serviceAccount JSON file you speify.
- * returns project information for your environment.
+ * returns the `access_token` provided by the serviceAccount JSON file you speify.
+ * returns Google issued OpendID token (`id_token`) for the Service Account using the audience you specify
  * return custom key-value attributes 
  * Identity Token document
 
+The endpoints that are exposed are:
 
  ```golang
 r.Handle("/computeMetadata/v1/project/project-id")
@@ -47,6 +48,13 @@ r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/")
 r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}")
 r.Handle("/")
  ```
+
+You are free to expand on the endpoints surfaced here..pls feel free to file a PR!
+
+Overall, the proxy works to emulate the link-local address `169.254.169.254` that is used by the metadata server.  Once a route to that is established (via `iptables` or `socat`), you can run a simple http webserver that responds back with the request details.
+
+ - ![images/metadata_proxy.png](images/metadata_proxy.png)
+
  
 ## Usage
 

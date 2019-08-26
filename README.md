@@ -32,19 +32,26 @@ For more inforamtion on the request-response characteristics:
 * [GCE Metadata Server](https://cloud.google.com/compute/docs/storing-retrieving-metadata)
 
  The script performs the following:
- * returns the access_token provided by your desktop gcloud CLI.
-  * (you are free to substitute any other mechanism to source tokens).
-* returns project information for your environment.
-  * (again, based on gcloud credentials)
-* return custom key-value attributes 
-  * (either user-defined local or from the actual GCP project).
-* returns a live GCE VM's instance metadata such as its disk and networks configuration
-  * (to use this mode, you need to extend the script as described below and use the gcloud wrapper) 
+ * returns the access_token provided by the serviceAccount JSON file you speify.
+ * returns project information for your environment.
+ * return custom key-value attributes 
+ * Identity Token document
 
+
+ ```golang
+r.Handle("/computeMetadata/v1/project/project-id")
+r.Handle("/computeMetadata/v1/project/numeric-project-id")
+r.Handle("/computeMetadata/v1/project/attributes/{key}")
+r.Handle("/computeMetadata/v1/instance/service-accounts/")
+r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/")
+r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}")
+r.Handle("/")
+ ```
+ 
 ## Usage
 
 This script runs a basic webserver and responds back as the Google Compute Engine's metadata server.  A local webserver
-runs on a non-privleged port (default: 18080) and optionally uses a gcloud cli wrapper to recall the current contexts/configurations for the access_token 
+runs on a non-privleged port (default: 8080) and optionally uses a gcloud cli wrapper to recall the current contexts/configurations for the access_token 
 and optional live project user-defined metadata.  You do not have to use the gcloud CLI wrapper code and simply elect to return a static access_token or metadata.
 
 You can run the emulator either:
@@ -61,7 +68,6 @@ The following steps details how you can run the emulator on your laptop.
 # /etc/hosts
 127.0.0.1       metadata metadata.google.internal
 ```
-> Note: [dockerimages/metadatadns/](dockerimages/metadatadns/) contains a DNS server with the __google.internal__ as a zone.  You can use that as well (described at the end of this document).
 
 * **2. Create metadata IP alias**
 
@@ -89,7 +95,7 @@ You need to install a utility to map port :80 traffic since REST calls to the me
 ```
 sudo apt-get install socat
 
-sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:18080
+sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:8080
 ```
 
 - ![images/setup_1.png](images/setup_1.png)
@@ -97,60 +103,98 @@ sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:18080
 Alternatively, you can create an OUTPUT iptables rule to intercept and redirect the metadata traffic.
 
 ```
-iptables -t nat -A OUTPUT -p tcp -d 169.254.169.254 --dport 80 -j REDIRECT --to-port 18080
+iptables -t nat -A OUTPUT -p tcp -d 169.254.169.254 --dport 80 -j REDIRECT --to-port 8080
 ```
 
+* **4. Downlaod JSON ServiceAccount file**
 
-* **5. Add supporting libraries**
-```
-cd gce_metadata_server/
-virtualenv env
-source env/bin/activate
-pip install -r requirements.txt
+Create a GCP Service Account JSON file
+
+```bash
+export PROJECT_ID=`gcloud config get-value core/project`
+export PROJECT_NUMBER=`gcloud projects describe $BROKER_PROJECT_ID --format="value(projectNumber)"`
+gcloud iam service-accounts create metadata-sa
+gcloud iam service-accounts keys create metdata-sa.json --iam-account=metadata-sa-@$PROJECT_ID.iam.gserviceaccount.com
 ```
 
-The snippet above uses virtualenv though you can just use pip install directly
+You can assign IAM permissions now to the service accunt for whatever resources it may need to access
 
-* **6. Run the metadata server**
-directly:
+* **5. Run the metadata server**
+
+```bash
+go run main.go -logtostderr \ 
+  -alsologtostderr -v 5 \ 
+  -port :8080 \ 
+  --serviceAccountFile /path/to/metadta-sa.json \ 
+  --numericProjectId $PROJECT_NUMBER \ 
+  --tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
 ```
-python gce_metadata_server.py
+
+or via docker
+
 ```
-or **preferably** via [gunicorn](http://docs.gunicorn.org/en/stable/install.html)
+
+```bash
+mkdir certs/
+cp metadata-sa.json certs
+
+docker run  \
+  -v `pwd`/certs/:/certs/ \ 
+  -p 8080:8080 \ 
+  -t salrashid123/gcemetadataserver  \
+  -serviceAccountFile /certs/svc_account.json \ 
+  -logtostderr -alsologtostderr -v 5 \ 
+  -port :8080  \ 
+  -numericProjectId $PROJECT_NUMBER  \
+  -tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
 ```
-gunicorn -b :18080 gce_metadata_server:app
-```
+
 
 Statup
 
 - ![images/setup_2.png](images/setup_2.png)
 
-Running
+
+
+* **6. Test access to the metadata server**
+In a new window, run
+
+```bash
+curl -v -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
+
+> 
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+< Metadata-Flavor: Google
+< Server: Metadata Server for VM
+< X-Frame-Options: 0
+< X-Xss-Protection: 0
+< Date: Mon, 26 Aug 2019 21:50:09 GMT
+< Content-Length: 190
+< 
+{"access_token":"ya29.c.EltxByD8vfv2ACageADlorFHWd2ZUIgGdU-redacted","expires_in":3600,"token_type":"Bearer"}
+```
+
+```bash
+curl -v -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token
+
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+< Metadata-Flavor: Google
+< Server: Metadata Server for VM
+< X-Frame-Options: 0
+< X-Xss-Protection: 0
+< Date: Mon, 26 Aug 2019 21:51:28 GMT
+< Content-Length: 190
+< 
+{"access_token":"ya29.c.EltxByD8vfv2ACageADlorFHWd2ZUIgGdU-redacted","expires_in":3521,"token_type":"Bearer"}srashid@srashid1:~$ 
+```
 
 - ![images/setup_5.png](images/setup_5.png)
 
 
 
-* **7. Test access to the metadata server**
-In a new window, run
-```
-curl -v -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
-
-curl -v -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token
-
-```
-
-- ![images/setup_3.png](images/setup_3.png)
-
-- ![images/setup_4.png](images/setup_4.png)
-
- **NOTE** 
- > the access_token returned by this script to your app is for you gcloud client and is *LIVE*.
- > If you use this token in a script to simulate delete of your GCS bucket, you'll actually delete it!! 
- > You are free to acquire an access_token by any other means and return that instead.
- > (eg. use a service account with gcloud)
-
-![Meta Proxy](images/metadata_proxy.png)
+You can also use the python snippet using `Application Default Credentials` to test.
 
 ### Run the metadata server with containers
 
@@ -187,318 +231,126 @@ docker run --net=host -t _your-image_
 * [Embedded DNS server in user-defined networks](https://docs.docker.com/engine/userguide/networking/configure-dns/#/embedded-dns-server-in-user-defined-networks)
 
 
-#### Run the emulator _within_ a container
-
-Its possible to run the metadata server emulator itself in a container.  To do this, you need can either create a docker volume to pass in credentials in the form of a cert file for 
-the project you would like to emulate.  Alternatively, you can just pass in static variables for the metadata server described at the end of this doc.  Finally, you need perform a couple 
-of steps to account for the IP and network:
-
-![Meta Proxy](images/metadata_proxy_2.png)
-
-##### Running metadata server emulator in containers via custom networks
-
-* 1. Create the metadata server by extending the image:
-
-[Dockerfile](dockerimages/metadataserver/Dockerfile).  Note, the ENTRYPOINT is commented out so you need to execute the metadata server at run.
-```
-FROM debian:latest
-
-RUN apt-get -y update
-RUN apt-get install -y curl python python-pip git
-RUN curl https://sdk.cloud.google.com | bash
-
-RUN pip install Flask pyopenssl
-RUN git clone https://github.com/salrashid123/gce_metadata_server.git
-
-WORKDIR /gce_metadata_server
-ENV PATH /root/google-cloud-sdk/bin/:$PATH
-RUN gcloud config set --installation component_manager/disable_update_check true
-VOLUME ["/root/.config"]
-#ENTRYPOINT ["python", "gce_metadata_server.py"]
-```
-* 2.  Build the baseline image
-
-```
-docker build -t gcemetadataserver .
-```
-(this image is also available on Dockerhub as [salrashid123/gcemetadataserver](https://hub.docker.com/r/salrashid123/gcemetadataserver/)
-
-* 3a.  Usign staic access_tokens
-
-You can bypass the gcloud initialization the metadata server uses by passing in static access_tokens and project information directly.
-The following command shows how you can use the emulator without passing in a credential certificate file.
-
-```
-docker run -p 18080:80 --net metadatanetwork --ip 169.254.169.254  -e GOOGLE_ACCESS_TOKEN=`gcloud auth print-access-token`  -e GOOGLE_NUMERIC_PROJECT_ID=1071284184436 -e GOOGLE_PROJECT_ID=mineral-minutia-820   salrashid123/gcemetadataserver python gce_metadata_server.py -h 0.0.0.0 -p 80
-```
-This mechanism is described below in this document.
-
-* 3b. Usign certificate files and volumes
-
-**Alternatively**, you can use a certificate file in volumes to get an access_token
-
- - Download a JSON certificate from the cloud console.  see: [Creating Service accounts](https://developers.google.com/identity/protocols/OAuth2ServiceAccount#creatinganaccount)
-
- - Copy the certificate to _$HOME/emulators_  and note the certificate service account name.
-
-  In the example, below, the service account name and cert file is:   _svc-2-429@mineral-minutia-820.iam.gserviceaccount.com_ and _GCPNETAppID-e65deccae47b.json_
-
- - Generate a Volume:
-
-```
-docker run -t -v $HOME/emulators/:/data --name gcloud-config gcemetadataserver gcloud auth activate-service-account svc-2-429@mineral-minutia-820.iam.gserviceaccount.com --key-file /data/GCPNETAppID-e65deccae47b.json --project mineral-minutia-820
-Activated service account credentials for: [svc-2-429@mineral-minutia-820.iam.gserviceaccount.com]
-```
-
-Verify the volume is initialized:
-```
-docker run --rm -ti --volumes-from gcloud-config gcemetadataserver gcloud config list
-```
-
-You should see:
-```
-[component_manager]
-disable_update_check = true
-[core]
-account = svc-2-429@mineral-minutia-820.iam.gserviceaccount.com
-disable_usage_reporting = False
-project = mineral-minutia-820
-```
- 
-* 4. Create a network for the metadataserver
-
-```
-docker network create --subnet=169.254.169.0/24 metadatanetwork
-```
-
-- 5a. If you want to use static access_token, run the emulator and pass in the variables
-
-```
-docker run -p 18080:80 --net metadatanetwork --ip 169.254.169.254  -e GOOGLE_ACCESS_TOKEN=`gcloud auth print-access-token`  -e GOOGLE_NUMERIC_PROJECT_ID=YOUR_PROJECT -e GOOGLE_PROJECT_ID=YOUR_PROJECT_ID   salrashid123/gcemetadataserver python gce_metadata_server.py -h 0.0.0.0 -p 80
-```
-
-* 5b.  **Alternatively**, if you used the static volume, run the metadata emulator with the mapped volume
-
-```
-docker run -p 18080:80 --net metadatanetwork --ip 169.254.169.254  --volumes-from gcloud-config salrashid123/gcemetadataserver python gce_metadata_server.py -h 0.0.0.0 -p 80
-```
-
-* 6. Run your application container and attach it to the same network
-
-
-Run your app directly with the network
-```
-docker run -t -p 8080:8080 --net metadatanetwork --add-host metadata.google.internal:169.254.169.254 --add-host metadata:169.254.169.254 salrashid123/myapp
-```
-
-At this point, any metadata server request should go to the container and retrun an access token for the credential and project inside the container (you do not need to run socat or edit your hosts /etc/hosts file):
-eg:
-
-```
-curl http://localhost:8080/authz
-```
-
-What you should see is the service account email address acquired from the metadata servers's token service.  The code for [salrashid123/myapp](dockerimages/myapp)
-
-
-#### gcloud CLI wrapper
-This script utilizes [gcloud_wrapper.py](gcloud_wrapper.py) which is basically a python wrapper around the actual gcloud CLI (google cloud sdk).
-What this script allows you to do is acquire gcloud's cli capabilities directly in python code automatically.
-
-
-#### Acquire remote access_token from GCE Instance
-If you require the live access_token issued by the actual metadata server on the GCE instance, you can invoke 
-```python
-def __getAccessTokenFromInstance(instance):
-    logging.info('Getting access_token from instance ' + instance)
-    
-    # if gcloud is installed remotely    
-    #token = GCloud(['--configuration', gcloud_configuraiton, 'compute','ssh', instance, 'gcloud auth print-access-token', '--format', 'json()'])
-    #logging.info('access_token: ' + str(token))
-
-    # if curl is installed remotely
-    #result = GCloud(['--configuration', gcloud_configuraiton, 'compute','ssh',instance, \
-    #  'curl -s "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" -H "Metadata-Flavor: Google"'])
-    #p = json.loads(result)
-    #token = p['access_token']
-```
-
-What that section attempts to do is invoke gcloud ssh and execute a remote command.  In this case, either try to capture the remote system's gcloud access token or run 
-curl against the real metadata server.
-
-> **NOTE** This function does not work as the remote ssh commands is not returned in gcloud but echo'd to the output.  Capturing the redirect is possible but I have not
-> spent the time to account for the redirection GCloud() itself does already.
-
-#### Port mapping :80 --> :18080
+### Port mapping :80 --> :8080
 Since GCE's metadata server listens on http for :80, this script relies on utilities like 'socat' to redirect port traffic.  _socat_ has pretty
 basic connection handling so you'd be better with iptables, gunicorn.
 You are free to either run the script on port :80 directly (as root), or use a utilitity like iptables, HAProxy, nginx, etc to do this mapping.
 
-The following example of an iptables route 80 -> 18080 on the local interface
+The following example of an iptables route 80 -> 8080 on the local interface
 ```
-sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 18080
-```
-
-#### Allowing all firewall policies
-
-The following set of command resets all firewall policies to allow all.
-
-```bash
-#!/bin/sh
-echo "Stopping firewall and allowing everyone..."
-iptables -F
-iptables -X
-iptables -t nat -F
-iptables -t nat -X
-iptables -t mangle -F
-iptables -t mangle -X
-iptables -P INPUT ACCEPT
-iptables -P FORWARD ACCEPT
-iptables -P OUTPUT ACCEPT
+sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 8080
 ```
 
 #### Extending the sample
 You can extend this sample for any arbitrary metadta you are interested in emulating (eg, disks, hostname, etc).
-Simply make an @app.route()  for the path and either use the gcloud wrapper or hardcode the response you're interested in
+Simply add the routes to the webserver and handle the responses accordingly.  It is recomended to view the request-response format directly on the metadata server to compare against.
 
-#### Alternatives to Metadata tokens for containers
 
-You can certainly provide environment variables on container startup and then map volumes to allow for applicaiton defaults.  (for example:)
+### TODO
 
-```
-docker run -p 8080:8080 -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/<YOUR_CERT_JSON_FILE>.json  -v  /tmp/:/tmp -t your_image
-```
-#### Using static environment variables
-If you do not have access to certificate files or an already initialized gcloud cli, the metadata server supports the following environment variables as substitutions.
+1.  Director Browsing
 
-That is, if you have not initialized gcloud, the metadata server will look for these environment vairables instead as fallback.
-```
-GOOGLE_PROJECT_ID = 'GOOGLE_PROJECT_ID'
-GOOGLE_NUMERIC_PROJECT_ID = 'GOOGLE_NUMERIC_PROJECT_ID'
-GOOGLE_ACCESS_TOKEN = 'GOOGLE_ACCESS_TOKEN'
-```
+Instead of explictly setting routes, use the local filesystem to return the strucure for non-dynamic content or attributes.  In this way, the metadata server just returns the directory and files that mimics the metadata server structure.   
 
-for example,
-```
-docker run -p 18080:18080 -e GOOGLE_ACCESS_TOKEN=some_static_token -e GOOGLE_NUMERIC_PROJECT_ID=12345 -e GOOGLE_PROJECT_ID=my_project salrashid123/gcemetadataserver python gce_metadata_server.py -h 0.0.0.0 -p 18080
-```
+eg: create a directory structure similar to:
 
 ```
-curl -v -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
-
-some_static_token
+./static/
+    0.1/
+    computeMetadata/
+      v1beta1/    
+      v1/
+        instance/
+        oslogin/
+        project/         
 ```
 
-while the emulator logs will show 
+
+```golang
+r.Handle("/", checkMetadataHeaders(http.FileServer(http.Dir("./static"))))
+```
+Which currently returns HTML content as well as`Content-Type: text/html; charset=utf-8`, the metadata server new-line text  as `Content-Type: application/text`
+
+TODO: figure out how to return text payload similar to the metadata server
 
 ```
-2017-01-25 17:16:37,775 - ERROR - gcloud not initialized, attempting to return static access_token from environment
-2017-01-25 17:16:37,776 - INFO - Returning static value for key GOOGLE_ACCESS_TOKEN
-2017-01-25 17:16:37,777 - INFO - 172.17.0.1 - - [25/Jan/2017 17:16:37] "GET /computeMetadata/v1/instance/service-accounts/default/token HTTP/1.1" 200 -
+$ curl -H "Metadata-Flavor: Google" -v http://metadata.google.internal/
+*   Trying 169.254.169.254...
+* TCP_NODELAY set
+* Connected to metadata.google.internal (169.254.169.254) port 80 (#0)
+> GET / HTTP/1.1
+> Host: metadata.google.internal
+> User-Agent: curl/7.52.1
+> Accept: */*
+> Metadata-Flavor: Google
+> 
+< HTTP/1.1 200 OK
+< Metadata-Flavor: Google
+< Content-Type: application/text
+< Date: Mon, 26 Aug 2019 17:08:17 GMT
+< Server: Metadata Server for VM
+< Content-Length: 22
+< X-XSS-Protection: 0
+< X-Frame-Options: SAMEORIGIN
+< 
+0.1/
+computeMetadata/
 ```
 
-One such usecase is running the emulator in a container without mapping a configured volume or certificate.
+```
+$ curl -H "Metadata-Flavor: Google" -s http://metadata.google.internal/computeMetadata/v1/instance
+/computeMetadata/v1/instance/
 
-```
-docker run -t -p 80:18080 -e GOOGLE_ACCESS_TOKEN=`gcloud auth print-access-token` salrashid123/gcemetadataserver python gce_metadata_server.py -h 0.0.0.0 -p 18080
-```
-> Note: these tokens will be valid for upto one hour
-
-#### Using the metadataDNS server container
-Instead of editing the /etc/hosts, you can alter the containers' or laptop's /etc/resolv.conf to point to you own DNS server that understands
-metadata.google.internal.
-
-```
-sudo docker run -t -p 53:53  -p 53:53/udp  salrashid123/metadatadns
-```
-The default image has the Google DNS as a forwarder:
-[dockerimages/metadatadns/named.conf.options](dockerimages/metadatadns/named.conf.options):
-```
-forwarders {
-    8.8.8.8;
-};
-```
-If you need your forward to your own DNS servers, can rebuild the docker image and adjust the named.conf.options file accordingly.
-
-You can verify the DNS server is running by accessing it at:
-```
-nslookup -port=53 metadata.google.internal  ip-address-of-your-laptop
-```
-
-#### Accessing the emulator from minikube
-The following describes one way to run some code inside a [Minikube](https://github.com/kubernetes/minikube) cluster but still have access to the metadata server on your laptop.  When you run minikube, the Kubernetes pods
-exist within a VirtualBox environment so accessing the metadata server by IP and hostname (metadata.google.internal) requires a couple of steps.
-
-The approach descibed below is to basically reroute the IP for the metadata server to the emulator via iptables on the host.
-To account for the DNS server, we run a local Bind9 server in a container.  The DNS server has a zones file for .google.internal and then we edit the /etc/resolv.conf file on the minikube node.
-Since each pod picks up the DNS servers from the pod, each container knows about your DNS server.
-
-The steps to follow:
-
-*  Find the ip address for your laptop (wlan0 or eth0):
-```
-    /sbin/ifconfig -a
+$ curl -H "Metadata-Flavor: Google" -s http://metadata.google.internal/computeMetadata/v1/instance/
+attributes/
+cpu-platform
+description
+disks/
+guest-attributes/
+hostname
+id
+image
+licenses/
+machine-type
+maintenance-event
+name
+network-interfaces/
+preempted
+remaining-cpu-time
+scheduling/
+service-accounts/
+tags
+virtual-clock/
+zone
 ```
 
-* Start the MetadataServer DNS Server 
 
-Described in the seciton above.  Recommend starting the container via docker
-```
-sudo docker run -t -p 53:53  -p 53:53/udp  salrashid123/metadatadns
-```
+2. Redirects
 
-* Start minikube
-```
-     minikube start
-```
+Metadata server currently redirects path from root to one with a `/`.
 
-* SSH in
-```
-     minikube ssh
-```
+TODO: account for the redirect.
 
-* DELETE /etc/resolv.conf 
-
-* vi /etc/resolv.conf
-   and add the following
+```bash
+$ curl -H "Metadata-Flavor: Google" -v http://metadata.google.internal/computeMetadata/v1/instance
+*   Trying 169.254.169.254...
+* TCP_NODELAY set
+* Connected to metadata.google.internal (169.254.169.254) port 80 (#0)
+> GET /computeMetadata/v1/instance HTTP/1.1
+> Host: metadata.google.internal
+> User-Agent: curl/7.52.1
+> Accept: */*
+> Metadata-Flavor: Google
+> 
+< HTTP/1.1 301 Moved Permanently
+< Metadata-Flavor: Google
+< Location: http://metadata.google.internal/computeMetadata/v1/instance/
+< Date: Mon, 26 Aug 2019 17:40:25 GMT
+< Content-Type: text/html
+< Server: Metadata Server for VM
+< Content-Length: 30
+< X-XSS-Protection: 0
+< X-Frame-Options: SAMEORIGIN
+< 
+/computeMetadata/v1/instance/
 ```
-nameserver ip_address_on_your_laptop_from_step_1
-nameserver 8.8.8.8
-```
-> Note, on way to override the the /etc/resolv.conf file on the node is to use the kubelet --resolv-conf= directive:
-```
-     minikube start --extra-config kubelet.ResolverConfig=$PATH_TO_CONFIG_IN_VM
-```
-
-* Exit the VM 
-
-* Start the cluster again to pickup the changes
-```
-     minikube start
-```
-At this point the minikube cluster should be able to contact the metadata emulator and even resolve metadata.google.internal.
-
-* Now create create the rc and service 
-
-```
-     kubectl create -f my-rs.yaml -f my-srv.yaml
-```
-
-I've written some sample containers which uses Application Default credentials here:
-     [salrashid123/myapp](https://hub.docker.com/r/salrashid123/myapp/).  
-     
-and the source for my-rs.yaml and my-srv.yaml is listed below under [dockerimages/myapp](dockerimages/myapp).
-   
-* Get the service url
-```
-$ minikube service myapp-srv --url
-http://host:port
-```
-
-* Verify application default credentials works
-```
-$ curl http://host:port/authz
-<< you should see the email address associated with your gcloud >>
-```
-
-What the previous step shows is your replicaiton controller contacting the metadata server to return an access_token to the container.

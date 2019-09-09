@@ -378,9 +378,9 @@ func main() {
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	// First check if env-var based overrides are set.  We need all of them to be set for the
-	// client libraries.  We are _not_ going to set a credential object here but instead
-	// "dynamically" set it when its requested in case the user updates the access token
-	// during runtime
+	// client libraries.  We are _not_ going to set a credential object here but read it on request.
+	// TODO: make the credential and runtime source data an adapter: eg, token, projectiD, etc
+	//       gets read in from a variety of sources (args+svcAccountFile, env vars, kubernetes secrets)
 	// serviceAccountFile based credentials isn't necessary if env-var based settings are used.
 	// technically, you could mix and match env var and svc-account values but that makes it
 	// pretty confusing...so I'll just go w/ one or the other

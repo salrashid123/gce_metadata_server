@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -34,6 +35,7 @@ import (
 	"golang.org/x/net/http2"
 
 	sal "github.com/salrashid123/oauth2/google"
+	"golang.org/x/oauth2"
 
 	"github.com/gorilla/mux"
 	"golang.org/x/oauth2/google"
@@ -52,6 +54,11 @@ var (
 
 const (
 	emailScope = "https://www.googleapis.com/auth/userinfo.email"
+
+	googleProjectID        = "GOOGLE_PROJECT_ID"
+	googleNumericProjectID = "GOOGLE_NUMERIC_PROJECT_ID"
+	googleAccessToken      = "GOOGLE_ACCESS_TOKEN"
+	googleAccountEmail     = "GOOGLE_ACCOUNT_EMAIL"
 )
 
 type serverConfig struct {
@@ -79,6 +86,23 @@ func getAccessToken() (*metadataToken, error) {
 	tokenMutex.Lock()
 	defer tokenMutex.Unlock()
 
+	if isEnvironmentOverrideSet() {
+		// access_token is opaque but you _can_ get the exp
+		// time by calling  curl https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=
+		// ...but i don't see it necessary to populate the expiration field, besides
+		// https://godoc.org/golang.org/x/oauth2#Token
+		ts := oauth2.StaticTokenSource(
+			&oauth2.Token{
+				AccessToken: os.Getenv(googleAccessToken),
+				TokenType:   "Bearer",
+			},
+		)
+		creds = &google.Credentials{
+			ProjectID:   os.Getenv(googleProjectID),
+			TokenSource: ts,
+		}
+	}
+
 	tok, err := creds.TokenSource.Token()
 	if err != nil {
 		return &metadataToken{}, err
@@ -98,6 +122,10 @@ func getAccessToken() (*metadataToken, error) {
 func getIDToken(targetAudience string) (string, error) {
 	tokenMutex.Lock()
 	defer tokenMutex.Unlock()
+	if isEnvironmentOverrideSet() {
+		glog.Errorln("env-var id_token is not implemented yet")
+		return "", errors.New("env-var id_token is not implemented yet")
+	}
 	idTokenSource, err := sal.IdTokenSource(
 		sal.IdTokenConfig{
 			Credentials: creds,
@@ -116,17 +144,25 @@ func getIDToken(targetAudience string) (string, error) {
 }
 
 func getProjectID() string {
-	if cfg.flprojectID != "" {
+	if isEnvironmentOverrideSet() {
+		return os.Getenv(googleProjectID)
+	} else if cfg.flprojectID != "" {
 		return cfg.flprojectID
 	}
 	return creds.ProjectID
 }
 
 func getNumericProjectID() string {
+	if isEnvironmentOverrideSet() {
+		return os.Getenv(googleNumericProjectID)
+	}
 	return cfg.flnumericProjectID
 }
 
 func getServiceAccountEmail() string {
+	if isEnvironmentOverrideSet() {
+		return os.Getenv(googleAccountEmail)
+	}
 	if cfg.flserviceAccountEmail != "" {
 		return cfg.flserviceAccountEmail
 	}
@@ -297,6 +333,13 @@ func getServiceAccountHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func isEnvironmentOverrideSet() bool {
+	if os.Getenv(googleAccessToken) != "" && os.Getenv(googleAccountEmail) != "" && os.Getenv(googleNumericProjectID) != "" && os.Getenv(googleProjectID) != "" {
+		return true
+	}
+	return false
+}
+
 func main() {
 	ctx := context.Background()
 	flag.StringVar(&cfg.flPort, "port", ":8080", "port...")
@@ -313,20 +356,16 @@ func main() {
 		os.Exit(-1)
 	}
 
-	if cfg.flserviAccountFile == "" {
-		argError("-serviceAccountFile must be specified")
-	}
-
 	glog.Infof("Starting GCP metadataserver on port, %v", cfg.flPort)
 
 	r := mux.NewRouter()
 	r.Handle("/computeMetadata/v1/project/project-id", checkMetadataHeaders(http.HandlerFunc(projectIDHandler))).Methods("GET")
-	r.Handle("/computeMetadata/v1/project/numeric-project-id", checkMetadataHeaders(http.HandlerFunc(numericProjectIDHandler)))
-	r.Handle("/computeMetadata/v1/project/attributes/{key}", checkMetadataHeaders(http.HandlerFunc(attributesHandler)))
-	r.Handle("/computeMetadata/v1/instance/service-accounts/", checkMetadataHeaders(http.HandlerFunc(listServiceAccountHandler)))
-	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/", checkMetadataHeaders(http.HandlerFunc(getServiceAccountIndexHandler)))
-	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}", checkMetadataHeaders(http.HandlerFunc(getServiceAccountHandler)))
-	r.Handle("/", checkMetadataHeaders(http.HandlerFunc(rootHandler)))
+	r.Handle("/computeMetadata/v1/project/numeric-project-id", checkMetadataHeaders(http.HandlerFunc(numericProjectIDHandler))).Methods("GET")
+	r.Handle("/computeMetadata/v1/project/attributes/{key}", checkMetadataHeaders(http.HandlerFunc(attributesHandler))).Methods("GET")
+	r.Handle("/computeMetadata/v1/instance/service-accounts/", checkMetadataHeaders(http.HandlerFunc(listServiceAccountHandler))).Methods("GET")
+	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/", checkMetadataHeaders(http.HandlerFunc(getServiceAccountIndexHandler))).Methods("GET")
+	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}", checkMetadataHeaders(http.HandlerFunc(getServiceAccountHandler))).Methods("GET")
+	r.Handle("/", checkMetadataHeaders(http.HandlerFunc(rootHandler))).Methods("GET")
 	//r.Handle("/", checkMetadataHeaders(http.FileServer(http.Dir("./static"))))
 	http.Handle("/", r)
 
@@ -338,18 +377,36 @@ func main() {
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
-	var err error
-	//creds, err = google.FindDefaultCredentials(ctx, tokenScopes)
-	data, err := ioutil.ReadFile(cfg.flserviAccountFile)
-	if err != nil {
-		glog.Errorf("Unalbe to read serviceAccountFile %v", err)
-		os.Exit(1)
-	}
-	s := strings.Split(cfg.fltokenScopes, ",")
-	creds, err = google.CredentialsFromJSON(ctx, data, s...)
-	if err != nil {
-		glog.Errorf("Unalbe to parse serviceAccountFile %v ", err)
-		os.Exit(1)
+	// First check if env-var based overrides are set.  We need all of them to be set for the
+	// client libraries.  We are _not_ going to set a credential object here but instead
+	// "dynamically" set it when its requested in case the user updates the access token
+	// during runtime
+	// serviceAccountFile based credentials isn't necessary if env-var based settings are used.
+	// technically, you could mix and match env var and svc-account values but that makes it
+	// pretty confusing...so I'll just go w/ one or the other
+
+	if isEnvironmentOverrideSet() {
+		glog.Infoln("Using environment variables for credentials")
+	} else {
+
+		if cfg.flserviAccountFile == "" {
+			argError("Either environment variable overides or -serviceAccountFile must be specified")
+		}
+
+		glog.Infoln("Using serviceAccountFile for credentials")
+		var err error
+		//creds, err = google.FindDefaultCredentials(ctx, tokenScopes)
+		data, err := ioutil.ReadFile(cfg.flserviAccountFile)
+		if err != nil {
+			glog.Errorf("Unalbe to read serviceAccountFile %v", err)
+			os.Exit(1)
+		}
+		s := strings.Split(cfg.fltokenScopes, ",")
+		creds, err = google.CredentialsFromJSON(ctx, data, s...)
+		if err != nil {
+			glog.Errorf("Unalbe to parse serviceAccountFile %v ", err)
+			os.Exit(1)
+		}
 	}
 
 	go func() {

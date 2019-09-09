@@ -26,7 +26,7 @@ print str(r)
 
  This is useful to test any script or code locally that my need to contact GCE's metadata server for custom, user-defined variables or access_tokens.
 
- Another usecase for this is to verify how Application Defaults will behave while running a local docker container: A local running docker container will not have access to GCE's metadata server but by bridging your container to the emulator, you are basically allowing GCP API access directly from within a container on your local workstation (vs. running the code comprising the container directly on the workstation and relying on gcloud credentials (not metadata)).
+ Another usecase for this is to verify how Application Defaults will behave while running a local docker container. A local running docker container will not have access to GCE's metadata server but by bridging your container to the emulator, you are basically allowing GCP API access directly from within a container on your local workstation (vs. running the code comprising the container directly on the workstation and relying on gcloud credentials (not metadata)).
 
 For more inforamtion on the request-response characteristics: 
 * [GCE Metadata Server](https://cloud.google.com/compute/docs/storing-retrieving-metadata)
@@ -59,8 +59,8 @@ Overall, the proxy works to emulate the link-local address `169.254.169.254` tha
 ## Usage
 
 This script runs a basic webserver and responds back as the Google Compute Engine's metadata server.  A local webserver
-runs on a non-privleged port (default: 8080) and optionally uses a gcloud cli wrapper to recall the current contexts/configurations for the access_token 
-and optional live project user-defined metadata.  You do not have to use the gcloud CLI wrapper code and simply elect to return a static access_token or metadata.
+runs on a non-privleged port (default: 8080) and uses a `serviceAccountFile` file or environment variables return an `access_token` 
+and optional live project user-defined metadata.
 
 You can run the emulator either:
 
@@ -79,8 +79,7 @@ The following steps details how you can run the emulator on your laptop.
 
 * **2. Create metadata IP alias**
 
-GCE's metadata server's IP address on GCE is 169.254.169.254.  Certain application default credential libraries for
-the metadata server by IP address.   The following steps creates an IP address alias for the local system.
+GCE's metadata server's IP address on GCE is a special link-local address: `169.254.169.254`.  Certain application default credential libraries for google cloud references the metadata server by IP address so we're adding this in.   The following steps creates an IP address alias for the local system.
 
 ```bash
 sudo ifconfig lo:0 169.254.169.254 up
@@ -99,7 +98,7 @@ netsh interface ipv4 add address "Loopback Pseudo-Interface 1" 169.254.169.254 2
 
 * **3. Run socat**
 
-You need to install a utility to map port :80 traffic since REST calls to the metadata server are HTTP.  The following usees 'socat':
+You need to install a utility to map port :80 traffic since REST calls to the metadata server are HTTP.  The following usees `socat`:
 ```
 sudo apt-get install socat
 
@@ -108,7 +107,7 @@ sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:8080
 
 - ![images/setup_1.png](images/setup_1.png)
 
-Alternatively, you can create an OUTPUT iptables rule to intercept and redirect the metadata traffic.
+Alternatively, you can create an OUTPUT `iptables` rule to intercept and redirect the metadata traffic.
 
 ```
 iptables -t nat -A OUTPUT -p tcp -d 169.254.169.254 --dport 80 -j REDIRECT --to-port 8080
@@ -119,10 +118,10 @@ iptables -t nat -A OUTPUT -p tcp -d 169.254.169.254 --dport 80 -j REDIRECT --to-
 Create a GCP Service Account JSON file
 
 ```bash
-export PROJECT_ID=`gcloud config get-value core/project`
-export PROJECT_NUMBER=`gcloud projects describe $BROKER_PROJECT_ID --format="value(projectNumber)"`
+export GOOGLE_PROJECT_ID=`gcloud config get-value core/project`
+export GOOGLE_NUMERIC_PROJECT_ID=`gcloud projects describe $GOOGLE_PROJECT_ID --format="value(projectNumber)"`
 gcloud iam service-accounts create metadata-sa
-gcloud iam service-accounts keys create metdata-sa.json --iam-account=metadata-sa-@$PROJECT_ID.iam.gserviceaccount.com
+gcloud iam service-accounts keys create metdata-sa.json --iam-account=metadata-sa-@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com
 ```
 
 You can assign IAM permissions now to the service accunt for whatever resources it may need to access
@@ -201,7 +200,6 @@ curl -v -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/i
 - ![images/setup_5.png](images/setup_5.png)
 
 
-
 You can also use the python snippet using `Application Default Credentials` to test.
 
 ### Run the metadata server with containers
@@ -238,6 +236,65 @@ docker run --net=host -t _your-image_
 * [Docker Networking](https://docs.docker.com/v1.8/articles/networking/#container-networking)
 * [Embedded DNS server in user-defined networks](https://docs.docker.com/engine/userguide/networking/configure-dns/#/embedded-dns-server-in-user-defined-networks)
 
+#### Running as Kubernetes Serivce
+
+You can run the emulator as a kubernetes service but you cannot bind the link local address `169.254.169.254` with a k8s service. see [Kubernetes Services](https://kubernetes.io/docs/concepts/services-networking/service/#services-without-selectors):
+
+_"The endpoint IPs must not be: loopback (127.0.0.0/8 for IPv4, ::1/128 for IPv6), or link-local (169.254.0.0/16 and 224.0.0.0/24 for IPv4, fe80::/64 for IPv6)."_
+
+While you can connect via k8s service name, certain google cloud libraries look for the metadata server by IP address or allow overrides (eg, [google-auth-python](https://github.com/googleapis/google-auth-library-python/blob/master/google/auth/compute_engine/_metadata.py#L40)) 
+
+https://kubernetes.io/docs/concepts/services-networking/service/#services-without-selectors
+
+### Using static environment variables
+
+If you do not have access to certificate file or would like to specify **static** token values via env-var, the metadata server supports the following environment variables as substitutions.  Once you set these environment variables, the service will not look for anything using the service Account JSON file (even if specified)
+
+```
+GOOGLE_PROJECT_ID = 'GOOGLE_PROJECT_ID'
+GOOGLE_NUMERIC_PROJECT_ID = 'GOOGLE_NUMERIC_PROJECT_ID'
+GOOGLE_ACCESS_TOKEN = 'GOOGLE_ACCESS_TOKEN'
+GOOGLE_ACCOUNT_EMAIL = `GOOGLE_ACCOUNT_EMAIL`
+```
+
+for example,
+```
+docker run  \
+  -p 8080:8080 \ 
+  -t salrashid123/gcemetadataserver  \
+  -logtostderr -alsologtostderr -v 5 \ 
+  -e GOOGLE_ACCESS_TOKEN=some_static_token \
+  -e GOOGLE_NUMERIC_PROJECT_ID=12345 \ 
+  -e GOOGLE_PROJECT_ID=my_project \
+  -e GOOGLE_ACCOUNT_EMAIL=metadata-sa-@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com gcemetadataserver \
+  -port :8080  \ 
+  -tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
+
+```
+
+```
+curl -v -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
+
+some_static_token
+```
+
+### Allowing all firewall policies
+
+The following set of command resets all firewall policies to allow all.  This is sometimes needed to allow clean socat or iptables.  Only do this if you know iptable rules are blocking traffic..
+
+```bash
+#!/bin/sh
+echo "Stopping firewall and allowing everyone..."
+iptables -F
+iptables -X
+iptables -t nat -F
+iptables -t nat -X
+iptables -t mangle -F
+iptables -t mangle -X
+iptables -P INPUT ACCEPT
+iptables -P FORWARD ACCEPT
+iptables -P OUTPUT ACCEPT
+```
 
 ### Port mapping :80 --> :8080
 Since GCE's metadata server listens on http for :80, this script relies on utilities like 'socat' to redirect port traffic.  _socat_ has pretty
@@ -256,7 +313,7 @@ Simply add the routes to the webserver and handle the responses accordingly.  It
 
 ### TODO
 
-1.  Director Browsing
+1.  Directory Browsing
 
 Instead of explictly setting routes, use the local filesystem to return the strucure for non-dynamic content or attributes.  In this way, the metadata server just returns the directory and files that mimics the metadata server structure.   
 

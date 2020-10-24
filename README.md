@@ -7,6 +7,8 @@ This script acts as a GCE's internal metadata server for local testing/emulation
 
 It returns a live access_token that can be used directly by [Application Default Credentials](https://developers.google.com/identity/protocols/application-default-credentials) transparently.
 
+>> This is not an officially supported Google product
+
 For example, you can use `ComputeCredentials` on your laptop:
 
 ```python
@@ -21,14 +23,14 @@ creds.refresh(request)
 
 session = google.auth.transport.requests.AuthorizedSession(creds)
 r = session.get('https://www.googleapis.com/userinfo/v2/me').json()
-print str(r)
+print(str(r))
 ```
 
  This is useful to test any script or code locally that my need to contact GCE's metadata server for custom, user-defined variables or access_tokens.
 
  Another usecase for this is to verify how Application Defaults will behave while running a local docker container. A local running docker container will not have access to GCE's metadata server but by bridging your container to the emulator, you are basically allowing GCP API access directly from within a container on your local workstation (vs. running the code comprising the container directly on the workstation and relying on gcloud credentials (not metadata)).
 
-For more inforamtion on the request-response characteristics: 
+For more information on the request-response characteristics: 
 * [GCE Metadata Server](https://cloud.google.com/compute/docs/storing-retrieving-metadata)
 
  The script performs the following:
@@ -59,7 +61,7 @@ Overall, the proxy works to emulate the link-local address `169.254.169.254` tha
 ## Usage
 
 This script runs a basic webserver and responds back as the Google Compute Engine's metadata server.  A local webserver
-runs on a non-privleged port (default: 8080) and uses a `serviceAccountFile` file or environment variables return an `access_token` 
+runs on a non-privileged port (default: 8080) and uses a `serviceAccountFile` file or environment variables return an `access_token` 
 and optional live project user-defined metadata.
 
 You can run the emulator either:
@@ -105,6 +107,8 @@ sudo apt-get install socat
 sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:8080
 ```
 
+If you don't mind running the program on port `:80` directly, you can skip the socat and iptables and simply start the emulator on the default http port.
+
 - ![images/setup_1.png](images/setup_1.png)
 
 Alternatively, you can create an OUTPUT `iptables` rule to intercept and redirect the metadata traffic.
@@ -113,7 +117,7 @@ Alternatively, you can create an OUTPUT `iptables` rule to intercept and redirec
 iptables -t nat -A OUTPUT -p tcp -d 169.254.169.254 --dport 80 -j REDIRECT --to-port 8080
 ```
 
-* **4. Downlaod JSON ServiceAccount file**
+* **4. Download JSON ServiceAccount file**
 
 Create a GCP Service Account JSON file
 
@@ -121,7 +125,7 @@ Create a GCP Service Account JSON file
 export GOOGLE_PROJECT_ID=`gcloud config get-value core/project`
 export GOOGLE_NUMERIC_PROJECT_ID=`gcloud projects describe $GOOGLE_PROJECT_ID --format="value(projectNumber)"`
 gcloud iam service-accounts create metadata-sa
-gcloud iam service-accounts keys create metdata-sa.json --iam-account=metadata-sa-@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com
+gcloud iam service-accounts keys create metdata-sa.json --iam-account=metadata-sa@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com
 ```
 
 You can assign IAM permissions now to the service accunt for whatever resources it may need to access
@@ -129,11 +133,14 @@ You can assign IAM permissions now to the service accunt for whatever resources 
 * **5. Run the metadata server**
 
 ```bash
-go run main.go -logtostderr \ 
-  -alsologtostderr -v 5 \ 
-  -port :8080 \ 
-  --serviceAccountFile /path/to/metadta-sa.json \ 
-  --numericProjectId $PROJECT_NUMBER \ 
+mkdir certs/
+mv metadata-sa.json certs
+
+go run main.go -logtostderr \
+  -alsologtostderr -v 5 \
+  -port :8080 \
+  --serviceAccountFile certs/metdata-sa.json \
+  --numericProjectId $PROJECT_NUMBER \
   --tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
 ```
 
@@ -142,17 +149,16 @@ or via docker
 ```
 
 ```bash
-mkdir certs/
-cp metadata-sa.json certs
 
-docker run  \
-  -v `pwd`/certs/:/certs/ \ 
-  -p 8080:8080 \ 
-  -t salrashid123/gcemetadataserver  \
-  -serviceAccountFile /certs/svc_account.json \ 
-  -logtostderr -alsologtostderr -v 5 \ 
-  -port :8080  \ 
-  -numericProjectId $PROJECT_NUMBER  \
+
+docker run \
+  -v `pwd`/certs/:/certs/ \
+  -p 8080:8080 \
+  -t salrashid123/gcemetadataserver \
+  -serviceAccountFile /certs/metdata-sa.json \
+  -logtostderr -alsologtostderr -v 5 \
+  -port :8080 \
+  -numericProjectId $PROJECT_NUMBER \
   -tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
 ```
 
@@ -201,6 +207,36 @@ curl -v -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/i
 
 
 You can also use the python snippet using `Application Default Credentials` to test.
+
+The following endpoints shows how to acquire an IDToken
+
+```bash
+curl -H "Metadata-Flavor: Google" \
+'http://metadata/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://foo.bar'
+```
+
+The `id_token` will be signed by google but issued by the service account you used
+```json
+{
+  "alg": "RS256",
+  "kid": "178ab1dc5913d929d37c23dcaa961872f8d70b68",
+  "typ": "JWT"
+}.
+{
+  "aud": "https://foo.bar",
+  "azp": "metadata-sa@$PROJECT.iam.gserviceaccount.com",
+  "email": "metadata-sa@PROJECT.iam.gserviceaccount.com",
+  "email_verified": true,
+  "exp": 1603550806,
+  "iat": 1603547206,
+  "iss": "https://accounts.google.com",
+  "sub": "117605711420724299222"
+}
+
+```
+
+
+>>> Unlike the _real_ gce metadataserver, this will **NOT** return the full identity document or license info :(`&format=[FORMAT]&licenses=[LICENSES]`)
 
 ### Run the metadata server with containers
 
@@ -251,24 +287,26 @@ https://kubernetes.io/docs/concepts/services-networking/service/#services-withou
 If you do not have access to certificate file or would like to specify **static** token values via env-var, the metadata server supports the following environment variables as substitutions.  Once you set these environment variables, the service will not look for anything using the service Account JSON file (even if specified)
 
 ```
-GOOGLE_PROJECT_ID = 'GOOGLE_PROJECT_ID'
-GOOGLE_NUMERIC_PROJECT_ID = 'GOOGLE_NUMERIC_PROJECT_ID'
-GOOGLE_ACCESS_TOKEN = 'GOOGLE_ACCESS_TOKEN'
-GOOGLE_ACCOUNT_EMAIL = `GOOGLE_ACCOUNT_EMAIL`
+export GOOGLE_PROJECT_ID=`gcloud config get-value core/project`
+export GOOGLE_NUMERIC_PROJECT_ID=`gcloud projects describe $GOOGLE_PROJECT_ID --format="value(projectNumber)"`
+
+gcloud auth activate-service-account --key-file=`pwd`/certs/metdata-sa.json
+export GOOGLE_ACCESS_TOKEN=`gcloud auth print-access-token`
+export GOOGLE_ACCOUNT_EMAIL=`gcloud config get-value core/account`
 ```
 
 for example,
 ```
-docker run  \
-  -p 8080:8080 \ 
-  -t salrashid123/gcemetadataserver  \
-  -logtostderr -alsologtostderr -v 5 \ 
-  -e GOOGLE_ACCESS_TOKEN=some_static_token \
-  -e GOOGLE_NUMERIC_PROJECT_ID=12345 \ 
-  -e GOOGLE_PROJECT_ID=my_project \
-  -e GOOGLE_ACCOUNT_EMAIL=metadata-sa-@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com gcemetadataserver \
-  -port :8080  \ 
-  -tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
+docker run \
+  -p 8080:8080 \
+  -e GOOGLE_ACCESS_TOKEN=$GOOGLE_ACCESS_TOKEN \
+  -e GOOGLE_NUMERIC_PROJECT_ID=$GOOGLE_NUMERIC_PROJECT_ID \
+  -e GOOGLE_PROJECT_ID=$GOOGLE_PROJECT_ID \
+  -e GOOGLE_ACCOUNT_EMAIL=$GOOGLE_ACCOUNT_EMAIL \
+  -t salrashid123/gcemetadataserver \
+  -port :8080 \
+  -tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform \
+  -logtostderr -alsologtostderr -v 5
 
 ```
 
@@ -299,7 +337,7 @@ iptables -P OUTPUT ACCEPT
 ### Port mapping :80 --> :8080
 Since GCE's metadata server listens on http for :80, this script relies on utilities like 'socat' to redirect port traffic.  _socat_ has pretty
 basic connection handling so you'd be better with iptables, gunicorn.
-You are free to either run the script on port :80 directly (as root), or use a utilitity like iptables, HAProxy, nginx, etc to do this mapping.
+You are free to either run the script on port :80 directly (as root), or use a utility like iptables, HAProxy, nginx, etc to do this mapping.
 
 The following example of an iptables route 80 -> 8080 on the local interface
 ```
@@ -307,15 +345,15 @@ sudo iptables -t nat -A OUTPUT -o lo -p tcp --dport 80 -j REDIRECT --to-port 808
 ```
 
 #### Extending the sample
-You can extend this sample for any arbitrary metadta you are interested in emulating (eg, disks, hostname, etc).
-Simply add the routes to the webserver and handle the responses accordingly.  It is recomended to view the request-response format directly on the metadata server to compare against.
+You can extend this sample for any arbitrary metadata you are interested in emulating (eg, disks, hostname, etc).
+Simply add the routes to the webserver and handle the responses accordingly.  It is recommended to view the request-response format directly on the metadata server to compare against.
 
 
 ### TODO
 
 1.  Directory Browsing
 
-Instead of explictly setting routes, use the local filesystem to return the strucure for non-dynamic content or attributes.  In this way, the metadata server just returns the directory and files that mimics the metadata server structure.   
+Instead of explicitly setting routes, use the local filesystem to return the structure for non-dynamic content or attributes.  In this way, the metadata server just returns the directory and files that mimics the metadata server structure.   
 
 eg: create a directory structure similar to:
 

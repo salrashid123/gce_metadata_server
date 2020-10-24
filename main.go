@@ -34,7 +34,8 @@ import (
 
 	"golang.org/x/net/http2"
 
-	sal "github.com/salrashid123/oauth2/google"
+	"google.golang.org/api/idtoken"
+
 	"golang.org/x/oauth2"
 
 	"github.com/gorilla/mux"
@@ -126,14 +127,11 @@ func getIDToken(targetAudience string) (string, error) {
 		glog.Errorln("env-var id_token is not implemented yet")
 		return "", errors.New("env-var id_token is not implemented yet")
 	}
-	idTokenSource, err := sal.IdTokenSource(
-		sal.IdTokenConfig{
-			Credentials: creds,
-			Audiences:   []string{targetAudience},
-		},
-	)
+	ctx := context.Background()
+	idTokenSource, err := idtoken.NewTokenSource(ctx, targetAudience, idtoken.WithCredentialsJSON(creds.JSON))
 	if err != nil {
-		return "", err
+		glog.Errorln("Unable to get id_token")
+		return "", errors.New("unable to get id_token")
 	}
 	tok, err := idTokenSource.Token()
 	if err != nil {
@@ -398,13 +396,13 @@ func main() {
 		//creds, err = google.FindDefaultCredentials(ctx, tokenScopes)
 		data, err := ioutil.ReadFile(cfg.flserviAccountFile)
 		if err != nil {
-			glog.Errorf("Unalbe to read serviceAccountFile %v", err)
+			glog.Errorf("Unable to read serviceAccountFile %v", err)
 			os.Exit(1)
 		}
 		s := strings.Split(cfg.fltokenScopes, ",")
 		creds, err = google.CredentialsFromJSON(ctx, data, s...)
 		if err != nil {
-			glog.Errorf("Unalbe to parse serviceAccountFile %v ", err)
+			glog.Errorf("Unable to parse serviceAccountFile %v ", err)
 			os.Exit(1)
 		}
 	}

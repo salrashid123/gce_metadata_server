@@ -357,6 +357,7 @@ func main() {
 	glog.Infof("Starting GCP metadataserver on port, %v", cfg.flPort)
 
 	r := mux.NewRouter()
+	r.StrictSlash(true)
 	r.Handle("/computeMetadata/v1/project/project-id", checkMetadataHeaders(http.HandlerFunc(projectIDHandler))).Methods("GET")
 	r.Handle("/computeMetadata/v1/project/numeric-project-id", checkMetadataHeaders(http.HandlerFunc(numericProjectIDHandler))).Methods("GET")
 	r.Handle("/computeMetadata/v1/project/attributes/{key}", checkMetadataHeaders(http.HandlerFunc(attributesHandler))).Methods("GET")

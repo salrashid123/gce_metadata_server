@@ -1,4 +1,3 @@
-
 # GCE Metadata Server Emulator
 
 
@@ -30,13 +29,13 @@ print(str(r))
 
  Another usecase for this is to verify how Application Defaults will behave while running a local docker container. A local running docker container will not have access to GCE's metadata server but by bridging your container to the emulator, you are basically allowing GCP API access directly from within a container on your local workstation (vs. running the code comprising the container directly on the workstation and relying on gcloud credentials (not metadata)).
 
-For more information on the request-response characteristics: 
+For more information on the request-response characteristics:
 * [GCE Metadata Server](https://cloud.google.com/compute/docs/storing-retrieving-metadata)
 
  The script performs the following:
  * returns the `access_token` provided by the serviceAccount JSON file you speify.
  * returns Google issued OpendID token (`id_token`) for the Service Account using the audience you specify
- * return custom key-value attributes 
+ * return custom key-value attributes
  * Identity Token document
 
 The endpoints that are exposed are:
@@ -57,11 +56,11 @@ Overall, the proxy works to emulate the link-local address `169.254.169.254` tha
 
  - ![images/metadata_proxy.png](images/metadata_proxy.png)
 
- 
+
 ## Usage
 
 This script runs a basic webserver and responds back as the Google Compute Engine's metadata server.  A local webserver
-runs on a non-privileged port (default: 8080) and uses a `serviceAccountFile` file or environment variables return an `access_token` 
+runs on a non-privileged port (default: 8080) and uses a `serviceAccountFile` file or environment variables return an `access_token`
 and optional live project user-defined metadata.
 
 You can run the emulator either:
@@ -71,17 +70,25 @@ You can run the emulator either:
 
 ### Running the metadata server directly
 
-The following steps details how you can run the emulator on your laptop. 
- 
+The following steps details how you can run the emulator on your laptop.
+
 * **1. Reconfigure the /etc/hosts to resolve the metadata server**
 ```
 # /etc/hosts
 127.0.0.1       metadata metadata.google.internal
 ```
 
-* **2. Create metadata IP alias**
+* **2. Redirect and accept requests to the metadata server**
 
-GCE's metadata server's IP address on GCE is a special link-local address: `169.254.169.254`.  Certain application default credential libraries for google cloud references the metadata server by IP address so we're adding this in.   The following steps creates an IP address alias for the local system.
+GCE's metadata server's IP address on GCE is a special link-local address: `169.254.169.254`.  Certain application default credential libraries for google cloud references the metadata server by IP address so we're adding this in. An IP tables rule can redirect these requests to localhost:
+
+```
+iptables -t nat -A OUTPUT -p tcp -d 169.254.169.254 --dport 80 -j DNAT --to-destination 127.0.0.1:8080
+```
+
+Or, an alternative is to creates an IP address alias for the local system and then relay the traffic to the desired port.
+
+To create an IP alias:
 
 ```bash
 sudo ifconfig lo:0 169.254.169.254 up
@@ -89,7 +96,7 @@ sudo ifconfig lo:0 169.254.169.254 up
 You can veirify the alias was created by checking _ifconfig_
 ```
 /sbin/ifconfig -a
-lo:0      Link encap:Local Loopback  
+lo:0      Link encap:Local Loopback
           inet addr:169.254.169.254  Mask:255.255.0.0
           UP LOOPBACK RUNNING  MTU:65536  Metric:1
 ```
@@ -98,9 +105,7 @@ lo:0      Link encap:Local Loopback
 netsh interface ipv4 add address "Loopback Pseudo-Interface 1" 169.254.169.254 255.255.0.0
 ```
 
-* **3. Run socat**
-
-You need to install a utility to map port :80 traffic since REST calls to the metadata server are HTTP.  The following usees `socat`:
+To perform the relay of traffic to port 80 You need to install a utility to map port :80 traffic since REST calls to the metadata server are HTTP.  The following usees `socat`:
 ```
 sudo apt-get install socat
 
@@ -111,13 +116,8 @@ If you don't mind running the program on port `:80` directly, you can skip the s
 
 - ![images/setup_1.png](images/setup_1.png)
 
-Alternatively, you can create an OUTPUT `iptables` rule to intercept and redirect the metadata traffic.
 
-```
-iptables -t nat -A OUTPUT -p tcp -d 169.254.169.254 --dport 80 -j REDIRECT --to-port 8080
-```
-
-* **4. Download JSON ServiceAccount file**
+* **3. Download JSON ServiceAccount file**
 
 Create a GCP Service Account JSON file
 
@@ -130,7 +130,7 @@ gcloud iam service-accounts keys create metdata-sa.json --iam-account=metadata-s
 
 You can assign IAM permissions now to the service accunt for whatever resources it may need to access
 
-* **5. Run the metadata server**
+* **4. Run the metadata server**
 
 ```bash
 mkdir certs/
@@ -169,13 +169,13 @@ Statup
 
 
 
-* **6. Test access to the metadata server**
+* **5. Test access to the metadata server**
 In a new window, run
 
 ```bash
 curl -v -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
 
-> 
+>
 < HTTP/1.1 200 OK
 < Content-Type: application/json
 < Metadata-Flavor: Google
@@ -184,7 +184,7 @@ curl -v -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMeta
 < X-Xss-Protection: 0
 < Date: Mon, 26 Aug 2019 21:50:09 GMT
 < Content-Length: 190
-< 
+<
 {"access_token":"ya29.c.EltxByD8vfv2ACageADlorFHWd2ZUIgGdU-redacted","expires_in":3600,"token_type":"Bearer"}
 ```
 
@@ -199,8 +199,8 @@ curl -v -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/i
 < X-Xss-Protection: 0
 < Date: Mon, 26 Aug 2019 21:51:28 GMT
 < Content-Length: 190
-< 
-{"access_token":"ya29.c.EltxByD8vfv2ACageADlorFHWd2ZUIgGdU-redacted","expires_in":3521,"token_type":"Bearer"}srashid@srashid1:~$ 
+<
+{"access_token":"ya29.c.EltxByD8vfv2ACageADlorFHWd2ZUIgGdU-redacted","expires_in":3521,"token_type":"Bearer"}srashid@srashid1:~$
 ```
 
 - ![images/setup_5.png](images/setup_5.png)
@@ -264,7 +264,7 @@ You may need to drop existing firewall rules and then restart the docker daemon 
 
 This will allow the container to 'see' the local interface on the laptop.  The disadvantage is the host's interface is the containers as well
 ```
-docker run --net=host -t _your-image_ 
+docker run --net=host -t _your-image_
 ```
 
 > *NOTE:*   using --net=host is only recommended for testing; For more information see:
@@ -278,7 +278,7 @@ You can run the emulator as a kubernetes service but you cannot bind the link lo
 
 _"The endpoint IPs must not be: loopback (127.0.0.0/8 for IPv4, ::1/128 for IPv6), or link-local (169.254.0.0/16 and 224.0.0.0/24 for IPv4, fe80::/64 for IPv6)."_
 
-While you can connect via k8s service name, certain google cloud libraries look for the metadata server by IP address or allow overrides (eg, [google-auth-python](https://github.com/googleapis/google-auth-library-python/blob/master/google/auth/compute_engine/_metadata.py#L40)) 
+While you can connect via k8s service name, certain google cloud libraries look for the metadata server by IP address or allow overrides (eg, [google-auth-python](https://github.com/googleapis/google-auth-library-python/blob/master/google/auth/compute_engine/_metadata.py#L40))
 
 https://kubernetes.io/docs/concepts/services-networking/service/#services-without-selectors
 
@@ -353,7 +353,7 @@ Simply add the routes to the webserver and handle the responses accordingly.  It
 
 1.  Directory Browsing
 
-Instead of explicitly setting routes, use the local filesystem to return the structure for non-dynamic content or attributes.  In this way, the metadata server just returns the directory and files that mimics the metadata server structure.   
+Instead of explicitly setting routes, use the local filesystem to return the structure for non-dynamic content or attributes.  In this way, the metadata server just returns the directory and files that mimics the metadata server structure.
 
 eg: create a directory structure similar to:
 
@@ -361,11 +361,11 @@ eg: create a directory structure similar to:
 ./static/
     0.1/
     computeMetadata/
-      v1beta1/    
+      v1beta1/
       v1/
         instance/
         oslogin/
-        project/         
+        project/
 ```
 
 
@@ -386,7 +386,7 @@ $ curl -H "Metadata-Flavor: Google" -v http://metadata.google.internal/
 > User-Agent: curl/7.52.1
 > Accept: */*
 > Metadata-Flavor: Google
-> 
+>
 < HTTP/1.1 200 OK
 < Metadata-Flavor: Google
 < Content-Type: application/text
@@ -395,7 +395,7 @@ $ curl -H "Metadata-Flavor: Google" -v http://metadata.google.internal/
 < Content-Length: 22
 < X-XSS-Protection: 0
 < X-Frame-Options: SAMEORIGIN
-< 
+<
 0.1/
 computeMetadata/
 ```
@@ -425,35 +425,4 @@ service-accounts/
 tags
 virtual-clock/
 zone
-```
-
-
-2. Redirects
-
-Metadata server currently redirects path from root to one with a `/`.
-
-TODO: account for the redirect.
-
-```bash
-$ curl -H "Metadata-Flavor: Google" -v http://metadata.google.internal/computeMetadata/v1/instance
-*   Trying 169.254.169.254...
-* TCP_NODELAY set
-* Connected to metadata.google.internal (169.254.169.254) port 80 (#0)
-> GET /computeMetadata/v1/instance HTTP/1.1
-> Host: metadata.google.internal
-> User-Agent: curl/7.52.1
-> Accept: */*
-> Metadata-Flavor: Google
-> 
-< HTTP/1.1 301 Moved Permanently
-< Metadata-Flavor: Google
-< Location: http://metadata.google.internal/computeMetadata/v1/instance/
-< Date: Mon, 26 Aug 2019 17:40:25 GMT
-< Content-Type: text/html
-< Server: Metadata Server for VM
-< Content-Length: 30
-< X-XSS-Protection: 0
-< X-Frame-Options: SAMEORIGIN
-< 
-/computeMetadata/v1/instance/
 ```

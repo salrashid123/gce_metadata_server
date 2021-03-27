@@ -35,6 +35,7 @@ import (
 	"golang.org/x/net/http2"
 
 	"google.golang.org/api/idtoken"
+	"google.golang.org/api/impersonate"
 
 	"golang.org/x/oauth2"
 
@@ -59,6 +60,7 @@ const (
 	googleProjectID        = "GOOGLE_PROJECT_ID"
 	googleNumericProjectID = "GOOGLE_NUMERIC_PROJECT_ID"
 	googleAccessToken      = "GOOGLE_ACCESS_TOKEN"
+	googleIDToken          = "GOOGLE_ID_TOKEN"
 	googleAccountEmail     = "GOOGLE_ACCOUNT_EMAIL"
 )
 
@@ -69,6 +71,7 @@ type serverConfig struct {
 	flprojectID           string
 	flserviceAccountEmail string
 	flserviAccountFile    string
+	flImpersonate         bool
 }
 
 type metadataToken struct {
@@ -95,7 +98,8 @@ func getAccessToken() (*metadataToken, error) {
 		ts := oauth2.StaticTokenSource(
 			&oauth2.Token{
 				AccessToken: os.Getenv(googleAccessToken),
-				TokenType:   "Bearer",
+				//Expiry:      time.Now().Add(time.Hour * 1),
+				TokenType: "Bearer",
 			},
 		)
 		creds = &google.Credentials{
@@ -103,9 +107,9 @@ func getAccessToken() (*metadataToken, error) {
 			TokenSource: ts,
 		}
 	}
-
 	tok, err := creds.TokenSource.Token()
 	if err != nil {
+		glog.Error(err)
 		return &metadataToken{}, err
 	}
 
@@ -124,13 +128,26 @@ func getIDToken(targetAudience string) (string, error) {
 	tokenMutex.Lock()
 	defer tokenMutex.Unlock()
 	if isEnvironmentOverrideSet() {
-		glog.Errorln("env-var id_token is not implemented yet")
-		return "", errors.New("env-var id_token is not implemented yet")
+		return os.Getenv(googleIDToken), nil
 	}
+	var idTokenSource oauth2.TokenSource
+	var err error
+
 	ctx := context.Background()
-	idTokenSource, err := idtoken.NewTokenSource(ctx, targetAudience, idtoken.WithCredentialsJSON(creds.JSON))
+	if cfg.flImpersonate {
+
+		idTokenSource, err = impersonate.IDTokenSource(ctx,
+			impersonate.IDTokenConfig{
+				TargetPrincipal: cfg.flserviceAccountEmail,
+				Audience:        targetAudience,
+				IncludeEmail:    true,
+			},
+		)
+	} else {
+		idTokenSource, err = idtoken.NewTokenSource(ctx, targetAudience, idtoken.WithCredentialsJSON(creds.JSON))
+	}
 	if err != nil {
-		glog.Errorln("Unable to get id_token")
+		glog.Errorln(err)
 		return "", errors.New("unable to get id_token")
 	}
 	tok, err := idTokenSource.Token()
@@ -332,7 +349,7 @@ func getServiceAccountHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func isEnvironmentOverrideSet() bool {
-	if os.Getenv(googleAccessToken) != "" && os.Getenv(googleAccountEmail) != "" && os.Getenv(googleNumericProjectID) != "" && os.Getenv(googleProjectID) != "" {
+	if os.Getenv(googleAccessToken) != "" && os.Getenv(googleIDToken) != "" && os.Getenv(googleAccountEmail) != "" && os.Getenv(googleNumericProjectID) != "" && os.Getenv(googleProjectID) != "" {
 		return true
 	}
 	return false
@@ -346,6 +363,7 @@ func main() {
 	flag.StringVar(&cfg.flprojectID, "projectId", "", "projectId...")
 	flag.StringVar(&cfg.flserviceAccountEmail, "serviceAccountEmail", "", "serviceAccountEmail...")
 	flag.StringVar(&cfg.flserviAccountFile, "serviceAccountFile", "", "serviceAccountFile...")
+	flag.BoolVar(&cfg.flImpersonate, "impersonate", false, "Impersonate a service Account instead of using the keyfile")
 	flag.Parse()
 
 	argError := func(s string, v ...interface{}) {
@@ -386,6 +404,29 @@ func main() {
 
 	if isEnvironmentOverrideSet() {
 		glog.Infoln("Using environment variables for credentials")
+	} else if cfg.flImpersonate {
+		glog.Infoln("Using Service Account Impersonation")
+
+		if cfg.flnumericProjectID == "" || cfg.flprojectID == "" || cfg.flserviceAccountEmail == "" {
+			argError("projectId,numericProjectId,serviceAccountEmail must be set if impersonation is used")
+		}
+
+		var err error
+		s := strings.Split(cfg.fltokenScopes, ",")
+		ts, err := impersonate.CredentialsTokenSource(ctx, impersonate.CredentialsConfig{
+			TargetPrincipal: cfg.flserviceAccountEmail,
+			Scopes:          s,
+		})
+		if err != nil {
+			glog.Errorf("Unable to create Impersonated TokenSource %v ", err)
+			os.Exit(1)
+		}
+
+		creds = &google.Credentials{
+			ProjectID:   cfg.flprojectID,
+			TokenSource: ts,
+		}
+
 	} else {
 
 		if cfg.flserviAccountFile == "" {

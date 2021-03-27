@@ -117,7 +117,7 @@ If you don't mind running the program on port `:80` directly, you can skip the s
 - ![images/setup_1.png](images/setup_1.png)
 
 
-* **3. Download JSON ServiceAccount file**
+* **3. Download JSON ServiceAccount file or use impersonation**
 
 Create a GCP Service Account JSON file
 
@@ -125,12 +125,26 @@ Create a GCP Service Account JSON file
 export GOOGLE_PROJECT_ID=`gcloud config get-value core/project`
 export GOOGLE_NUMERIC_PROJECT_ID=`gcloud projects describe $GOOGLE_PROJECT_ID --format="value(projectNumber)"`
 gcloud iam service-accounts create metadata-sa
+```
+
+You can either create a key that represents this service account and download it locally
+```
 gcloud iam service-accounts keys create metdata-sa.json --iam-account=metadata-sa@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com
 ```
 
-You can assign IAM permissions now to the service accunt for whatever resources it may need to access
+or preferably assign your user impersonation capabilities on it:
+
+```bash
+gcloud iam service-accounts \
+  add-iam-policy-binding metadata-sa@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com --member=user:`gcloud config get-value core/account` \
+  --role=roles/iam.serviceAccountTokenCreator
+```
+
+You can assign IAM permissions now to the service account for whatever resources it may need to access
 
 * **4. Run the metadata server**
+
+Using Certs
 
 ```bash
 mkdir certs/
@@ -144,9 +158,20 @@ go run main.go -logtostderr \
   --tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
 ```
 
+or via impersonation
+
+```bash
+ go run main.go -logtostderr    -alsologtostderr -v 5   \
+  -port :8080   \
+  --impersonate \
+  --serviceAccountEmail metadata-sa@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com \
+  --projectId=$GOOGLE_PROJECT_ID \
+  --numericProjectId $GOOGLE_NUMERIC_PROJECT_ID \
+  --tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
+```
+
 or via docker
 
-```
 
 ```bash
 
@@ -286,16 +311,26 @@ https://kubernetes.io/docs/concepts/services-networking/service/#services-withou
 
 If you do not have access to certificate file or would like to specify **static** token values via env-var, the metadata server supports the following environment variables as substitutions.  Once you set these environment variables, the service will not look for anything using the service Account JSON file (even if specified)
 
-```
+```bash
 export GOOGLE_PROJECT_ID=`gcloud config get-value core/project`
 export GOOGLE_NUMERIC_PROJECT_ID=`gcloud projects describe $GOOGLE_PROJECT_ID --format="value(projectNumber)"`
 
 gcloud auth activate-service-account --key-file=`pwd`/certs/metdata-sa.json
 export GOOGLE_ACCESS_TOKEN=`gcloud auth print-access-token`
 export GOOGLE_ACCOUNT_EMAIL=`gcloud config get-value core/account`
+export GOOGLE_ID_TOKEN=`gcloud auth print-identity-token --include-email --audiences=https://foo.bar`
 ```
 
 for example,
+
+```bash
+go run main.go -logtostderr  \
+   -alsologtostderr -v 5 \
+   -port :8080  \
+   --tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
+```
+
+or
 ```
 docker run \
   -p 8080:8080 \
@@ -303,6 +338,7 @@ docker run \
   -e GOOGLE_NUMERIC_PROJECT_ID=$GOOGLE_NUMERIC_PROJECT_ID \
   -e GOOGLE_PROJECT_ID=$GOOGLE_PROJECT_ID \
   -e GOOGLE_ACCOUNT_EMAIL=$GOOGLE_ACCOUNT_EMAIL \
+  -e GOOGLE_ID_TOKEN=$GOOGLE_ID_TOKEN \  
   -t salrashid123/gcemetadataserver \
   -port :8080 \
   -tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform \

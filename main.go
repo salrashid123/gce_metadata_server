@@ -284,6 +284,11 @@ func getServiceAccountIndexHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func notFound(w http.ResponseWriter, r *http.Request) {
+	glog.Infof("%s called but is not implemented", r.URL.Path)
+	http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+}
+
 func getServiceAccountHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	glog.Infof("/computeMetadata/v1/instance/service-accounts/%v/%v called", vars["acct"], vars["key"])
@@ -383,6 +388,7 @@ func main() {
 	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/", checkMetadataHeaders(http.HandlerFunc(getServiceAccountIndexHandler))).Methods("GET")
 	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}", checkMetadataHeaders(http.HandlerFunc(getServiceAccountHandler))).Methods("GET")
 	r.Handle("/", checkMetadataHeaders(http.HandlerFunc(rootHandler))).Methods("GET")
+	r.NotFoundHandler = http.HandlerFunc(notFound)
 	//r.Handle("/", checkMetadataHeaders(http.FileServer(http.Dir("./static"))))
 	http.Handle("/", r)
 

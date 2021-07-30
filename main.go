@@ -388,7 +388,7 @@ func main() {
 	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/", checkMetadataHeaders(http.HandlerFunc(getServiceAccountIndexHandler))).Methods("GET")
 	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}", checkMetadataHeaders(http.HandlerFunc(getServiceAccountHandler))).Methods("GET")
 	r.Handle("/", checkMetadataHeaders(http.HandlerFunc(rootHandler))).Methods("GET")
-	r.NotFoundHandler = http.HandlerFunc(notFound)
+	r.NotFoundHandler = checkMetadataHeaders(http.HandlerFunc(notFound))
 	//r.Handle("/", checkMetadataHeaders(http.FileServer(http.Dir("./static"))))
 	http.Handle("/", r)
 

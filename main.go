@@ -259,6 +259,28 @@ func listServiceAccountHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "default/\n"+getServiceAccountEmail()+"/\n")
 }
 
+func instanceRedirectHandler(w http.ResponseWriter, r *http.Request) {
+	glog.Infoln("/computeMetadata/v1/instance called")
+	w.Header().Add("Content-Type", "text/html")
+	http.Redirect(w, r, "/computeMetadata/v1/instance/", 302)
+}
+
+func instanceHandler(w http.ResponseWriter, r *http.Request) {
+	glog.Infoln("/computeMetadata/v1/instance/ called")
+	w.Header().Add("Content-Type", "application/text")
+	vals := []string{"attributes/", "cpu-platform", "description",
+		"disks/", "guest-attributes/", "hostname", "id", "image",
+		"legacy-endpoint-access/", "licenses/", "machine-type",
+		"maintenance-event", "name", "network-interfaces/",
+		"preempted", "remaining-cpu-time", "scheduling/",
+		"service-accounts/", "tags", "virtual-clock/", "zone"}
+	resp := ""
+	for _, v := range vals {
+		resp = resp + v + "\n"
+	}
+	fmt.Fprint(w, resp)
+}
+
 func getServiceAccountIndexHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	glog.Infof("/computeMetadata/v1/instance/service-accounts/%v/ called", vars["acct"])
@@ -385,6 +407,8 @@ func main() {
 	r.Handle("/computeMetadata/v1/project/numeric-project-id", checkMetadataHeaders(http.HandlerFunc(numericProjectIDHandler))).Methods("GET")
 	r.Handle("/computeMetadata/v1/project/attributes/{key}", checkMetadataHeaders(http.HandlerFunc(attributesHandler))).Methods("GET")
 	r.Handle("/computeMetadata/v1/instance/service-accounts/", checkMetadataHeaders(http.HandlerFunc(listServiceAccountHandler))).Methods("GET")
+	r.Handle("/computeMetadata/v1/instance", checkMetadataHeaders(http.HandlerFunc(instanceHandler))).Methods("GET")
+	r.Handle("/computeMetadata/v1/instance/", checkMetadataHeaders(http.HandlerFunc(instanceRedirectHandler))).Methods("GET")
 	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/", checkMetadataHeaders(http.HandlerFunc(getServiceAccountIndexHandler))).Methods("GET")
 	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}", checkMetadataHeaders(http.HandlerFunc(getServiceAccountHandler))).Methods("GET")
 	r.Handle("/", checkMetadataHeaders(http.HandlerFunc(rootHandler))).Methods("GET")

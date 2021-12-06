@@ -18,7 +18,6 @@ import (
 	"sync"
 
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -41,6 +40,9 @@ import (
 
 	"github.com/gorilla/mux"
 	"golang.org/x/oauth2/google"
+
+	iamcredentials "cloud.google.com/go/iam/credentials/apiv1"
+	iamcredentialspb "google.golang.org/genproto/googleapis/iam/credentials/v1"
 )
 
 var (
@@ -55,8 +57,8 @@ var (
 )
 
 const (
-	emailScope = "https://www.googleapis.com/auth/userinfo.email"
-
+	emailScope             = "https://www.googleapis.com/auth/userinfo.email"
+	cloudPlatformScope     = "https://www.googleapis.com/auth/cloud-platform"
 	googleProjectID        = "GOOGLE_PROJECT_ID"
 	googleNumericProjectID = "GOOGLE_NUMERIC_PROJECT_ID"
 	googleAccessToken      = "GOOGLE_ACCESS_TOKEN"
@@ -72,6 +74,7 @@ type serverConfig struct {
 	flserviceAccountEmail string
 	flserviAccountFile    string
 	flImpersonate         bool
+	flFederate            bool
 }
 
 type metadataToken struct {
@@ -143,12 +146,34 @@ func getIDToken(targetAudience string) (string, error) {
 				IncludeEmail:    true,
 			},
 		)
+	} else if cfg.flFederate {
+
+		c, err := iamcredentials.NewIamCredentialsClient(ctx)
+		if err != nil {
+			log.Fatalf("%v", err)
+		}
+		defer c.Close()
+
+		req := &iamcredentialspb.GenerateIdTokenRequest{
+			Name:         fmt.Sprintf("projects/-/serviceAccounts/%s", cfg.flserviceAccountEmail),
+			Audience:     targetAudience,
+			IncludeEmail: true,
+		}
+		resp, err := c.GenerateIdToken(ctx, req)
+		if err != nil {
+			glog.Errorln(err)
+			return "", fmt.Errorf("could not generateID Token %v", err)
+		}
+
+		idTokenSource = oauth2.StaticTokenSource(&oauth2.Token{
+			AccessToken: resp.Token,
+		})
 	} else {
 		idTokenSource, err = idtoken.NewTokenSource(ctx, targetAudience, idtoken.WithCredentialsJSON(creds.JSON))
 	}
 	if err != nil {
 		glog.Errorln(err)
-		return "", errors.New("unable to get id_token")
+		return "", fmt.Errorf("could not get id_token %v", err)
 	}
 	tok, err := idTokenSource.Token()
 	if err != nil {
@@ -222,8 +247,6 @@ func checkMetadataHeaders(next http.Handler) http.Handler {
 }
 
 func rootHandler(w http.ResponseWriter, r *http.Request) {
-	glog.Infoln("/ called")
-
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
 		return
@@ -232,12 +255,10 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func projectIDHandler(w http.ResponseWriter, r *http.Request) {
-	glog.Infoln("/computeMetadata/v1/project/project-id called")
 	fmt.Fprint(w, getProjectID())
 }
 
 func numericProjectIDHandler(w http.ResponseWriter, r *http.Request) {
-	glog.Infoln("/computeMetadata/v1/project/numeric-project-id called")
 	fmt.Fprint(w, getNumericProjectID())
 }
 
@@ -253,20 +274,17 @@ func attributesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func listServiceAccountHandler(w http.ResponseWriter, r *http.Request) {
-	glog.Infoln("/computeMetadata/v1/instance/service-accounts/ called")
 	// TODO: its possible the vm doens't have a svc-account
 	w.Header().Add("Content-Type", "application/text")
 	fmt.Fprint(w, "default/\n"+getServiceAccountEmail()+"/\n")
 }
 
 func instanceRedirectHandler(w http.ResponseWriter, r *http.Request) {
-	glog.Infoln("/computeMetadata/v1/instance called")
 	w.Header().Add("Content-Type", "text/html")
 	http.Redirect(w, r, "/computeMetadata/v1/instance/", 302)
 }
 
 func instanceHandler(w http.ResponseWriter, r *http.Request) {
-	glog.Infoln("/computeMetadata/v1/instance/ called")
 	w.Header().Add("Content-Type", "application/text")
 	vals := []string{"attributes/", "cpu-platform", "description",
 		"disks/", "guest-attributes/", "hostname", "id", "image",
@@ -298,7 +316,7 @@ func getServiceAccountIndexHandler(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-		w.Header().Set("Content-Type", "applicaiton/text")
+		w.Header().Set("Content-Type", "application/text")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -355,13 +373,13 @@ func getServiceAccountHandler(w http.ResponseWriter, r *http.Request) {
 		tok, err := getAccessToken()
 		if err != nil {
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			w.Header().Set("Content-Type", "applicaiton/text")
+			w.Header().Set("Content-Type", "application/text")
 			return
 		}
 		js, err := json.Marshal(tok)
 		if err != nil {
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			w.Header().Set("Content-Type", "applicaiton/text")
+			w.Header().Set("Content-Type", "application/text")
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -386,11 +404,12 @@ func main() {
 	ctx := context.Background()
 	flag.StringVar(&cfg.flPort, "port", ":8080", "port...")
 	flag.StringVar(&cfg.flnumericProjectID, "numericProjectId", "", "numericProjectId...")
-	flag.StringVar(&cfg.fltokenScopes, "tokenScopes", "https://www.googleapis.com/auth/userinfo.email", "tokenScopes")
+	flag.StringVar(&cfg.fltokenScopes, "tokenScopes", fmt.Sprintf("%s,%s", emailScope, cloudPlatformScope), "tokenScopes")
 	flag.StringVar(&cfg.flprojectID, "projectId", "", "projectId...")
 	flag.StringVar(&cfg.flserviceAccountEmail, "serviceAccountEmail", "", "serviceAccountEmail...")
 	flag.StringVar(&cfg.flserviAccountFile, "serviceAccountFile", "", "serviceAccountFile...")
 	flag.BoolVar(&cfg.flImpersonate, "impersonate", false, "Impersonate a service Account instead of using the keyfile")
+	flag.BoolVar(&cfg.flFederate, "federate", false, "Use Workload Identity Federation ADC")
 	flag.Parse()
 
 	argError := func(s string, v ...interface{}) {
@@ -403,18 +422,18 @@ func main() {
 
 	r := mux.NewRouter()
 	r.StrictSlash(true)
-	r.Handle("/computeMetadata/v1/project/project-id", checkMetadataHeaders(http.HandlerFunc(projectIDHandler))).Methods("GET")
-	r.Handle("/computeMetadata/v1/project/numeric-project-id", checkMetadataHeaders(http.HandlerFunc(numericProjectIDHandler))).Methods("GET")
-	r.Handle("/computeMetadata/v1/project/attributes/{key}", checkMetadataHeaders(http.HandlerFunc(attributesHandler))).Methods("GET")
-	r.Handle("/computeMetadata/v1/instance/service-accounts/", checkMetadataHeaders(http.HandlerFunc(listServiceAccountHandler))).Methods("GET")
-	r.Handle("/computeMetadata/v1/instance", checkMetadataHeaders(http.HandlerFunc(instanceHandler))).Methods("GET")
-	r.Handle("/computeMetadata/v1/instance/", checkMetadataHeaders(http.HandlerFunc(instanceRedirectHandler))).Methods("GET")
-	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/", checkMetadataHeaders(http.HandlerFunc(getServiceAccountIndexHandler))).Methods("GET")
-	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}", checkMetadataHeaders(http.HandlerFunc(getServiceAccountHandler))).Methods("GET")
-	r.Handle("/", checkMetadataHeaders(http.HandlerFunc(rootHandler))).Methods("GET")
-	r.NotFoundHandler = checkMetadataHeaders(http.HandlerFunc(notFound))
-	//r.Handle("/", checkMetadataHeaders(http.FileServer(http.Dir("./static"))))
-	http.Handle("/", r)
+	r.Handle("/computeMetadata/v1/project/project-id", http.HandlerFunc(projectIDHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/project/numeric-project-id", http.HandlerFunc(numericProjectIDHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/project/attributes/{key}", http.HandlerFunc(attributesHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/instance/service-accounts/", http.HandlerFunc(listServiceAccountHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/instance", http.HandlerFunc(instanceHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/instance/", http.HandlerFunc(instanceRedirectHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/", http.HandlerFunc(getServiceAccountIndexHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}", http.HandlerFunc(getServiceAccountHandler)).Methods("GET")
+	r.Handle("/", http.HandlerFunc(rootHandler)).Methods("GET")
+	r.NotFoundHandler = http.HandlerFunc(notFound)
+
+	http.Handle("/", checkMetadataHeaders(r))
 
 	srv := &http.Server{
 		Addr: cfg.flPort,
@@ -456,7 +475,25 @@ func main() {
 			ProjectID:   cfg.flprojectID,
 			TokenSource: ts,
 		}
+	} else if cfg.flFederate {
+		glog.Infoln("Using Workload Identity Federation")
 
+		if os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") == "" {
+			glog.Error("GOOGLE_APPLICATION_CREDENTIALSh --federate")
+			os.Exit(1)
+		}
+		if cfg.flserviceAccountEmail == "" || cfg.flprojectID == "" || cfg.flnumericProjectID == "" {
+			glog.Error("--serviceAccountEmail, projectId and numericProjectID must be specified with --federate")
+			os.Exit(1)
+		}
+
+		glog.Infof("Federation path: %s", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+		var err error
+		creds, err = google.FindDefaultCredentials(ctx, strings.Split(cfg.fltokenScopes, ",")...)
+		if err != nil {
+			glog.Errorf("Unable load federated credentials %v", err)
+			os.Exit(1)
+		}
 	} else {
 
 		if cfg.flserviAccountFile == "" {

@@ -6,7 +6,6 @@ This script acts as a GCE's internal metadata server for local testing/emulation
 
 It returns a live access_token that can be used directly by [Application Default Credentials](https://developers.google.com/identity/protocols/application-default-credentials) transparently.
 
->> This is not an officially supported Google product
 
 For example, you can use `ComputeCredentials` on your laptop:
 
@@ -28,6 +27,10 @@ print(str(r))
  This is useful to test any script or code locally that my need to contact GCE's metadata server for custom, user-defined variables or access_tokens.
 
  Another usecase for this is to verify how Application Defaults will behave while running a local docker container. A local running docker container will not have access to GCE's metadata server but by bridging your container to the emulator, you are basically allowing GCP API access directly from within a container on your local workstation (vs. running the code comprising the container directly on the workstation and relying on gcloud credentials (not metadata)).
+
+
+>> This is not an officially supported Google product
+
 
 For more information on the request-response characteristics:
 * [GCE Metadata Server](https://cloud.google.com/compute/docs/storing-retrieving-metadata)
@@ -158,7 +161,7 @@ mv metadata-sa.json certs
 go run main.go -logtostderr \
   -alsologtostderr -v 5 \
   -port :8080 \
-  --serviceAccountFile certs/metdata-sa.json \
+  --serviceAccountFile certs/metadata-sa.json \
   --numericProjectId $PROJECT_NUMBER \
   --tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
 ```

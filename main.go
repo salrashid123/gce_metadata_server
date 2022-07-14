@@ -223,18 +223,13 @@ func checkMetadataHeaders(next http.Handler) http.Handler {
 		w.Header().Add("X-XSS-Protection", "0")
 		w.Header().Add("X-Frame-Options", "0")
 
-		hasHostHeader := false
-		for _, a := range hostHeaders {
-			if a == r.Host {
-				hasHostHeader = true
-			}
-		}
-
-		if !hasHostHeader {
+		xff := r.Header.Get("X-Forwarded-For")
+		if xff != "" {
 			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 			w.Header().Set("Content-Type", "text/html; charset=UTF-8")
 			return
 		}
+
 		flavor := r.Header.Get("Metadata-Flavor")
 		if flavor == "" && r.RequestURI != "/" {
 			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)

@@ -232,7 +232,7 @@ func checkMetadataHeaders(next http.Handler) http.Handler {
 
 		flavor := r.Header.Get("Metadata-Flavor")
 		if flavor == "" && r.RequestURI != "/" {
-			http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
+			http.Error(w, "Missing required header \"Metadata-Flavor\": \"Google\"", http.StatusForbidden)
 			w.Header().Set("Content-Type", "text/html; charset=UTF-8")
 			return
 		}

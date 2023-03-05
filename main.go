@@ -64,6 +64,7 @@ const (
 	googleAccessToken      = "GOOGLE_ACCESS_TOKEN"
 	googleIDToken          = "GOOGLE_ID_TOKEN"
 	googleAccountEmail     = "GOOGLE_ACCOUNT_EMAIL"
+	mockHostName           = "MOCK_HOST_NAME"
 )
 
 type serverConfig struct {
@@ -319,6 +320,13 @@ func getServiceAccountIndexHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func getHostName() string {
+	if os.Getenv(mockHostName) != "" {
+		return os.Getenv(mockHostName)
+	}
+	return "mockhostname.us-east1.123.mockprojectid"
+}
+
 func notFound(w http.ResponseWriter, r *http.Request) {
 	glog.Infof("%s called but is not implemented", r.URL.Path)
 	http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
@@ -425,6 +433,7 @@ func main() {
 	r.Handle("/computeMetadata/v1/instance/", http.HandlerFunc(instanceRedirectHandler)).Methods("GET")
 	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/", http.HandlerFunc(getServiceAccountIndexHandler)).Methods("GET")
 	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}", http.HandlerFunc(getServiceAccountHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/instance/hostname", http.HandlerFunc(getHostName)).Methods("GET")
 	r.Handle("/", http.HandlerFunc(rootHandler)).Methods("GET")
 	r.NotFoundHandler = http.HandlerFunc(notFound)
 

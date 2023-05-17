@@ -259,9 +259,6 @@ Remember to run `gcloud auth application-default revoke` in any new client libra
 
 ##### [python](https://github.com/googleapis/google-auth-library-python/blob/main/google/auth/compute_engine/_metadata.py#L35-L50)
 
-  While `google-auth-python` supports the `GCE_METADATA_HOST`, it assumes the port you are using is always `:80` which isn't the case here.
-
-  So you have two options:  1. either run the emulator on `:80` or tune the environment variables to account for that:
 
 ```bash
   export GCE_METADATA_HOST=localhost:8080

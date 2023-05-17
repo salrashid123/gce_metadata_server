@@ -1,0 +1,87 @@
+project_name: gce_metadata_server
+release:
+  draft: true
+  github:
+    owner: salrashid123
+    name: gce_metadata_server
+  name_template: '{{.Tag}}'
+  extra_files:
+
+scoop:
+  name: gce_metadata_server
+  commit_author:
+    name: sal
+    email: salrashid123@gmail.com
+  commit_msg_template: Scoop update for {{ .ProjectName }} version {{ .Tag }}
+  goamd64: v1
+builds:
+  - id: gce_metadata_server
+    goos:
+      - linux
+    goarch:
+      - amd64
+    goamd64:
+      - v1
+    targets:
+      - linux_amd64_v1
+    binary: gce_metadata_server
+    builder: go
+    gobinary: go
+    command: build
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser
+archives:
+  - id: archive
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
+    format: tar.gz
+    files:
+      - LICENSE*
+      - README*    
+      - dist/*.sig      
+snapshot:
+  name_template: '{{ .Version }}-SNAPSHOT-{{ .ShortCommit }}'
+checksum:
+  name_template: '{{ .ProjectName }}_{{ .Version }}_checksums.txt'
+  algorithm: sha256
+dist: dist
+signs:
+  - cmd: gpg
+    id: gpg
+    artifacts: all
+    output: true
+    args:
+      - "--batch"
+      - "--local-user"
+      - "{{ .Env.GPG_FINGERPRINT }}" # "5D8EA7261718FE5728BA937C97341836616BF511" salrashid123@gmail.com https://keyserver.ubuntu.com/pks/lookup?search=5D8EA7261718FE5728BA937C97341836616BF511&fingerprint=on&op=index
+      - "--output"
+      - "${signature}"
+      - "--detach-sign"
+      - "${artifact}"
+
+env_files:
+  github_token: ~/.config/goreleaser/github_token
+source:
+  name_template: '{{ .ProjectName }}-{{ .Version }}'
+  format: tar.gz
+gomod:
+  gobinary: go
+github_urls:
+  download: https://github.com
+
+# creates SBOMs of all archives and the source tarball using syft
+# https://goreleaser.com/customization/sbom
+sboms:
+  - id: default
+    cmd: syft
+    env:
+      - SYFT_FILE_METADATA_CATALOGER_ENABLED=true
+    args:
+      - $artifact
+      - --file
+      - $document
+      - --output
+      - spdx-json
+    documents:
+      - ${artifact}.spdx.sbom
+    artifacts: archive
+

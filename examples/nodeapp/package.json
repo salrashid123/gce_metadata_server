@@ -1,0 +1,12 @@
+{
+  "name": "myapp",
+  "version": "0.0.0",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "log4js": "^0.6.27",
+    "@google-cloud/storage": "6.10.1",
+    "gcp-metadata": "5.2.0"
+  }
+}

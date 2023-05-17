@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,6 +15,7 @@ package main
 
 import (
 	"encoding/json"
+	"strconv"
 	"sync"
 
 	"context"
@@ -54,27 +55,29 @@ var (
 	tokenMutex = &sync.Mutex{}
 
 	creds *google.Credentials
+
+	instanceID, projectNumber int
 )
 
 const (
-	emailScope             = "https://www.googleapis.com/auth/userinfo.email"
-	cloudPlatformScope     = "https://www.googleapis.com/auth/cloud-platform"
-	googleProjectID        = "GOOGLE_PROJECT_ID"
-	googleNumericProjectID = "GOOGLE_NUMERIC_PROJECT_ID"
-	googleAccessToken      = "GOOGLE_ACCESS_TOKEN"
-	googleIDToken          = "GOOGLE_ID_TOKEN"
-	googleAccountEmail     = "GOOGLE_ACCOUNT_EMAIL"
+	emailScope         = "https://www.googleapis.com/auth/userinfo.email"
+	cloudPlatformScope = "https://www.googleapis.com/auth/cloud-platform"
+	googleAccessToken  = "GOOGLE_ACCESS_TOKEN"
+	googleIDToken      = "GOOGLE_ID_TOKEN"
 )
 
 type serverConfig struct {
 	flPort                string
-	flnumericProjectID    string
+	flnumericProjectID    string // should be an int
 	fltokenScopes         string
 	flprojectID           string
 	flserviceAccountEmail string
 	flserviAccountFile    string
 	flImpersonate         bool
 	flFederate            bool
+	flZone                string
+	flInstanceID          string // should be an int
+	flInstanceName        string
 }
 
 type metadataToken struct {
@@ -101,12 +104,12 @@ func getAccessToken() (*metadataToken, error) {
 		ts := oauth2.StaticTokenSource(
 			&oauth2.Token{
 				AccessToken: os.Getenv(googleAccessToken),
-				//Expiry:      time.Now().Add(time.Hour * 1),
-				TokenType: "Bearer",
+				Expiry:      time.Now().Add(time.Hour * 1),
+				TokenType:   "Bearer",
 			},
 		)
 		creds = &google.Credentials{
-			ProjectID:   os.Getenv(googleProjectID),
+			ProjectID:   cfg.flprojectID,
 			TokenSource: ts,
 		}
 	}
@@ -184,25 +187,17 @@ func getIDToken(targetAudience string) (string, error) {
 }
 
 func getProjectID() string {
-	if isEnvironmentOverrideSet() {
-		return os.Getenv(googleProjectID)
-	} else if cfg.flprojectID != "" {
+	if cfg.flprojectID != "" {
 		return cfg.flprojectID
 	}
 	return creds.ProjectID
 }
 
 func getNumericProjectID() string {
-	if isEnvironmentOverrideSet() {
-		return os.Getenv(googleNumericProjectID)
-	}
 	return cfg.flnumericProjectID
 }
 
 func getServiceAccountEmail() string {
-	if isEnvironmentOverrideSet() {
-		return os.Getenv(googleAccountEmail)
-	}
 	if cfg.flserviceAccountEmail != "" {
 		return cfg.flserviceAccountEmail
 	}
@@ -217,7 +212,13 @@ func getServiceAccountEmail() string {
 func checkMetadataHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-		glog.V(10).Infof("Got Request: %v", r)
+		glog.V(10).Infof("Got Request: path[%s] query[%s]", r.URL.Path, r.URL.RawQuery)
+
+		if r.URL.Query().Has("recursive") {
+			if strings.ToLower(r.URL.Query().Get("recursive")) == "true" {
+				glog.V(10).Infof("WARNING: ?recursive=true has limited depth support; check handler implementation")
+			}
+		}
 		w.Header().Add("Server", "Metadata Server for VM")
 		w.Header().Add("Metadata-Flavor", "Google")
 		w.Header().Add("X-XSS-Protection", "0")
@@ -287,6 +288,81 @@ func instanceHandler(w http.ResponseWriter, r *http.Request) {
 		"maintenance-event", "name", "network-interfaces/",
 		"preempted", "remaining-cpu-time", "scheduling/",
 		"service-accounts/", "tags", "virtual-clock/", "zone"}
+	resp := ""
+	for _, v := range vals {
+		resp = resp + v + "\n"
+	}
+	fmt.Fprint(w, resp)
+}
+
+func projectRootRedirectHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Content-Type", "text/html")
+	http.Redirect(w, r, "/computeMetadata/v1/project/", 302)
+}
+
+func projectRootHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Content-Type", "application/text")
+	vals := []string{"attributes/", "numeric-project-id", "project-id"}
+	resp := ""
+	for _, v := range vals {
+		resp = resp + v + "\n"
+	}
+	fmt.Fprint(w, resp)
+}
+
+func instancev1Handler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Content-Type", "text/html")
+	http.Redirect(w, r, "/computeMetadata/v1/", 301)
+}
+
+func instancev1RedirectHandler(w http.ResponseWriter, r *http.Request) {
+
+	// instanceID = cfg.flInstanceID
+	// if os.Getenv(googleAccountEmail) != "" {
+
+	// }
+
+	//	return os.Getenv(googleAccountEmail)
+	// account for limited ?recursive=true
+	if r.URL.Query().Has("recursive") {
+		if strings.ToLower(r.URL.Query().Get("recursive")) == "true" {
+			// for now, we're just going to return projectID, zone and an instanceid
+			// InstanceV1Metadata is used to emit recursive data back
+			// for /computeMetadata/v1/?recursive=true
+			type instanceMeta struct {
+				Zone         string `json:"zone,omitempty"`
+				InstanceName string `json:"name,omitempty"`
+				InstanceID   uint64 `json:"id,int,omitempty"`
+			}
+			type projectMeta struct {
+				ProjectID     string `json:"projectId,omitempty"`
+				ProjectNumber uint64 `json:"numericProjectId,int,omitempty"`
+			}
+			type instanceV1Metadata struct {
+				Instance *instanceMeta `json:"instance,string,omitempty"`
+				Project  *projectMeta  `json:"project,string,omitempty"`
+			}
+
+			w.Header().Add("Content-Type", "application/json")
+
+			resp := &instanceV1Metadata{
+				Instance: &instanceMeta{
+					InstanceName: cfg.flInstanceName,
+					InstanceID:   uint64(instanceID),
+					Zone:         fmt.Sprintf("projects/%d/zones/%s", projectNumber, cfg.flZone),
+				},
+				Project: &projectMeta{
+					ProjectNumber: uint64(projectNumber),
+					ProjectID:     cfg.flprojectID,
+				},
+			}
+			//resp := fmt.Sprintf("{\"instance\": {\"id\": 8087716956832600000,\"name\": \"instance-1\",\"zone\": \"projects/1071284184436/zones/us-central1-a\"},\"project\": {\"numericProjectId\": 1071284184436, \"projectId\": \"mineral-minutia-820\"}}")
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+	}
+	w.Header().Add("Content-Type", "application/text")
+	vals := []string{"instance/", "oslogin/", "project/"}
 	resp := ""
 	for _, v := range vals {
 		resp = resp + v + "\n"
@@ -389,7 +465,7 @@ func getServiceAccountHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func isEnvironmentOverrideSet() bool {
-	if os.Getenv(googleAccessToken) != "" && os.Getenv(googleIDToken) != "" && os.Getenv(googleAccountEmail) != "" && os.Getenv(googleNumericProjectID) != "" && os.Getenv(googleProjectID) != "" {
+	if os.Getenv(googleAccessToken) != "" && os.Getenv(googleIDToken) != "" {
 		return true
 	}
 	return false
@@ -405,6 +481,9 @@ func main() {
 	flag.StringVar(&cfg.flserviAccountFile, "serviceAccountFile", "", "serviceAccountFile...")
 	flag.BoolVar(&cfg.flImpersonate, "impersonate", false, "Impersonate a service Account instead of using the keyfile")
 	flag.BoolVar(&cfg.flFederate, "federate", false, "Use Workload Identity Federation ADC")
+	flag.StringVar(&cfg.flZone, "zone", "", "zone where any instance runs")
+	flag.StringVar(&cfg.flInstanceID, "instanceID", "", "instance id for a vm")
+	flag.StringVar(&cfg.flInstanceName, "instanceName", "", "instance name for a vm")
 	flag.Parse()
 
 	argError := func(s string, v ...interface{}) {
@@ -417,14 +496,18 @@ func main() {
 
 	r := mux.NewRouter()
 	r.StrictSlash(true)
+	r.Handle("/computeMetadata/v1/project/", http.HandlerFunc(projectRootRedirectHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/project", http.HandlerFunc(projectRootHandler)).Methods("GET")
 	r.Handle("/computeMetadata/v1/project/project-id", http.HandlerFunc(projectIDHandler)).Methods("GET")
 	r.Handle("/computeMetadata/v1/project/numeric-project-id", http.HandlerFunc(numericProjectIDHandler)).Methods("GET")
 	r.Handle("/computeMetadata/v1/project/attributes/{key}", http.HandlerFunc(attributesHandler)).Methods("GET")
 	r.Handle("/computeMetadata/v1/instance/service-accounts/", http.HandlerFunc(listServiceAccountHandler)).Methods("GET")
-	r.Handle("/computeMetadata/v1/instance", http.HandlerFunc(instanceHandler)).Methods("GET")
 	r.Handle("/computeMetadata/v1/instance/", http.HandlerFunc(instanceRedirectHandler)).Methods("GET")
-	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/", http.HandlerFunc(getServiceAccountIndexHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/instance", http.HandlerFunc(instanceHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/", http.HandlerFunc(instancev1RedirectHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1", http.HandlerFunc(instancev1Handler)).Methods("GET")
 	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}", http.HandlerFunc(getServiceAccountHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/", http.HandlerFunc(getServiceAccountIndexHandler)).Methods("GET")
 	r.Handle("/", http.HandlerFunc(rootHandler)).Methods("GET")
 	r.NotFoundHandler = http.HandlerFunc(notFound)
 
@@ -447,7 +530,7 @@ func main() {
 	// pretty confusing...so I'll just go w/ one or the other
 
 	if isEnvironmentOverrideSet() {
-		glog.Infoln("Using environment variables for credentials")
+		glog.Infoln("Using environment variables for access and id_tokens")
 	} else if cfg.flImpersonate {
 		glog.Infoln("Using Service Account Impersonation")
 
@@ -507,6 +590,22 @@ func main() {
 		creds, err = google.CredentialsFromJSON(ctx, data, s...)
 		if err != nil {
 			glog.Errorf("Unable to parse serviceAccountFile %v ", err)
+			os.Exit(1)
+		}
+	}
+
+	var err error
+	if cfg.flInstanceID != "" {
+		instanceID, err = strconv.Atoi(cfg.flInstanceID)
+		if err != nil {
+			glog.Errorf("Unable to convert instanceID to int %v ", err)
+			os.Exit(1)
+		}
+	}
+	if cfg.flnumericProjectID != "" {
+		projectNumber, err = strconv.Atoi(cfg.flnumericProjectID)
+		if err != nil {
+			glog.Errorf("Unable to convert projectNumber to int %v ", err)
 			os.Exit(1)
 		}
 	}

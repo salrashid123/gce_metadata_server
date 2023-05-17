@@ -1,13 +1,31 @@
 module github.com/salrashid123/gce_metadata_server
 
-go 1.15
+go 1.19
 
 require (
-	cloud.google.com/go v0.79.0
-	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
-	github.com/gorilla/mux v1.7.3
-	golang.org/x/net v0.0.0-20210226172049-e18ecbb05110
-	golang.org/x/oauth2 v0.0.0-20210313182246-cd4f82c27b84
-	google.golang.org/api v0.44.0-impersonate-preview
-	google.golang.org/genproto v0.0.0-20210319143718-93e7006c17a6
+	cloud.google.com/go/iam v1.0.1
+	github.com/golang/glog v1.1.1
+	github.com/gorilla/mux v1.8.0
+	golang.org/x/net v0.10.0
+	golang.org/x/oauth2 v0.8.0
+	google.golang.org/api v0.122.0
+	google.golang.org/genproto v0.0.0-20230410155749-daa745c078e1
+)
+
+require (
+	cloud.google.com/go/compute v1.19.0 // indirect
+	cloud.google.com/go/compute/metadata v0.2.3 // indirect
+	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
+	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/google/go-cmp v0.5.9 // indirect
+	github.com/google/s2a-go v0.1.3 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.2.3 // indirect
+	github.com/googleapis/gax-go/v2 v2.8.0 // indirect
+	go.opencensus.io v0.24.0 // indirect
+	golang.org/x/crypto v0.7.0 // indirect
+	golang.org/x/sys v0.8.0 // indirect
+	golang.org/x/text v0.9.0 // indirect
+	google.golang.org/appengine v1.6.7 // indirect
+	google.golang.org/grpc v1.55.0 // indirect
+	google.golang.org/protobuf v1.30.0 // indirect
 )

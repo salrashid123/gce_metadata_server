@@ -261,17 +261,11 @@ Remember to run `gcloud auth application-default revoke` in any new client libra
 
   While `google-auth-python` supports the `GCE_METADATA_HOST`, it assumes the port you are using is always `:80` which isn't the case here.
 
-  So you have two options:  1. either run the emulator on `:80`, or use a redirect using a utility like `socat` on linux:
+  So you have two options:  1. either run the emulator on `:80` or tune the environment variables to account for that:
 
 ```bash
-sudo apt-get install socat
-
-sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:8080
-```
-
-```bash
-  export GCE_METADATA_HOST=localhost
-  export GCE_METADATA_IP=127.0.0.1
+  export GCE_METADATA_HOST=localhost:8080
+  export GCE_METADATA_IP=127.0.0.1:8080
 
   virtualenv env
   source env/bin/activate

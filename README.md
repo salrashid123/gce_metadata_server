@@ -288,7 +288,7 @@ Remember to run `gcloud auth application-default revoke` in any new client libra
   go run main.go
 ```
 
-* [nodejs](https://github.com/googleapis/gcp-metadata/blob/main/src/index.ts#L36-L37)
+##### [nodejs](https://github.com/googleapis/gcp-metadata/blob/main/src/index.ts#L36-L37)
 
 
 ```bash
@@ -298,7 +298,7 @@ Remember to run `gcloud auth application-default revoke` in any new client libra
   node app.js  
 ```
 
-* [dotnet](https://github.com/googleapis/google-api-dotnet-client/blob/main/Src/Support/Google.Apis.Auth/OAuth2/GoogleAuthConsts.cs#L136)
+##### [dotnet](https://github.com/googleapis/google-api-dotnet-client/blob/main/Src/Support/Google.Apis.Auth/OAuth2/GoogleAuthConsts.cs#L136)
 
 ```bash
   export GCE_METADATA_HOST=localhost:8080
@@ -364,11 +364,54 @@ You may need to drop existing firewall rules and then restart the docker daemon 
 
 #### Running as Kubernetes Service
 
-You can run the emulator as a kubernetes service but you cannot bind the link local address `169.254.169.254` with a k8s service. see [Kubernetes Services](https://kubernetes.io/docs/concepts/services-networking/service/#services-without-selectors):
+You can run the emulator as a kubernetes `Service`  and reference it from other pods address by injecting `GCE_METADATA_HOST` environment variable to the containers:
 
-_"The endpoint IPs must not be: loopback (127.0.0.0/8 for IPv4, ::1/128 for IPv6), or link-local (169.254.0.0/16 and 224.0.0.0/24 for IPv4, fe80::/64 for IPv6)."_
+If you want test this with `minikube` locally,
 
-So. you'll need to specify a kubernetes `Service` address by injecting `GCE_METADATA_HOST` environment variable to the containers 
+```bash
+## first create the base64encoded form of the service account keydefine a
+cat certs/metadata-sa.json | base64  --wrap=0 -
+cd examples/kubernetes
+```
+
+then edit metadata.yaml and replace the values: 
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gce-metadata-config
+  namespace: default
+data:
+  GOOGLE_PROJECT_ID: "your_project"
+  GOOGLE_NUMERIC_PROJECT_ID: "1071284184436"
+  GOOGLE_INSTANCE_ID: "8087716956832600000"
+  GOOGLE_INSTANCE_NAME: "vm1"
+  GOOGLE_ZONE: "us-central1-a"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gcp-svc-account
+type: Opaque
+data:
+  metadata-sa.json: "replace with contents of cat certs/metadata-sa.json | base64  --wrap=0 -"
+```
+
+Finally test
+
+```bash
+minikube start
+kubectl apply -f .
+minikube dashboard --url
+minikube service app-service --url
+
+# your ip:port will be different
+$ curl -s http://192.168.39.94:30765
+Number of Buckets: 62
+```
+
+>> needless to say, the metadata Service should be accessed only form authorized pods
 
 ### Using static environment variables
 

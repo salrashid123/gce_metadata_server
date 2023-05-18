@@ -1,0 +1,105 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gce-metadata-config
+  namespace: default
+data:
+  GOOGLE_PROJECT_ID: "mineral-minutia-820"
+  GOOGLE_NUMERIC_PROJECT_ID: "1071284184436"
+  GOOGLE_INSTANCE_ID: "8087716956832600000"
+  GOOGLE_INSTANCE_NAME: "vm1"
+  GOOGLE_ZONE: "us-central1-a"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gcp-svc-account
+type: Opaque
+data:
+  metadata-sa.json: "replace with contents of cat certs/metadata-sa.json | base64  --wrap=0 -"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metadata-service
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: metadata
+  ports:
+  - name: http-port
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metadata
+  labels:
+    type: metadata-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      type: metadata-service
+  template:
+    metadata:
+      labels:
+        type: metadata-service
+        app.kubernetes.io/name: metadata
+    spec:
+      containers:
+      - name: service
+        image: docker.io/salrashid123/gcemetadataserver@sha256:b74a77c63c5245c668fa93315c318e51999ebe4cf2cb94128849d44e1a7209f3
+        args: [
+          "-serviceAccountFile=/certs/metadata-sa.json", 
+          "-logtostderr","-alsologtostderr",
+          "-v=50",
+          "-port=:8080",
+          "--numericProjectId=$(GOOGLE_NUMERIC_PROJECT_ID)",
+          "--projectId=$(GOOGLE_PROJECT_ID)",
+          "--zone=$(GOOGLE_ZONE)",
+          "--instanceID=$(GOOGLE_INSTANCE_ID)",
+          "--instanceName=$(GOOGLE_INSTANCE_NAME)",
+          "-tokenScopes=https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform"
+        ]        
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          protocol: TCP 
+        volumeMounts:
+        - name: metadata-sa
+          mountPath: "/certs"
+          readOnly: true
+        env:
+        - name: GOOGLE_PROJECT_ID
+          valueFrom:
+            configMapKeyRef:
+              name: gce-metadata-config
+              key: GOOGLE_PROJECT_ID              
+        - name: GOOGLE_NUMERIC_PROJECT_ID
+          valueFrom:
+            configMapKeyRef:
+              name: gce-metadata-config
+              key: GOOGLE_NUMERIC_PROJECT_ID              
+        - name: GOOGLE_INSTANCE_ID
+          valueFrom:
+            configMapKeyRef:
+              name: gce-metadata-config
+              key: GOOGLE_INSTANCE_ID              
+        - name: GOOGLE_INSTANCE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: gce-metadata-config
+              key: GOOGLE_INSTANCE_NAME              
+        - name: GOOGLE_ZONE
+          valueFrom:
+            configMapKeyRef:
+              name: gce-metadata-config
+              key: GOOGLE_ZONE
+      volumes:
+      - name: metadata-sa
+        secret:
+          secretName: gcp-svc-account
+          optional: false

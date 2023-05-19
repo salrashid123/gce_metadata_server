@@ -314,14 +314,29 @@ Note, `Google.Api.Gax.Platform.Instance().ProjectId` requests the full [recursiv
 - ![images/setup_5.png](images/setup_5.png)
 
 
+#### gcloud
+
+```bash
+export GCE_METADATA_ROOT=localhost:8080
+
+$ gcloud config list
+[component_manager]
+disable_update_check = True
+[core]
+account = metadata-sa@mineral-minutia-820.iam.gserviceaccount.com
+project = mineral-minutia-820
+```
+
+`gcloud` uses a different env-var but if you want to use `gcloud auth application-default print-access-token`, you need to _also_ use `GCE_METADATA_HOST` and `GCE_METADATA_IP`
+
 
 ### IDToken
 
 The following endpoints shows how to acquire an IDToken
 
 ```bash
-curl -H "Metadata-Flavor: Google" \
-'http://metadata/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://foo.bar'
+curl -H "Metadata-Flavor: Google" --connect-to metadata.google.internal:80:127.0.0.1:8080 \
+'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://foo.bar'
 ```
 
 The `id_token` will be signed by google but issued by the service account you used

@@ -26,7 +26,6 @@ namespace AuthHarness
                     Console.WriteLine("ERROR: " + err.Message);
                 }
             }
-            Console.ReadKey();
         }
 
         private async Task Run()
@@ -36,11 +35,8 @@ namespace AuthHarness
             ICredential credential = googleCredential.UnderlyingCredential;
             ComputeCredential computeCredential =  credential as ComputeCredential;
             if (await ComputeCredential.IsRunningOnComputeEngine().ConfigureAwait(false)) {
-                // 
-                // TODO, use the metadata to derive the projetid 
-                // returns null: Google.Api.Gax.Platform.Instance().ProjectId
 
-                var projectID = Google.Api.Gax.Platform.Instance().ProjectId; // "mineral-minutia-820";           
+                var projectID = Google.Api.Gax.Platform.Instance().ProjectId;           
                 var storage = StorageClient.Create();
                 var buckets = storage.ListBuckets(projectID);
                 Console.WriteLine("Buckets:");

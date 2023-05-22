@@ -51,7 +51,7 @@ spec:
     spec:
       containers:
       - name: service
-        image: docker.io/salrashid123/gcemetadataserver@sha256:b74a77c63c5245c668fa93315c318e51999ebe4cf2cb94128849d44e1a7209f3
+        image: docker.io/salrashid123/gcemetadataserver@sha256:8f0f2b521c58221a9ba1f39f74c5d15ba7096ff22077d0e2d89790b0c2a8c75b
         args: [
           "-serviceAccountFile=/certs/metadata-sa.json", 
           "-logtostderr","-alsologtostderr",

@@ -2,9 +2,9 @@
 
 
 ## Background
-This script acts as a GCE's internal metadata server for local testing/emulation.
+This script acts as a GCE's internal metadata server.
 
-It returns a live access_token that can be used directly by [Application Default Credentials](https://developers.google.com/identity/protocols/application-default-credentials) transparently.
+It returns a live `access_token` that can be used directly by [Application Default Credentials](https://developers.google.com/identity/protocols/application-default-credentials) transparently.
 
 For example, you can use `ComputeCredentials` on your laptop:
 
@@ -23,9 +23,21 @@ r = session.get('https://www.googleapis.com/userinfo/v2/me').json()
 print(str(r))
 ```
 
+or 
+
+- [Run with Google Auth clients](#run-with-google-auth-clients)
+- [Running as kubernetes service](#running-as-kubernetes-service)
+- [Run the metadata server with containers](#run-with-containers)
+
  This is useful to test any script or code locally that my need to contact GCE's metadata server for custom, user-defined variables or access_tokens.
 
- Another usecase for this is to verify how Application Defaults will behave while running a local docker container. A local running docker container will not have access to GCE's metadata server but by bridging your container to the emulator, you are basically allowing GCP API access directly from within a container on your local workstation (vs. running the code comprising the container directly on the workstation and relying on gcloud credentials (not metadata)).
+ Another usecase for this is to verify how `Application Defaults` will behave while running a local docker container. A local running docker container will not have access to GCE's metadata server but by bridging your container to the emulator, you are basically allowing GCP API access directly from within a container on your local workstation (vs. running the code comprising the container directly on the workstation and relying on gcloud credentials (not metadata)).
+
+ You can also run this as a service inside a kubernetes cluster and allow any other pod virtual access to GCP metadata server without even running in GCP.
+
+
+See
+
 
 
 >> This is not an officially supported Google product
@@ -33,6 +45,10 @@ print(str(r))
 
 For more information on the request-response characteristics:
 * [GCE Metadata Server](https://cloud.google.com/compute/docs/storing-retrieving-metadata)
+
+and 
+
+* [Default Metadata Values](https://cloud.google.com/compute/docs/metadata/default-metadata-values)
 
  The script performs the following:
  * returns the `access_token` provided by either
@@ -54,6 +70,7 @@ r.Handle("/computeMetadata/v1/instance/service-accounts/")
 r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/")
 r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}")
 r.Handle("/computeMetadata/v1/instance/")
+r.Handle("/computeMetadata/v1/instance/{id|hostname}")
 r.Handle("/")
  ```
 
@@ -73,6 +90,7 @@ You can run the emulator either:
 
 1.  directly on your laptop
 2.  within a docker container running locally.
+3.  as a kubernetes service
 
 ### Running the metadata server directly
 
@@ -104,7 +122,8 @@ or preferably assign your user impersonation capabilities on it:
 
 ```bash
 gcloud iam service-accounts \
-  add-iam-policy-binding metadata-sa@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com --member=user:`gcloud config get-value core/account` \
+  add-iam-policy-binding metadata-sa@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com \
+  --member=user:`gcloud config get-value core/account` \
   --role=roles/iam.serviceAccountTokenCreator
 ```
 
@@ -121,7 +140,7 @@ You can assign IAM permissions now to the service account for whatever resources
 
 #### Run the metadata server
 
-Using Certs
+#### With Certificates
 
 ```bash
 mkdir certs/
@@ -135,7 +154,7 @@ go run main.go -logtostderr \
   --tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
 ```
 
-or via impersonation
+#### With Impersonation
 
 ```bash
  go run main.go -logtostderr    -alsologtostderr -v 5   \
@@ -146,7 +165,7 @@ or via impersonation
   --tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
 ```
 
-or via [workload identity federation](https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation)
+#### With [workload identity federation](https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation)
 
 ```bash
 export GOOGLE_APPLICATION_CREDENTIALS=`pwd`/sts-creds.json
@@ -202,7 +221,6 @@ where `/tmp/oidcred.txt` contains the original oidc token
 or via docker
 
 ```bash
-# docker.io/salrashid123/gcemetadataserver@sha256:b74a77c63c5245c668fa93315c318e51999ebe4cf2cb94128849d44e1a7209f3
 docker run \
   -v `pwd`/certs/:/certs/ \
   -p 8080:8080 \
@@ -239,7 +257,7 @@ curl -v -H 'Metadata-Flavor: Google' --connect-to metadata.google.internal:80:12
 {"access_token":"ya29.c.EltxByD8vfv2ACageADlorFHWd2ZUIgGdU-redacted","expires_in":3600,"token_type":"Bearer"}
 ```
 
-#### Test Google Auth clients
+#### Run with Google Auth clients
 
 GCP Auth libraries support overriding the host/port for the metadata server.  
 
@@ -360,24 +378,17 @@ The `id_token` will be signed by google but issued by the service account you us
 ```
 >>> Unlike the _real_ gce metadataserver, this will **NOT** return the full identity document or license info :(`&format=[FORMAT]&licenses=[LICENSES]`)
 
-### Run the metadata server with containers
+### Run with containers
 
-#### Access the local emulator _from_ containers
+To access the local emulator _from_ containers
 
 ```bash
 cd examples/container
 docker build -t myapp .
 docker run -t --net=host -e GCE_METADATA_HOST=localhost:8080  myapp
 ```
-You may need to drop existing firewall rules and then restart the docker daemon to prevent conflicts or overrides.
 
-
-> *NOTE:*   using --net=host is only recommended for testing; For more information see:
-
-* [Docker Networking](https://docs.docker.com/v1.8/articles/networking/#container-networking)
-* [Embedded DNS server in user-defined networks](https://docs.docker.com/engine/userguide/networking/configure-dns/#/embedded-dns-server-in-user-defined-networks)
-
-#### Running as Kubernetes Service
+### Running as Kubernetes Service
 
 You can run the emulator as a kubernetes `Service`  and reference it from other pods address by injecting `GCE_METADATA_HOST` environment variable to the containers:
 
@@ -421,8 +432,8 @@ kubectl apply -f .
 minikube dashboard --url
 minikube service app-service --url
 
-# your ip:port will be different
-$ curl -s http://192.168.39.94:30765
+$ curl -s `minikube service app-service --url`
+
 Number of Buckets: 62
 ```
 
@@ -472,9 +483,27 @@ some_static_token
 ```
 
 #### Extending the sample
+
 You can extend this sample for any arbitrary metadata you are interested in emulating (eg, disks, hostname, etc).
 Simply add the routes to the webserver and handle the responses accordingly.  It is recommended to view the request-response format directly on the metadata server to compare against.
 
+
+#### Building with Kaniko
+
+The container image is built using kaniko with the `--reproducible` flag enabled:
+
+```bash
+export TAG=...
+docker run    -v `pwd`:/workspace -v $HOME/.docker/config.json:/kaniko/.docker/config.json:ro    -v /var/run/docker.sock:/var/run/docker.sock   \
+      gcr.io/kaniko-project/executor@sha256:034f15e6fe235490e64a4173d02d0a41f61382450c314fffed9b8ca96dff66b2  \
+      --dockerfile=Dockerfile \
+      --reproducible \
+      --destination "docker.io/salrashid123/gcemetadataserver:$TAG" \
+      --context dir:///workspace/
+
+syft packages docker.io/salrashid123/gcemetadataserver:$TAG
+skopeo copy  --preserve-digests  docker://docker.io/salrashid123/gcemetadataserver:$TAG docker://docker.io/salrashid123/gcemetadataserver:latest
+```
 
 ### TODO
 

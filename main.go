@@ -78,6 +78,7 @@ type serverConfig struct {
 	flZone                string
 	flInstanceID          string // should be an int
 	flInstanceName        string
+	flHostName            string
 }
 
 type metadataToken struct {
@@ -190,16 +191,28 @@ func getProjectID() string {
 	if cfg.flprojectID != "" {
 		return cfg.flprojectID
 	}
+	if os.Getenv("GOOGLE_PROJECT_ID") != "" {
+		return os.Getenv("GOOGLE_PROJECT_ID")
+	}
 	return creds.ProjectID
 }
 
 func getNumericProjectID() string {
+	if cfg.flnumericProjectID != "" {
+		return cfg.flnumericProjectID
+	}
+	if os.Getenv("GOOGLE_NUMERIC_PROJECT_ID") != "" {
+		return os.Getenv("GOOGLE_NUMERIC_PROJECT_ID")
+	}
 	return cfg.flnumericProjectID
 }
 
 func getServiceAccountEmail() string {
 	if cfg.flserviceAccountEmail != "" {
 		return cfg.flserviceAccountEmail
+	}
+	if os.Getenv("GOOGLE_ACCOUNT_EMAIL") != "" {
+		return os.Getenv("GOOGLE_ACCOUNT_EMAIL")
 	}
 	conf, err := google.JWTConfigFromJSON(creds.JSON, emailScope)
 	if err != nil {
@@ -310,19 +323,12 @@ func projectRootHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, resp)
 }
 
-func instancev1Handler(w http.ResponseWriter, r *http.Request) {
+func instancev1RedirectHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "text/html")
 	http.Redirect(w, r, "/computeMetadata/v1/", 301)
 }
 
-func instancev1RedirectHandler(w http.ResponseWriter, r *http.Request) {
-
-	// instanceID = cfg.flInstanceID
-	// if os.Getenv(googleAccountEmail) != "" {
-
-	// }
-
-	//	return os.Getenv(googleAccountEmail)
+func instancev1Handler(w http.ResponseWriter, r *http.Request) {
 	// account for limited ?recursive=true
 	if r.URL.Query().Has("recursive") {
 		if strings.ToLower(r.URL.Query().Get("recursive")) == "true" {
@@ -333,6 +339,7 @@ func instancev1RedirectHandler(w http.ResponseWriter, r *http.Request) {
 				Zone         string `json:"zone,omitempty"`
 				InstanceName string `json:"name,omitempty"`
 				InstanceID   uint64 `json:"id,int,omitempty"`
+				Hostname     string `json:"hostname,int,omitempty"`
 			}
 			type projectMeta struct {
 				ProjectID     string `json:"projectId,omitempty"`
@@ -349,6 +356,7 @@ func instancev1RedirectHandler(w http.ResponseWriter, r *http.Request) {
 				Instance: &instanceMeta{
 					InstanceName: cfg.flInstanceName,
 					InstanceID:   uint64(instanceID),
+					Hostname:     cfg.flHostName,
 					Zone:         fmt.Sprintf("projects/%d/zones/%s", projectNumber, cfg.flZone),
 				},
 				Project: &projectMeta{
@@ -356,7 +364,6 @@ func instancev1RedirectHandler(w http.ResponseWriter, r *http.Request) {
 					ProjectID:     cfg.flprojectID,
 				},
 			}
-			//resp := fmt.Sprintf("{\"instance\": {\"id\": 8087716956832600000,\"name\": \"instance-1\",\"zone\": \"projects/1071284184436/zones/us-central1-a\"},\"project\": {\"numericProjectId\": 1071284184436, \"projectId\": \"mineral-minutia-820\"}}")
 			json.NewEncoder(w).Encode(resp)
 			return
 		}
@@ -368,6 +375,50 @@ func instancev1RedirectHandler(w http.ResponseWriter, r *http.Request) {
 		resp = resp + v + "\n"
 	}
 	fmt.Fprint(w, resp)
+}
+
+func instancev1PathHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	glog.Infof("/computeMetadata/v1/instance/{key} called for key %s", vars["key"])
+
+	switch vars["key"] {
+	case "id":
+		if cfg.flInstanceID != "" {
+			fmt.Fprint(w, cfg.flInstanceID)
+		} else if os.Getenv("GOOGLE_INSTANCE_ID") != "" {
+			fmt.Fprint(w, os.Getenv("GOOGLE_INSTANCE_ID"))
+		} else {
+			http.Error(w, "value_not_set", http.StatusNotFound)
+			w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+			return
+		}
+	case "name":
+		if cfg.flInstanceName != "" {
+			fmt.Fprint(w, cfg.flInstanceName)
+		} else if os.Getenv("GOOGLE_INSTANCE_NAME") != "" {
+			fmt.Fprint(w, os.Getenv("GOOGLE_INSTANCE_NAME"))
+		} else {
+			http.Error(w, "value_not_set", http.StatusNotFound)
+			w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+			return
+		}
+	case "hostname":
+		if cfg.flHostName != "" {
+			fmt.Fprint(w, cfg.flHostName)
+		} else if os.Getenv("GOOGLE_INSTANCE_HOSTNAME") != "" {
+			fmt.Fprint(w, os.Getenv("GOOGLE_INSTANCE_HOSTNAME"))
+		} else {
+			http.Error(w, "value_not_set", http.StatusNotFound)
+			w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+			return
+		}
+	default:
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+		return
+	}
+	w.Header().Set("Content-Type", "application/text")
+	return
 }
 
 func getServiceAccountIndexHandler(w http.ResponseWriter, r *http.Request) {
@@ -484,6 +535,7 @@ func main() {
 	flag.StringVar(&cfg.flZone, "zone", "", "zone where any instance runs")
 	flag.StringVar(&cfg.flInstanceID, "instanceID", "", "instance id for a vm")
 	flag.StringVar(&cfg.flInstanceName, "instanceName", "", "instance name for a vm")
+	flag.StringVar(&cfg.flHostName, "hostName", "", "instance host name for a vm")
 	flag.Parse()
 
 	argError := func(s string, v ...interface{}) {
@@ -495,22 +547,29 @@ func main() {
 	glog.Infof("Starting GCP metadataserver on port, %v", cfg.flPort)
 
 	r := mux.NewRouter()
-	r.StrictSlash(true)
-	r.Handle("/computeMetadata/v1/project/", http.HandlerFunc(projectRootRedirectHandler)).Methods("GET")
-	r.Handle("/computeMetadata/v1/project", http.HandlerFunc(projectRootHandler)).Methods("GET")
+	r.StrictSlash(false)
+
+	r.Handle("/computeMetadata/v1/project", http.HandlerFunc(projectRootRedirectHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/project/", http.HandlerFunc(projectRootHandler)).Methods("GET")
+
 	r.Handle("/computeMetadata/v1/project/project-id", http.HandlerFunc(projectIDHandler)).Methods("GET")
 	r.Handle("/computeMetadata/v1/project/numeric-project-id", http.HandlerFunc(numericProjectIDHandler)).Methods("GET")
+
 	r.Handle("/computeMetadata/v1/project/attributes/{key}", http.HandlerFunc(attributesHandler)).Methods("GET")
 	r.Handle("/computeMetadata/v1/instance/service-accounts/", http.HandlerFunc(listServiceAccountHandler)).Methods("GET")
-	r.Handle("/computeMetadata/v1/instance/", http.HandlerFunc(instanceRedirectHandler)).Methods("GET")
-	r.Handle("/computeMetadata/v1/instance", http.HandlerFunc(instanceHandler)).Methods("GET")
-	r.Handle("/computeMetadata/v1/", http.HandlerFunc(instancev1RedirectHandler)).Methods("GET")
-	r.Handle("/computeMetadata/v1", http.HandlerFunc(instancev1Handler)).Methods("GET")
+
+	r.Handle("/computeMetadata/v1/instance", http.HandlerFunc(instanceRedirectHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/instance/", http.HandlerFunc(instanceHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/instance/{key}", http.HandlerFunc(instancev1PathHandler)).Methods("GET")
+
+	r.Handle("/computeMetadata/v1", http.HandlerFunc(instancev1RedirectHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/", http.HandlerFunc(instancev1Handler)).Methods("GET")
+
 	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}", http.HandlerFunc(getServiceAccountHandler)).Methods("GET")
 	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/", http.HandlerFunc(getServiceAccountIndexHandler)).Methods("GET")
 	r.Handle("/", http.HandlerFunc(rootHandler)).Methods("GET")
-	r.NotFoundHandler = http.HandlerFunc(notFound)
 
+	r.NotFoundHandler = http.HandlerFunc(notFound)
 	http.Handle("/", checkMetadataHeaders(r))
 
 	srv := &http.Server{

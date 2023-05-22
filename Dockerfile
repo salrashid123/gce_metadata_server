@@ -5,10 +5,7 @@ WORKDIR /go/src/app
 COPY . .
 RUN go mod download
 RUN GOOS=linux GOARCH=amd64 go build -buildvcs=false  -o /go/bin/gce_metadata_server
-
-
-RUN chown root:root /go/bin/gce_metadata_server && \
-  chown -R root:root /go/src/app
+RUN chown root:root /go/bin/gce_metadata_server
 
 # base-debian11-root
 FROM gcr.io/distroless/base-debian11@sha256:df13a91fd415eb192a75e2ef7eacf3bb5877bb05ce93064b91b83feef5431f37

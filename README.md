@@ -83,14 +83,14 @@ You are free to expand on the endpoints surfaced here..pls feel free to file a P
 ## Usage
 
 This script runs a basic webserver and responds back as the Google Compute Engine's metadata server.  A local webserver
-runs on a non-privileged port (default: 8080) and uses a `serviceAccountFile` file or environment variables return an `access_token`
-and optional live project user-defined metadata.
+runs on a non-privileged port (default: 8080) and uses a `serviceAccountFile`, service account impersonation or GCP workload federation to return GCP `access_token`, `id_token` and optional live project user-defined metadata
 
-You can run the emulator either:
+You can run the emulator:
 
 1.  directly on your laptop
 2.  within a docker container running locally.
 3.  as a kubernetes service
+4.  and with some difficulty, using a link-local address (`169.254.169.254`)
 
 ### Running the metadata server directly
 
@@ -504,6 +504,55 @@ docker run    -v `pwd`:/workspace -v $HOME/.docker/config.json:/kaniko/.docker/c
 syft packages docker.io/salrashid123/gcemetadataserver:$TAG
 skopeo copy  --preserve-digests  docker://docker.io/salrashid123/gcemetadataserver:$TAG docker://docker.io/salrashid123/gcemetadataserver:latest
 ```
+
+
+#### Using Link-Local address
+
+GCE's metadata server's IP address on GCE is a special link-local address: `169.254.169.254`.  Certain application default credential libraries for google cloud references the metadata server by IP address so we're adding this in.
+
+If you use the link-local address, do *not* set `GCE_METADATA_HOST`
+
+if you really want to use the link local address, you have two options:  use `iptables` or `socat`.  Both require some setup as root
+
+first create `/etc/hosts`:
+
+```bash
+169.254.169.254       metadata metadata.google.internal
+```
+
+for `socat`
+
+create an IP alias:
+
+```bash
+sudo ifconfig lo:0 169.254.169.254 up
+```
+
+relay using `socat`:
+
+```bash
+sudo apt-get install socat
+
+sudo socat TCP4-LISTEN:80,fork TCP4:127.0.0.1:8080
+```
+
+for  `iptables`
+
+configure iptables:
+
+```bash
+iptables -t nat -A OUTPUT -p tcp -d 169.254.169.254 --dport 80 -j DNAT --to-destination 127.0.0.1:8080
+```
+
+Finally, access the endpoint via IP or alias over port `:80`
+
+```bash
+curl -v -H 'Metadata-Flavor: Google' \
+     http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
+```
+
+If you don't mind running the program on port `:80` directly, you can skip the socat and iptables and simply start the emulator on the default http port after setting the /etc/hosts variable.
+
 
 ### TODO
 

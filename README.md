@@ -56,6 +56,7 @@ and
    * [workload identity federation](https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation) configuration
    * service account impersonation
    * statically from a provided environment variable
+   * service account RSA key on `HSM` or `Trusted Platform Module (TPM)`
  * returns Google issued OpendID token (`id_token`) for the Service Account using the audience you specify
  * return custom key-value attributes
  * Identity Token document
@@ -234,6 +235,47 @@ docker run \
 Startup
 
 - ![images/setup_2.png](images/setup_2.png)
+
+
+#### With Trusted Platform Module (TPM)
+
+If the service account private key is bound inside a `Trusted Platform Module (TPM)`, the metadata server can use that key to issue an `access_token` or an `id_token`
+
+Before using this mode, the key _must be_ sealed into the TPM and surfaced as a `persistentHandle`.  This can be done in a number of ways described [here](https://github.com/salrashid123/oauth2/blob/master/README.md#usage-tpmtokensource): 
+
+Basically, you can
+
+- `A` download a Google ServiceAccount's json file and embed the private part to the TPM or
+- `B` Generate a Key ON THE TPM and then import the public part to GCP. or
+- `C` remote seal the service accounts RSA Private key remotely, encrypt it with the remote TPM's Endorsement Key and load it
+
+`B` is the most secure but `C` allows for multiple TPMs to use the same key 
+
+Anyway, once the RSA key is present as a handle, start the metadata server using the `--tpm` flag and set the `--persistentHandle=` value.
+
+You will also need to set a number of other variables similar to the service account JSON file:
+
+
+```bash
+go run main.go -logtostderr \
+  -alsologtostderr -v 5 \
+  -port :8080 \
+  --tpm --persistentHandle=0x81008000 \
+  --serviceAccountEmail metadata-sa@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com  \
+  --numericProjectId $GOOGLE_NUMERIC_PROJECT_ID --projectId=$GOOGLE_PROJECT_ID --zone=$GOOGLE_ZONE --instanceID=$GOOGLE_INSTANCE_ID --instanceName=$GOOGLE_INSTANCE_NAME \
+  --tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
+```
+
+Final note:  if you run on kubernetes on-prem or outside of GCP managed environments, you can also use a sealed key for GCP access:
+
+While not included in this repo, if you provision a service account's key into the k8s node, you can start the metadata server as shown at the end of this repo but critically, the key it uses can be derived from the TPM itself.
+
+To do this, you would use a combination of the samples shown here where after attestation, you seal an RSA key and then  run the metadata server as a pod as described in the section titled `Running as Kubernetes Service`:
+
+also see:
+
+* [TPM access to pods using Generic Device Plugin and Gatekeeper](https://gist.github.com/salrashid123/744b9d8b356dbee88785e41de204f687)
+* [Kubernetes Trusted Platform Module (TPM) DaemonSet](https://github.com/salrashid123/tpm_daemonset)
 
 #### Test access to the metadata server
 

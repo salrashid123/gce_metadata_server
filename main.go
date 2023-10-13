@@ -14,6 +14,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"strconv"
 	"sync"
@@ -24,13 +25,16 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/golang/glog"
+	tpmjwt "github.com/salrashid123/golang-jwt-tpm"
 
 	"golang.org/x/net/http2"
 
@@ -41,6 +45,10 @@ import (
 
 	"github.com/gorilla/mux"
 	"golang.org/x/oauth2/google"
+
+	"github.com/google/go-tpm-tools/client"
+	"github.com/google/go-tpm/legacy/tpm2"
+	"github.com/google/go-tpm/tpmutil"
 
 	iamcredentials "cloud.google.com/go/iam/credentials/apiv1"
 	iamcredentialspb "google.golang.org/genproto/googleapis/iam/credentials/v1"
@@ -79,6 +87,9 @@ type serverConfig struct {
 	flInstanceID          string // should be an int
 	flInstanceName        string
 	flHostName            string
+	flTPM                 bool
+	flTPMPath             string
+	flPersistentHandle    int
 }
 
 type metadataToken struct {
@@ -113,6 +124,98 @@ func getAccessToken() (*metadataToken, error) {
 			ProjectID:   cfg.flprojectID,
 			TokenSource: ts,
 		}
+	}
+	if cfg.flTPM {
+		rwc, err := tpm2.OpenTPM(cfg.flTPMPath)
+		if err != nil {
+			glog.Errorf("can't open TPM %s: %v", cfg.flTPMPath, err)
+			return nil, err
+		}
+		defer rwc.Close()
+		k, err := client.LoadCachedKey(rwc, tpmutil.Handle(cfg.flPersistentHandle), nil)
+		if err != nil {
+			glog.Errorf("ERROR:  could not initialize Key: %v", err)
+			return nil, err
+		}
+		defer k.Close()
+		// now we're ready to sign
+
+		iat := time.Now()
+		exp := iat.Add(time.Hour)
+
+		type oauthJWT struct {
+			jwt.RegisteredClaims
+			Scope string `json:"scope"`
+		}
+
+		claims := &oauthJWT{
+			jwt.RegisteredClaims{
+				Issuer:    cfg.flserviceAccountEmail,
+				Audience:  []string{"https://oauth2.googleapis.com/token"},
+				IssuedAt:  jwt.NewNumericDate(iat),
+				ExpiresAt: jwt.NewNumericDate(exp),
+			},
+			strings.Join(strings.Split(cfg.fltokenScopes, ","), " "),
+		}
+
+		tpmjwt.SigningMethodTPMRS256.Override()
+		jwt.MarshalSingleStringAsArray = false
+		token := jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
+
+		ctx := context.Background()
+		config := &tpmjwt.TPMConfig{
+			TPMDevice: rwc,
+			Key:       k,
+		}
+
+		keyctx, err := tpmjwt.NewTPMContext(ctx, config)
+		if err != nil {
+			glog.Errorf("Unable to initialize tpmJWT: %v", err)
+			return nil, err
+		}
+
+		tokenString, err := token.SignedString(keyctx)
+		if err != nil {
+			glog.Errorf("Error signing %v", err)
+			return nil, err
+		}
+
+		client := &http.Client{}
+
+		data := url.Values{}
+		data.Set("grant_type", "assertion")
+		data.Add("assertion_type", "http://oauth.net/grant_type/jwt/1.0/bearer")
+		data.Add("assertion", tokenString)
+
+		hreq, err := http.NewRequest("POST", "https://www.googleapis.com/oauth2/v4/token", bytes.NewBufferString(data.Encode()))
+		if err != nil {
+			glog.Errorf("Error: Unable to generate token Request, %v\n", err)
+			return nil, err
+		}
+		hreq.Header.Set("Content-Type", "application/x-www-form-urlencoded; param=value")
+		resp, err := client.Do(hreq)
+		if err != nil {
+			glog.Errorf("Error: unable to POST token request, %v\n", err)
+			return nil, err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			f, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				glog.Errorf("Error Reading response body, %v\n", err)
+				return nil, err
+			}
+			glog.Errorf("Error: Token Request error:, %s\n", f)
+			return nil, fmt.Errorf("Error response from oauth2 %s\n", f)
+		}
+		defer resp.Body.Close()
+		var ret metadataToken
+		err = json.NewDecoder(resp.Body).Decode(&ret)
+		if err != nil {
+			return nil, err
+		}
+		return &ret, nil
+
 	}
 	tok, err := creds.TokenSource.Token()
 	if err != nil {
@@ -172,12 +275,106 @@ func getIDToken(targetAudience string) (string, error) {
 		idTokenSource = oauth2.StaticTokenSource(&oauth2.Token{
 			AccessToken: resp.Token,
 		})
+	} else if cfg.flTPM {
+		rwc, err := tpm2.OpenTPM(cfg.flTPMPath)
+		if err != nil {
+			glog.Errorf("can't open TPM %s: %v", cfg.flTPMPath, err)
+			return "", err
+		}
+		defer rwc.Close()
+		k, err := client.LoadCachedKey(rwc, tpmutil.Handle(cfg.flPersistentHandle), nil)
+		if err != nil {
+			glog.Errorf("ERROR:  could not initialize Key: %v", err)
+			return "", err
+		}
+		defer k.Close()
+		// now we're ready to sign
+
+		iat := time.Now()
+		exp := iat.Add(time.Hour)
+
+		type idTokenJWT struct {
+			jwt.RegisteredClaims
+			TargetAudience string `json:"target_audience"`
+		}
+
+		claims := &idTokenJWT{
+			jwt.RegisteredClaims{
+				Issuer:    cfg.flserviceAccountEmail,
+				IssuedAt:  jwt.NewNumericDate(iat),
+				ExpiresAt: jwt.NewNumericDate(exp),
+				Audience:  []string{"https://www.googleapis.com/oauth2/v4/token"},
+			},
+			targetAudience,
+		}
+
+		tpmjwt.SigningMethodTPMRS256.Override()
+		jwt.MarshalSingleStringAsArray = false
+		token := jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
+
+		ctx := context.Background()
+		config := &tpmjwt.TPMConfig{
+			TPMDevice: rwc,
+			Key:       k,
+		}
+
+		keyctx, err := tpmjwt.NewTPMContext(ctx, config)
+		if err != nil {
+			glog.Errorf("Unable to initialize tpmJWT: %v", err)
+			return "", err
+		}
+
+		tokenString, err := token.SignedString(keyctx)
+		if err != nil {
+			glog.Errorf("Error signing %v", err)
+			return "", err
+		}
+
+		client := &http.Client{}
+
+		data := url.Values{}
+		data.Add("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
+		data.Add("assertion", tokenString)
+
+		hreq, err := http.NewRequest("POST", "https://www.googleapis.com/oauth2/v4/token", bytes.NewBufferString(data.Encode()))
+		if err != nil {
+			glog.Errorf("Error: Unable to generate token Request, %v\n", err)
+			return "", err
+		}
+		hreq.Header.Set("Content-Type", "application/x-www-form-urlencoded; param=value")
+		resp, err := client.Do(hreq)
+		if err != nil {
+			glog.Errorf("Error: unable to POST token request, %v\n", err)
+			return "", err
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			f, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				glog.Errorf("Error Reading response body, %v\n", err)
+				return "", err
+			}
+			glog.Errorf("Error: Token Request error:, %s\n", f)
+			return "", fmt.Errorf("Error response from oauth2 %s\n", f)
+		}
+		defer resp.Body.Close()
+
+		type idTokenResponse struct {
+			IdToken string `json:"id_token"`
+		}
+
+		var ret idTokenResponse
+		err = json.NewDecoder(resp.Body).Decode(&ret)
+		if err != nil {
+			return "", err
+		}
+		return ret.IdToken, nil
 	} else {
 		idTokenSource, err = idtoken.NewTokenSource(ctx, targetAudience, idtoken.WithCredentialsJSON(creds.JSON))
-	}
-	if err != nil {
-		glog.Errorln(err)
-		return "", fmt.Errorf("could not get id_token %v", err)
+		if err != nil {
+			glog.Errorf("Error getting tokenSource %v\n")
+			return "", fmt.Errorf("could not get id_token %v", err)
+		}
 	}
 	tok, err := idTokenSource.Token()
 	if err != nil {
@@ -494,12 +691,14 @@ func getServiceAccountHandler(w http.ResponseWriter, r *http.Request) {
 	case "token":
 		tok, err := getAccessToken()
 		if err != nil {
+			glog.Errorf("Error getting Token %v\n", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			w.Header().Set("Content-Type", "application/text")
 			return
 		}
 		js, err := json.Marshal(tok)
 		if err != nil {
+			glog.Errorf("Error unmarshalling Token %v\n", err)
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			w.Header().Set("Content-Type", "application/text")
 			return
@@ -536,6 +735,10 @@ func main() {
 	flag.StringVar(&cfg.flInstanceID, "instanceID", "", "instance id for a vm")
 	flag.StringVar(&cfg.flInstanceName, "instanceName", "", "instance name for a vm")
 	flag.StringVar(&cfg.flHostName, "hostName", "", "instance host name for a vm")
+	flag.BoolVar(&cfg.flTPM, "tpm", false, "Use TPM to get access and id_token")
+	flag.StringVar(&cfg.flTPMPath, "tpm-path", "/dev/tpm0", "Path to the TPM device (character device or a Unix socket).")
+	flag.IntVar(&cfg.flPersistentHandle, "persistentHandle", 0x81008000, "Handle value")
+
 	flag.Parse()
 
 	argError := func(s string, v ...interface{}) {
@@ -629,6 +832,24 @@ func main() {
 		creds, err = google.FindDefaultCredentials(ctx, strings.Split(cfg.fltokenScopes, ",")...)
 		if err != nil {
 			glog.Errorf("Unable load federated credentials %v", err)
+			os.Exit(1)
+		}
+	} else if cfg.flPersistentHandle != 0 {
+		glog.Infoln("Using TPM based token handle")
+
+		if cfg.flPersistentHandle == 0 {
+			glog.Error("persistent handle must be specified TPM")
+			os.Exit(1)
+		}
+		// verify we actually have access to the TPM
+		rwc, err := tpm2.OpenTPM(cfg.flTPMPath)
+		if err != nil {
+			glog.Errorf("can't open TPM %s: %v", cfg.flTPM, err)
+			os.Exit(1)
+		}
+		err = rwc.Close()
+		if err != nil {
+			glog.Errorf("can't closing TPM %s: %v", cfg.flTPM, err)
 			os.Exit(1)
 		}
 	} else {

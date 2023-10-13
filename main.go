@@ -834,7 +834,7 @@ func main() {
 			glog.Errorf("Unable load federated credentials %v", err)
 			os.Exit(1)
 		}
-	} else if cfg.flPersistentHandle != 0 {
+	} else if cfg.flTPM {
 		glog.Infoln("Using TPM based token handle")
 
 		if cfg.flPersistentHandle == 0 {

@@ -22,6 +22,8 @@ builds:
       - amd64
     goamd64:
       - v1
+    env:
+      - CGO_ENABLED=0
     targets:
       - linux_amd64_v1
     binary: gce_metadata_server

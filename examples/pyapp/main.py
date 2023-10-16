@@ -9,7 +9,6 @@ import google.auth.transport.requests
 
 creds = google.auth.compute_engine.Credentials()
 request = google.auth.transport.requests.Request()
-creds.refresh(request)
 
 session = google.auth.transport.requests.AuthorizedSession(creds)
 r = session.get('https://www.googleapis.com/userinfo/v2/me').json()

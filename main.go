@@ -16,6 +16,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"net"
 	"strconv"
 	"sync"
 
@@ -75,7 +76,9 @@ const (
 )
 
 type serverConfig struct {
+	flInterface           string
 	flPort                string
+	flDomainSocket        string
 	flnumericProjectID    string // should be an int
 	fltokenScopes         string
 	flprojectID           string
@@ -220,10 +223,14 @@ func getAccessToken() (*metadataToken, error) {
 	tok, err := creds.TokenSource.Token()
 	if err != nil {
 		glog.Error(err)
-		return &metadataToken{}, err
+		return nil, err
 	}
 
-	loc, _ := time.LoadLocation("UTC")
+	loc, err := time.LoadLocation("UTC")
+	if err != nil {
+		glog.Error(err)
+		return nil, err
+	}
 	now := time.Now().In(loc)
 	diff := tok.Expiry.Sub(now)
 	return &metadataToken{
@@ -723,7 +730,9 @@ func isEnvironmentOverrideSet() bool {
 
 func main() {
 	ctx := context.Background()
+	flag.StringVar(&cfg.flInterface, "interface", "127.0.0.1", "interface address to bind to")
 	flag.StringVar(&cfg.flPort, "port", ":8080", "port...")
+	flag.StringVar(&cfg.flDomainSocket, "domainsocket", "", "listen only on unix socket")
 	flag.StringVar(&cfg.flnumericProjectID, "numericProjectId", "", "numericProjectId...")
 	flag.StringVar(&cfg.fltokenScopes, "tokenScopes", fmt.Sprintf("%s,%s", emailScope, cloudPlatformScope), "tokenScopes")
 	flag.StringVar(&cfg.flprojectID, "projectId", "", "projectId...")
@@ -747,37 +756,54 @@ func main() {
 		os.Exit(-1)
 	}
 
-	glog.Infof("Starting GCP metadataserver on port, %v", cfg.flPort)
+	glog.Infof("Starting GCP metadataserver")
 
 	r := mux.NewRouter()
 	r.StrictSlash(false)
 
-	r.Handle("/computeMetadata/v1/project", http.HandlerFunc(projectRootRedirectHandler)).Methods("GET")
-	r.Handle("/computeMetadata/v1/project/", http.HandlerFunc(projectRootHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/project", http.HandlerFunc(projectRootRedirectHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/project/", http.HandlerFunc(projectRootHandler)).Methods(http.MethodGet)
 
-	r.Handle("/computeMetadata/v1/project/project-id", http.HandlerFunc(projectIDHandler)).Methods("GET")
-	r.Handle("/computeMetadata/v1/project/numeric-project-id", http.HandlerFunc(numericProjectIDHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/project/project-id", http.HandlerFunc(projectIDHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/project/numeric-project-id", http.HandlerFunc(numericProjectIDHandler)).Methods(http.MethodGet)
 
-	r.Handle("/computeMetadata/v1/project/attributes/{key}", http.HandlerFunc(attributesHandler)).Methods("GET")
-	r.Handle("/computeMetadata/v1/instance/service-accounts/", http.HandlerFunc(listServiceAccountHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/project/attributes/{key}", http.HandlerFunc(attributesHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/service-accounts/", http.HandlerFunc(listServiceAccountHandler)).Methods(http.MethodGet)
 
-	r.Handle("/computeMetadata/v1/instance", http.HandlerFunc(instanceRedirectHandler)).Methods("GET")
-	r.Handle("/computeMetadata/v1/instance/", http.HandlerFunc(instanceHandler)).Methods("GET")
-	r.Handle("/computeMetadata/v1/instance/{key}", http.HandlerFunc(instancev1PathHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/instance", http.HandlerFunc(instanceRedirectHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/", http.HandlerFunc(instanceHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/{key}", http.HandlerFunc(instancev1PathHandler)).Methods(http.MethodGet)
 
-	r.Handle("/computeMetadata/v1", http.HandlerFunc(instancev1RedirectHandler)).Methods("GET")
-	r.Handle("/computeMetadata/v1/", http.HandlerFunc(instancev1Handler)).Methods("GET")
+	r.Handle("/computeMetadata/v1", http.HandlerFunc(instancev1RedirectHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/", http.HandlerFunc(instancev1Handler)).Methods(http.MethodGet)
 
-	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}", http.HandlerFunc(getServiceAccountHandler)).Methods("GET")
-	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/", http.HandlerFunc(getServiceAccountIndexHandler)).Methods("GET")
-	r.Handle("/", http.HandlerFunc(rootHandler)).Methods("GET")
+	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}", http.HandlerFunc(getServiceAccountHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/", http.HandlerFunc(getServiceAccountIndexHandler)).Methods(http.MethodGet)
+	r.Handle("/", http.HandlerFunc(rootHandler)).Methods(http.MethodGet)
 
 	r.NotFoundHandler = http.HandlerFunc(notFound)
 	http.Handle("/", checkMetadataHeaders(r))
 
-	srv := &http.Server{
-		Addr: cfg.flPort,
+	var l net.Listener
+	var err error
+	if cfg.flDomainSocket != "" {
+		glog.Infof("domain socket specified, ignoring TCP listers, %s", cfg.flDomainSocket)
+		l, err = net.Listen("unix", cfg.flDomainSocket)
+		if err != nil {
+			glog.Errorf("Error listening to domain socket: %v\n", err)
+			os.Exit(-1)
+		}
+	} else {
+		glog.Infof("tcp socket specified %s", fmt.Sprintf("%s%s", cfg.flInterface, cfg.flPort))
+		l, err = net.Listen("tcp", fmt.Sprintf("%s%s", cfg.flInterface, cfg.flPort))
+		if err != nil {
+			glog.Errorf("Error listening to tcp socket: %v\n", err)
+			os.Exit(-1)
+		}
 	}
+	defer l.Close()
+
+	srv := &http.Server{}
 	http2.ConfigureServer(srv, &http2.Server{})
 
 	done := make(chan os.Signal, 1)
@@ -874,7 +900,6 @@ func main() {
 		}
 	}
 
-	var err error
 	if cfg.flInstanceID != "" {
 		instanceID, err = strconv.Atoi(cfg.flInstanceID)
 		if err != nil {
@@ -891,7 +916,7 @@ func main() {
 	}
 
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(l); err != nil && err != http.ErrServerClosed {
 			glog.Fatalf("listen: %s\n", err)
 		}
 	}()

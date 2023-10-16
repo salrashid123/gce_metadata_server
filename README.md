@@ -6,18 +6,27 @@ This script acts as a GCE's internal metadata server.
 
 It returns a live `access_token` that can be used directly by [Application Default Credentials](https://developers.google.com/identity/protocols/application-default-credentials) transparently.
 
-For example, you can use `ComputeCredentials` on your laptop:
+For example, you can use `ADC` with metadata or `ComputeCredentials` on your laptop:
 
 ```python
 #!/usr/bin/python
 
+from google.cloud import storage
+import google.auth
+
 import google.auth.compute_engine
 import google.auth.transport.requests
 
+## with ADC
+credentials, project = google.auth.default()    
+client = storage.Client(credentials=credentials)
+buckets = client.list_buckets()
+for bkt in buckets:
+  print(bkt)
+
+## direct
 creds = google.auth.compute_engine.Credentials()
 request = google.auth.transport.requests.Request()
-creds.refresh(request)
-
 session = google.auth.transport.requests.AuthorizedSession(creds)
 r = session.get('https://www.googleapis.com/userinfo/v2/me').json()
 print(str(r))
@@ -232,11 +241,6 @@ docker run \
   -tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
 ```
 
-Startup
-
-- ![images/setup_2.png](images/setup_2.png)
-
-
 #### With Trusted Platform Module (TPM)
 
 If the service account private key is bound inside a `Trusted Platform Module (TPM)`, the metadata server can use that key to issue an `access_token` or an `id_token`
@@ -255,7 +259,6 @@ Anyway, once the RSA key is present as a handle, start the metadata server using
 
 You will also need to set a number of other variables similar to the service account JSON file:
 
-
 ```bash
 go run main.go -logtostderr \
   -alsologtostderr -v 5 \
@@ -265,6 +268,8 @@ go run main.go -logtostderr \
   --numericProjectId $GOOGLE_NUMERIC_PROJECT_ID --projectId=$GOOGLE_PROJECT_ID --zone=$GOOGLE_ZONE --instanceID=$GOOGLE_INSTANCE_ID --instanceName=$GOOGLE_INSTANCE_NAME \
   --tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
 ```
+
+we're using a `persistentHandle` to save/load the key but a TODO is to load from the [context tree from files](https://github.com/salrashid123/tpm2/tree/master/context_chain)
 
 Final note:  if you run on kubernetes on-prem or outside of GCP managed environments, you can also use a sealed key for GCP access:
 
@@ -276,6 +281,15 @@ also see:
 
 * [TPM access to pods using Generic Device Plugin and Gatekeeper](https://gist.github.com/salrashid123/744b9d8b356dbee88785e41de204f687)
 * [Kubernetes Trusted Platform Module (TPM) DaemonSet](https://github.com/salrashid123/tpm_daemonset)
+
+* [TPM Credential Source for Google Cloud SDK](https://github.com/salrashid123/gcp-adc-tpm)
+* [PKCS-11 Credential Source for Google Cloud SDK](https://github.com/salrashid123/gcp-adc-pkcs)
+
+#### Startup
+
+On startup, you will see something like:
+
+- ![images/setup_2.png](images/setup_2.png)
 
 #### Test access to the metadata server
 
@@ -547,10 +561,9 @@ syft packages docker.io/salrashid123/gcemetadataserver:$TAG
 skopeo copy  --preserve-digests  docker://docker.io/salrashid123/gcemetadataserver:$TAG docker://docker.io/salrashid123/gcemetadataserver:latest
 ```
 
-
 #### Using Link-Local address
 
-GCE's metadata server's IP address on GCE is a special link-local address: `169.254.169.254`.  Certain application default credential libraries for google cloud references the metadata server by IP address so we're adding this in.
+GCE's metadata server's IP address on GCE is a special link-local address: `169.254.169.254`.  Certain application default credential libraries for google cloud _may_ reference the metadata server by IP address so we're adding this in.
 
 If you use the link-local address, do *not* set `GCE_METADATA_HOST`
 
@@ -595,6 +608,32 @@ curl -v -H 'Metadata-Flavor: Google' \
 
 If you don't mind running the program on port `:80` directly, you can skip the socat and iptables and simply start the emulator on the default http port after setting the /etc/hosts variable.
 
+
+#### Using Domain Sockets
+
+You can also start the metadata server to listen on a [unix domain socket](https://en.wikipedia.org/wiki/Unix_domain_socket).
+
+To do this, simply specify `--domainsocket=` flag pointing to some file (eg ` --domainsocket=/tmp/metadata.sock`).  Once you do this, all tcp listeners will be disabled.
+
+To access using curl, use its `--unix-socket` flag
+
+```bash
+curl -v --unix-socket /tmp/metadata.sock \
+ -H 'Metadata-Flavor: Google' \
+   http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
+```
+
+While it works fine with things like curl, the main issue with using domain sockets is that the default `GCE_METADATA_HOST` variable just [listens on tcp](https://github.com/googleapis/google-cloud-go/blob/3a4ec650177be4d48aa7a0b8a22ea2b211522d80/compute/metadata/metadata.go#L308)  
+
+And its awkward to do all the overrides for a GCP SDK to "just use" a domain socket...
+
+If you really wanted to use unix sockets, you can find an example of how to do this in the `examples/goapp_unix` folder
+
+anyway, just for fun, you can pipe a tcp socket to domain using `socat` (or vice versa) but TBH, you're now back to where you started with a tcp listener..
+
+```bash
+socat TCP-LISTEN:8080,fork,reuseaddr UNIX-CONNECT:/tmp/metadata.sock
+```
 
 ### TODO
 

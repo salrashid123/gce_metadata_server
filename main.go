@@ -83,7 +83,7 @@ type serverConfig struct {
 	fltokenScopes         string
 	flprojectID           string
 	flserviceAccountEmail string
-	flserviAccountFile    string
+	serviceAccountFile    string
 	flImpersonate         bool
 	flFederate            bool
 	flZone                string
@@ -95,6 +95,7 @@ type serverConfig struct {
 	flPersistentHandle    int
 }
 
+// metadata server returns an "expires_in" while oauth2.Token returns Expiry time.time
 type metadataToken struct {
 	AccessToken string `json:"access_token"`
 	ExpiresIn   int    `json:"expires_in"`
@@ -129,6 +130,25 @@ func getAccessToken() (*metadataToken, error) {
 		}
 	}
 	if cfg.flTPM {
+		// return a cached token
+		if creds != nil {
+			tok, err := creds.TokenSource.Token()
+			if err != nil {
+				glog.Error(err)
+				return nil, err
+			}
+
+			if tok.Valid() {
+				now := time.Now().UTC()
+				diff := tok.Expiry.Sub(now)
+				return &metadataToken{
+					AccessToken: tok.AccessToken,
+					ExpiresIn:   int(diff.Round(time.Second).Seconds()),
+					TokenType:   tok.TokenType,
+				}, nil
+			}
+		}
+
 		rwc, err := tpm2.OpenTPM(cfg.flTPMPath)
 		if err != nil {
 			glog.Errorf("can't open TPM %s: %v", cfg.flTPMPath, err)
@@ -144,7 +164,7 @@ func getAccessToken() (*metadataToken, error) {
 		// now we're ready to sign
 
 		iat := time.Now()
-		exp := iat.Add(time.Hour)
+		exp := iat.Add(time.Second * 10)
 
 		type oauthJWT struct {
 			jwt.RegisteredClaims
@@ -190,7 +210,7 @@ func getAccessToken() (*metadataToken, error) {
 		data.Add("assertion_type", "http://oauth.net/grant_type/jwt/1.0/bearer")
 		data.Add("assertion", tokenString)
 
-		hreq, err := http.NewRequest("POST", "https://www.googleapis.com/oauth2/v4/token", bytes.NewBufferString(data.Encode()))
+		hreq, err := http.NewRequest("POST", "https://oauth2.googleapis.com/token", bytes.NewBufferString(data.Encode()))
 		if err != nil {
 			glog.Errorf("Error: Unable to generate token Request, %v\n", err)
 			return nil, err
@@ -217,8 +237,16 @@ func getAccessToken() (*metadataToken, error) {
 		if err != nil {
 			return nil, err
 		}
+		t := oauth2.Token{
+			AccessToken: ret.AccessToken,
+			Expiry:      time.Now().Add(time.Second * time.Duration(ret.ExpiresIn)),
+			TokenType:   ret.TokenType,
+		}
+		creds = &google.Credentials{
+			ProjectID:   cfg.flprojectID,
+			TokenSource: oauth2.StaticTokenSource(&t),
+		}
 		return &ret, nil
-
 	}
 	tok, err := creds.TokenSource.Token()
 	if err != nil {
@@ -226,12 +254,7 @@ func getAccessToken() (*metadataToken, error) {
 		return nil, err
 	}
 
-	loc, err := time.LoadLocation("UTC")
-	if err != nil {
-		glog.Error(err)
-		return nil, err
-	}
-	now := time.Now().In(loc)
+	now := time.Now().UTC()
 	diff := tok.Expiry.Sub(now)
 	return &metadataToken{
 		AccessToken: tok.AccessToken,
@@ -298,7 +321,7 @@ func getIDToken(targetAudience string) (string, error) {
 		// now we're ready to sign
 
 		iat := time.Now()
-		exp := iat.Add(time.Hour)
+		exp := iat.Add(time.Second * 10)
 
 		type idTokenJWT struct {
 			jwt.RegisteredClaims
@@ -310,7 +333,7 @@ func getIDToken(targetAudience string) (string, error) {
 				Issuer:    cfg.flserviceAccountEmail,
 				IssuedAt:  jwt.NewNumericDate(iat),
 				ExpiresAt: jwt.NewNumericDate(exp),
-				Audience:  []string{"https://www.googleapis.com/oauth2/v4/token"},
+				Audience:  []string{"https://oauth2.googleapis.com/token"},
 			},
 			targetAudience,
 		}
@@ -343,7 +366,7 @@ func getIDToken(targetAudience string) (string, error) {
 		data.Add("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
 		data.Add("assertion", tokenString)
 
-		hreq, err := http.NewRequest("POST", "https://www.googleapis.com/oauth2/v4/token", bytes.NewBufferString(data.Encode()))
+		hreq, err := http.NewRequest("POST", "https://oauth2.googleapis.com/token", bytes.NewBufferString(data.Encode()))
 		if err != nil {
 			glog.Errorf("Error: Unable to generate token Request, %v\n", err)
 			return "", err
@@ -737,7 +760,7 @@ func main() {
 	flag.StringVar(&cfg.fltokenScopes, "tokenScopes", fmt.Sprintf("%s,%s", emailScope, cloudPlatformScope), "tokenScopes")
 	flag.StringVar(&cfg.flprojectID, "projectId", "", "projectId...")
 	flag.StringVar(&cfg.flserviceAccountEmail, "serviceAccountEmail", "", "serviceAccountEmail...")
-	flag.StringVar(&cfg.flserviAccountFile, "serviceAccountFile", "", "serviceAccountFile...")
+	flag.StringVar(&cfg.serviceAccountFile, "serviceAccountFile", "", "serviceAccountFile...")
 	flag.BoolVar(&cfg.flImpersonate, "impersonate", false, "Impersonate a service Account instead of using the keyfile")
 	flag.BoolVar(&cfg.flFederate, "federate", false, "Use Workload Identity Federation ADC")
 	flag.StringVar(&cfg.flZone, "zone", "", "zone where any instance runs")
@@ -880,14 +903,14 @@ func main() {
 		}
 	} else {
 
-		if cfg.flserviAccountFile == "" {
+		if cfg.serviceAccountFile == "" {
 			argError("Either environment variable overides or -serviceAccountFile must be specified")
 		}
 
 		glog.Infoln("Using serviceAccountFile for credentials")
 		var err error
 		//creds, err = google.FindDefaultCredentials(ctx, tokenScopes)
-		data, err := ioutil.ReadFile(cfg.flserviAccountFile)
+		data, err := ioutil.ReadFile(cfg.serviceAccountFile)
 		if err != nil {
 			glog.Errorf("Unable to read serviceAccountFile %v", err)
 			os.Exit(1)

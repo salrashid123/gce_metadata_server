@@ -279,7 +279,7 @@ To do this, you would use a combination of the samples shown here where after at
 
 also see:
 
-* [TPM access to pods using Generic Device Plugin and Gatekeeper](https://gist.github.com/salrashid123/744b9d8b356dbee88785e41de204f687)
+* [Kubernetes Trusted Platform Module (TPM) using Device Plugin and Gatekeeper](https://github.com/salrashid123/tpm_kubernetes)
 * [Kubernetes Trusted Platform Module (TPM) DaemonSet](https://github.com/salrashid123/tpm_daemonset)
 
 * [TPM Credential Source for Google Cloud SDK](https://github.com/salrashid123/gcp-adc-tpm)

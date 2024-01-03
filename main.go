@@ -93,6 +93,11 @@ type serverConfig struct {
 	flTPM                 bool
 	flTPMPath             string
 	flPersistentHandle    int
+	flTags                string
+	flPrivateIp           string
+	flNetwork             string
+	flPublicIp            string
+	flMachineType         string
 }
 
 // metadata server returns an "expires_in" while oauth2.Token returns Expiry time.time
@@ -490,6 +495,10 @@ func rootHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "ok")
 }
 
+func enableOsConfig(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "TRUE")
+}
+
 func projectIDHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, getProjectID())
 }
@@ -543,6 +552,16 @@ func projectRootRedirectHandler(w http.ResponseWriter, r *http.Request) {
 func projectRootHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "application/text")
 	vals := []string{"attributes/", "numeric-project-id", "project-id"}
+	resp := ""
+	for _, v := range vals {
+		resp = resp + v + "\n"
+	}
+	fmt.Fprint(w, resp)
+}
+
+func networkInterfacesRootHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Content-Type", "application/text")
+	vals := []string{"0/"}
 	resp := ""
 	for _, v := range vals {
 		resp = resp + v + "\n"
@@ -619,6 +638,8 @@ func instancev1PathHandler(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=UTF-8")
 			return
 		}
+	case "attributes":
+		fmt.Fprint(w, "enable-osconfig")
 	case "name":
 		if cfg.flInstanceName != "" {
 			fmt.Fprint(w, cfg.flInstanceName)
@@ -629,11 +650,41 @@ func instancev1PathHandler(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=UTF-8")
 			return
 		}
+	case "machine-type":
+		if cfg.flInstanceName != "" {
+			fmt.Fprint(w, cfg.flMachineType)
+		} else if os.Getenv("GOOGLE_INSTANCE_MACHINE_TYPE") != "" {
+			fmt.Fprint(w, os.Getenv("GOOGLE_INSTANCE_MACHINE_TYPE"))
+		} else {
+			http.Error(w, "value_not_set", http.StatusNotFound)
+			w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+			return
+		}
 	case "hostname":
 		if cfg.flHostName != "" {
 			fmt.Fprint(w, cfg.flHostName)
 		} else if os.Getenv("GOOGLE_INSTANCE_HOSTNAME") != "" {
 			fmt.Fprint(w, os.Getenv("GOOGLE_INSTANCE_HOSTNAME"))
+		} else {
+			http.Error(w, "value_not_set", http.StatusNotFound)
+			w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+			return
+		}
+	case "tags":
+		if cfg.flHostName != "" {
+			fmt.Fprint(w, cfg.flTags)
+		} else if os.Getenv("GOOGLE_INSTANCE_TAGS") != "" {
+			fmt.Fprint(w, os.Getenv("GOOGLE_INSTANCE_TAGS"))
+		} else {
+			http.Error(w, "value_not_set", http.StatusNotFound)
+			w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+			return
+		}
+	case "zone":
+		if cfg.flHostName != "" {
+			fmt.Fprint(w, cfg.flZone)
+		} else if os.Getenv("GOOGLE_INSTANCE_ZONE") != "" {
+			fmt.Fprint(w, os.Getenv("GOOGLE_INSTANCE_ZONE"))
 		} else {
 			http.Error(w, "value_not_set", http.StatusNotFound)
 			w.Header().Set("Content-Type", "text/html; charset=UTF-8")
@@ -744,6 +795,64 @@ func getServiceAccountHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
+func networkInterfacesHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	glog.Infof("/computeMetadata/v1/instance/network-interfaces/0/ called for key %s", vars["key"])
+
+	switch vars["key"] {
+	case "ip":
+		if cfg.flInstanceID != "" {
+			fmt.Fprint(w, cfg.flPrivateIp)
+		} else if os.Getenv("GOOGLE_INSTANCE_PRIVATE_IP") != "" {
+			fmt.Fprint(w, os.Getenv("GOOGLE_INSTANCE_PRIVATE_IP"))
+		} else {
+			http.Error(w, "value_not_set", http.StatusNotFound)
+			w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+			return
+		}
+	case "network":
+		if cfg.flInstanceName != "" {
+			fmt.Fprint(w, cfg.flNetwork)
+		} else if os.Getenv("GOOGLE_INSTANCE_NETWORK") != "" {
+			fmt.Fprint(w, os.Getenv("GOOGLE_INSTANCE_NETWORK"))
+		} else {
+			http.Error(w, "value_not_set", http.StatusNotFound)
+			w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+			return
+		}
+	default:
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+		return
+	}
+	w.Header().Set("Content-Type", "application/text")
+	return
+}
+
+func networkInterfacesAccessConfigHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	glog.Infof("/computeMetadata/v1/instance/{key} called for key %s", vars["key"])
+
+	switch vars["key"] {
+	case "external-ip":
+		if cfg.flInstanceID != "" {
+			fmt.Fprint(w, cfg.flPublicIp)
+		} else if os.Getenv("GOOGLE_INSTANCE_PUBLIC_IP") != "" {
+			fmt.Fprint(w, os.Getenv("GOOGLE_INSTANCE_PUBLIC_IP"))
+		} else {
+			http.Error(w, "value_not_set", http.StatusNotFound)
+			w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+			return
+		}
+	default:
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+		return
+	}
+	w.Header().Set("Content-Type", "application/text")
+	return
+}
+
 func isEnvironmentOverrideSet() bool {
 	if os.Getenv(googleAccessToken) != "" && os.Getenv(googleIDToken) != "" {
 		return true
@@ -753,23 +862,28 @@ func isEnvironmentOverrideSet() bool {
 
 func main() {
 	ctx := context.Background()
-	flag.StringVar(&cfg.flInterface, "interface", "127.0.0.1", "interface address to bind to")
-	flag.StringVar(&cfg.flPort, "port", ":8080", "port...")
-	flag.StringVar(&cfg.flDomainSocket, "domainsocket", "", "listen only on unix socket")
-	flag.StringVar(&cfg.flnumericProjectID, "numericProjectId", "", "numericProjectId...")
-	flag.StringVar(&cfg.fltokenScopes, "tokenScopes", fmt.Sprintf("%s,%s", emailScope, cloudPlatformScope), "tokenScopes")
-	flag.StringVar(&cfg.flprojectID, "projectId", "", "projectId...")
-	flag.StringVar(&cfg.flserviceAccountEmail, "serviceAccountEmail", "", "serviceAccountEmail...")
-	flag.StringVar(&cfg.serviceAccountFile, "serviceAccountFile", "", "serviceAccountFile...")
-	flag.BoolVar(&cfg.flImpersonate, "impersonate", false, "Impersonate a service Account instead of using the keyfile")
 	flag.BoolVar(&cfg.flFederate, "federate", false, "Use Workload Identity Federation ADC")
-	flag.StringVar(&cfg.flZone, "zone", "", "zone where any instance runs")
+	flag.BoolVar(&cfg.flImpersonate, "impersonate", false, "Impersonate a service Account instead of using the keyfile")
+	flag.BoolVar(&cfg.flTPM, "tpm", false, "Use TPM to get access and id_token")
+	flag.IntVar(&cfg.flPersistentHandle, "persistentHandle", 0x81008000, "Handle value")
+	flag.StringVar(&cfg.flDomainSocket, "domainsocket", "", "listen only on unix socket")
+	flag.StringVar(&cfg.flHostName, "hostName", "", "instance host name for a vm")
 	flag.StringVar(&cfg.flInstanceID, "instanceID", "", "instance id for a vm")
 	flag.StringVar(&cfg.flInstanceName, "instanceName", "", "instance name for a vm")
-	flag.StringVar(&cfg.flHostName, "hostName", "", "instance host name for a vm")
-	flag.BoolVar(&cfg.flTPM, "tpm", false, "Use TPM to get access and id_token")
+	flag.StringVar(&cfg.flInterface, "interface", "127.0.0.1", "interface address to bind to")
+	flag.StringVar(&cfg.flnumericProjectID, "numericProjectId", "", "numericProjectId...")
+	flag.StringVar(&cfg.flPort, "port", ":8080", "port...")
+	flag.StringVar(&cfg.flprojectID, "projectId", "", "projectId...")
+	flag.StringVar(&cfg.flserviceAccountEmail, "serviceAccountEmail", "", "serviceAccountEmail...")
+	flag.StringVar(&cfg.flTags, "tags", "[]", "instance nwtwork tags")
+	flag.StringVar(&cfg.fltokenScopes, "tokenScopes", fmt.Sprintf("%s,%s", emailScope, cloudPlatformScope), "tokenScopes")
 	flag.StringVar(&cfg.flTPMPath, "tpm-path", "/dev/tpm0", "Path to the TPM device (character device or a Unix socket).")
-	flag.IntVar(&cfg.flPersistentHandle, "persistentHandle", 0x81008000, "Handle value")
+	flag.StringVar(&cfg.flZone, "zone", "", "zone where any instance runs")
+	flag.StringVar(&cfg.serviceAccountFile, "serviceAccountFile", "", "serviceAccountFile...")
+	flag.StringVar(&cfg.flNetwork, "network", "default", "instance network for a vm")
+	flag.StringVar(&cfg.flPrivateIp, "privateIp", "10.0.0.1", "instance private ip for a vm")
+	flag.StringVar(&cfg.flPublicIp, "publicIp", "10.0.0.1", "instance public ip for a vm")
+	flag.StringVar(&cfg.flMachineType, "machineType", "", "instance machine type for a vm")
 
 	flag.Parse()
 
@@ -793,6 +907,13 @@ func main() {
 	r.Handle("/computeMetadata/v1/project/attributes/{key}", http.HandlerFunc(attributesHandler)).Methods(http.MethodGet)
 	r.Handle("/computeMetadata/v1/instance/service-accounts/", http.HandlerFunc(listServiceAccountHandler)).Methods(http.MethodGet)
 
+	r.Handle("/computeMetadata/v1/instance/network-interfaces/", http.HandlerFunc(networkInterfacesRootHandler)).Methods(http.MethodGet)
+
+	r.Handle("/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/{key}", http.HandlerFunc(networkInterfacesAccessConfigHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/network-interfaces/0/{key}", http.HandlerFunc(networkInterfacesHandler)).Methods(http.MethodGet)
+
+	r.Handle("/computeMetadata/v1/instance/attributes/enable-osconfig", http.HandlerFunc(enableOsConfig)).Methods(http.MethodGet)
+
 	r.Handle("/computeMetadata/v1/instance", http.HandlerFunc(instanceRedirectHandler)).Methods(http.MethodGet)
 	r.Handle("/computeMetadata/v1/instance/", http.HandlerFunc(instanceHandler)).Methods(http.MethodGet)
 	r.Handle("/computeMetadata/v1/instance/{key}", http.HandlerFunc(instancev1PathHandler)).Methods(http.MethodGet)
@@ -802,6 +923,7 @@ func main() {
 
 	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}", http.HandlerFunc(getServiceAccountHandler)).Methods(http.MethodGet)
 	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/", http.HandlerFunc(getServiceAccountIndexHandler)).Methods(http.MethodGet)
+
 	r.Handle("/", http.HandlerFunc(rootHandler)).Methods(http.MethodGet)
 
 	r.NotFoundHandler = http.HandlerFunc(notFound)

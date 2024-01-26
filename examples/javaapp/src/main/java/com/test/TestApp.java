@@ -12,9 +12,8 @@ public class TestApp {
 	public TestApp() {
 		try
 		{
-
           // Using Google Cloud APIs
-		  Storage storage_service = StorageOptions.newBuilder()
+		  Storage storage_service = StorageOptions.newBuilder().setProjectId("your-project-id")
 			.build()
 			.getService();	
 		  for (Bucket b : storage_service.list().iterateAll()){

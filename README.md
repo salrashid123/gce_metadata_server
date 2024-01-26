@@ -47,8 +47,6 @@ or
 
 See
 
-
-
 >> This is not an officially supported Google product
 
 
@@ -57,7 +55,9 @@ For more information on the request-response characteristics:
 
 and 
 
-* [Default Metadata Values](https://cloud.google.com/compute/docs/metadata/default-metadata-values)
+* [Predefined metadata keys](https://cloud.google.com/compute/docs/metadata/predefined-metadata-keys)
+* [Set and remove custom metadata](https://cloud.google.com/compute/docs/metadata/setting-custom-metadata)
+
 
  The script performs the following:
  * returns the `access_token` provided by either
@@ -76,13 +76,23 @@ The endpoints that are exposed are:
 r.Handle("/computeMetadata/v1/project/project-id")
 r.Handle("/computeMetadata/v1/project/numeric-project-id")
 r.Handle("/computeMetadata/v1/project/attributes/{key}")
+
 r.Handle("/computeMetadata/v1/instance/service-accounts/")
 r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/")
 r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}")
-r.Handle("/computeMetadata/v1/instance/")
-r.Handle("/computeMetadata/v1/instance/{id|hostname}")
+r.Handle("/computeMetadata/v1/instance/network-interfaces/{index}/access-configs/{index2}/{key}")
+r.Handle("/computeMetadata/v1/instance/attributes/{key}")
+r.Handle("/computeMetadata/v1/instance/{key}")
 r.Handle("/")
- ```
+```
+
+
+Note, the real metadata server has some additional query parameters which are either partially or not implemented:
+
+- [recursive=true](https://cloud.google.com/compute/docs/metadata/querying-metadata#aggcontents) partially implemented
+- [?alt=json](https://cloud.google.com/compute/docs/metadata/querying-metadata#format_query_output) not implemented
+- [?wait_for_change=true](https://cloud.google.com/compute/docs/metadata/querying-metadata#waitforchange) not implemented
+
 
 You are free to expand on the endpoints surfaced here..pls feel free to file a PR!
 
@@ -102,6 +112,35 @@ You can run the emulator:
 3.  as a kubernetes service
 4.  and with some difficulty, using a link-local address (`169.254.169.254`)
 
+
+### Configuration 
+
+The metadata server reads a configuration file for static values and uses a service account for dynamically getting `access_token` and `id_token`.
+
+The basic config file format roughly maps the uri path of the actual metadata server and the emulator uses these values to populate responses.
+
+For example, the `instance_id`, `project_id`, `serviceAccountEmail` and other files are read from the values here
+
+```json
+{
+  "computeMetadata": {
+    "v1":{
+      "instance": {},
+      "oslogin": {},
+      "project": {}    
+    }
+  }
+} 
+```
+
+The field are basically a JSON representation of what the real metadata server returns recursively
+
+```bash
+$ curl -v -H 'Metadata-Flavor: Google' http://metadata/computeMetadata/v1/?recursive=true | jq '.'
+```
+
+Any requests for an `access_token` or an `id_token` are dynamically generated using the credential provided.  The scopes for any token uses the values set in the config file
+
 ### Running the metadata server directly
 
 The following steps details how you can run the emulator on your laptop.
@@ -112,13 +151,6 @@ The following steps details how you can run the emulator on your laptop.
 Create a GCP Service Account JSON file (you should strongly prefer using impersonation..)
 
 ```bash
-export GOOGLE_PROJECT_ID=`gcloud config get-value core/project`
-export GOOGLE_NUMERIC_PROJECT_ID=`gcloud projects describe $GOOGLE_PROJECT_ID --format="value(projectNumber)"`
-# optional
-export GOOGLE_INSTANCE_ID=8087716956832600000
-export GOOGLE_INSTANCE_NAME=vm1
-export GOOGLE_ZONE=us-central1-a
-
 gcloud iam service-accounts create metadata-sa
 ```
 
@@ -159,20 +191,15 @@ mv metadata-sa.json certs
 go run main.go -logtostderr \
   -alsologtostderr -v 5 \
   -port :8080 \
-  --serviceAccountFile certs/metadata-sa.json \
-  --numericProjectId $GOOGLE_NUMERIC_PROJECT_ID --projectId=$GOOGLE_PROJECT_ID --zone=$GOOGLE_ZONE --instanceID=$GOOGLE_INSTANCE_ID --instanceName=$GOOGLE_INSTANCE_NAME \
-  --tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
+  --serviceAccountFile certs/metadata-sa.json 
 ```
 
 #### With Impersonation
 
+If you use impersonation, the `serviceAccountEmail` and `scopes` are taken from the config file's default service account.
+
 ```bash
- go run main.go -logtostderr    -alsologtostderr -v 5   \
-  -port :8080   \
-  --impersonate \
-  --serviceAccountEmail metadata-sa@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com \
-  --numericProjectId $GOOGLE_NUMERIC_PROJECT_ID --projectId=$GOOGLE_PROJECT_ID --zone=$GOOGLE_ZONE --instanceID=$GOOGLE_INSTANCE_ID --instanceName=$GOOGLE_INSTANCE_NAME \
-  --tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
+ go run main.go -logtostderr    -alsologtostderr -v 5  -port :8080 --impersonate 
 ```
 
 #### With [workload identity federation](https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation)
@@ -181,11 +208,7 @@ go run main.go -logtostderr \
 export GOOGLE_APPLICATION_CREDENTIALS=`pwd`/sts-creds.json
 go run main.go -logtostderr \
   -alsologtostderr -v 5 \
-  -port :8080 \
-  --federate \
-  --serviceAccountEmail metadata-sa@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com  \
-  --numericProjectId $GOOGLE_NUMERIC_PROJECT_ID --projectId=$GOOGLE_PROJECT_ID --zone=$GOOGLE_ZONE --instanceID=$GOOGLE_INSTANCE_ID --instanceName=$GOOGLE_INSTANCE_NAME \
-  --tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
+  -port :8080 --federate 
 ```
 
 To use this mode, you must first setup the Federation and then set the environment variable pointing to the [ADC file](https://cloud.google.com/iam/docs/configuring-workload-identity-federation#aws).
@@ -237,8 +260,7 @@ docker run \
   -t salrashid123/gcemetadataserver \
   -serviceAccountFile /certs/metadata-sa.json \
   -logtostderr -alsologtostderr -v 5 \
-  -port :8080 --numericProjectId $GOOGLE_NUMERIC_PROJECT_ID --projectId=$GOOGLE_PROJECT_ID --zone=$GOOGLE_ZONE --instanceID=$GOOGLE_INSTANCE_ID --instanceName=$GOOGLE_INSTANCE_NAME \
-  -tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
+  -port :8080 
 ```
 
 #### With Trusted Platform Module (TPM)
@@ -260,13 +282,10 @@ Anyway, once the RSA key is present as a handle, start the metadata server using
 You will also need to set a number of other variables similar to the service account JSON file:
 
 ```bash
-go run main.go -logtostderr \
+go run server.go -logtostderr \
   -alsologtostderr -v 5 \
   -port :8080 \
-  --tpm --persistentHandle=0x81008000 \
-  --serviceAccountEmail metadata-sa@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com  \
-  --numericProjectId $GOOGLE_NUMERIC_PROJECT_ID --projectId=$GOOGLE_PROJECT_ID --zone=$GOOGLE_ZONE --instanceID=$GOOGLE_INSTANCE_ID --instanceName=$GOOGLE_INSTANCE_NAME \
-  --tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
+  --tpm --persistentHandle=0x81008000 
 ```
 
 we're using a `persistentHandle` to save/load the key but a TODO is to load from the [context tree from files](https://github.com/salrashid123/tpm2/tree/master/context_chain)
@@ -295,7 +314,6 @@ On startup, you will see something like:
 
 In a new window, run
 
-
 ```bash
 curl -v -H 'Metadata-Flavor: Google' --connect-to metadata.google.internal:80:127.0.0.1:8080 \
    http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
@@ -312,6 +330,9 @@ curl -v -H 'Metadata-Flavor: Google' --connect-to metadata.google.internal:80:12
 <
 {"access_token":"ya29.c.EltxByD8vfv2ACageADlorFHWd2ZUIgGdU-redacted","expires_in":3600,"token_type":"Bearer"}
 ```
+
+
+Please note the scopes used for this token is read in from the declared values in the config file
 
 #### Run with Google Auth clients
 
@@ -459,17 +480,6 @@ cd examples/kubernetes
 then edit metadata.yaml and replace the values: 
 
 ```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: gce-metadata-config
-  namespace: default
-data:
-  GOOGLE_PROJECT_ID: "your_project"
-  GOOGLE_NUMERIC_PROJECT_ID: "1071284184436"
-  GOOGLE_INSTANCE_ID: "8087716956832600000"
-  GOOGLE_INSTANCE_NAME: "vm1"
-  GOOGLE_ZONE: "us-central1-a"
 ---
 apiVersion: v1
 kind: Secret
@@ -509,7 +519,7 @@ export GOOGLE_ID_TOKEN="some_id_token"
 for example,
 
 ```bash
-go run main.go -logtostderr  \
+go run server.go -logtostderr  \
    -alsologtostderr -v 5 \
    -port :8080  \
    --tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
@@ -533,7 +543,9 @@ docker run \
 ```
 
 ```bash
-curl -v -H "Metadata-Flavor: Google" --connect-to metadata.google.internal:80:127.0.0.1:8080 http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
+curl -v -H "Metadata-Flavor: Google" \
+  --connect-to metadata.google.internal:80:127.0.0.1:8080 \
+   http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
 
 some_static_token
 ```
@@ -635,82 +647,19 @@ anyway, just for fun, you can pipe a tcp socket to domain using `socat` (or vice
 socat TCP-LISTEN:8080,fork,reuseaddr UNIX-CONNECT:/tmp/metadata.sock
 ```
 
-### TODO
 
-1.  Directory Browsing
+### Testing
 
-Instead of explicitly setting routes, use the local filesystem to return the structure for non-dynamic content or attributes.  In this way, the metadata server just returns the directory and files that mimics the metadata server structure.
-
-eg: create a directory structure similar to:
-
-```
-./static/
-    0.1/
-    computeMetadata/
-      v1beta1/
-      v1/
-        instance/
-        oslogin/
-        project/
-```
-
-
-```golang
-r.Handle("/", checkMetadataHeaders(http.FileServer(http.Dir("./static"))))
-```
-Which currently returns HTML content as well as`Content-Type: text/html; charset=utf-8`, the metadata server new-line text  as `Content-Type: application/text`
-
-TODO: figure out how to return text payload similar to the metadata server
+a lot todo here, right...thats just life
 
 ```bash
-$ curl -H "Metadata-Flavor: Google" --connect-to metadata.google.internal:80:127.0.0.1:8080  -v http://metadata.google.internal/
-*   Trying 169.254.169.254...
-* TCP_NODELAY set
-* Connected to metadata.google.internal (169.254.169.254) port 80 (#0)
-> GET / HTTP/1.1
-> Host: metadata.google.internal
-> User-Agent: curl/7.52.1
-> Accept: */*
-> Metadata-Flavor: Google
->
-< HTTP/1.1 200 OK
-< Metadata-Flavor: Google
-< Content-Type: application/text
-< Date: Mon, 26 Aug 2019 17:08:17 GMT
-< Server: Metadata Server for VM
-< Content-Length: 22
-< X-XSS-Protection: 0
-< X-Frame-Options: SAMEORIGIN
-<
-0.1/
-computeMetadata/
-```
-
-```bash
-
-
-$ curl -H "Metadata-Flavor: Google" --connect-to metadata.google.internal:80:127.0.0.1:8080 -s http://metadata.google.internal/computeMetadata/v1/instance
-/computeMetadata/v1/instance/
-
-$ curl -H "Metadata-Flavor: Google" --connect-to metadata.google.internal:80:127.0.0.1:8080 -s http://metadata.google.internal/computeMetadata/v1/instance/
-attributes/
-cpu-platform
-description
-disks/
-guest-attributes/
-hostname
-id
-image
-licenses/
-machine-type
-maintenance-event
-name
-network-interfaces/
-preempted
-remaining-cpu-time
-scheduling/
-service-accounts/
-tags
-virtual-clock/
-zone
+$ go test -v 
+=== RUN   TestBasePathRedirectHandler
+--- PASS: TestBasePathRedirectHandler (0.00s)
+=== RUN   TestProjectIDHandler
+--- PASS: TestProjectIDHandler (0.00s)
+=== RUN   TestAccessTokenHandler
+--- PASS: TestAccessTokenHandler (0.00s)
+PASS
+ok  	github.com/salrashid123/gce_metadata_server	0.045s
 ```

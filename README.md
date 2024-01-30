@@ -404,7 +404,6 @@ Remember to run `gcloud auth application-default revoke` in any new client libra
 
 Note, `Google.Api.Gax.Platform.Instance().ProjectId` requests the full [recursive path](https://github.com/googleapis/gax-dotnet/blob/main/Google.Api.Gax/Platform.cs#LL61C69-L61C103)
 
-   path[/computeMetadata/v1/] query[recursive=true]
 
 - ![images/setup_5.png](images/setup_5.png)
 
@@ -521,8 +520,7 @@ for example,
 ```bash
 go run server.go -logtostderr  \
    -alsologtostderr -v 5 \
-   -port :8080  \
-   --tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform
+   -port :8080
 ```
 
 or
@@ -536,9 +534,7 @@ docker run \
   -e GOOGLE_ACCOUNT_EMAIL=$GOOGLE_ACCOUNT_EMAIL \
   -e GOOGLE_ID_TOKEN=$GOOGLE_ID_TOKEN \  
   -t salrashid123/gcemetadataserver \
-  -port :8080 \
-  -tokenScopes https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform \
-  -logtostderr -alsologtostderr -v 5
+  -port :8080 -logtostderr -alsologtostderr -v 5
 
 ```
 

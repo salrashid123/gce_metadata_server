@@ -13,7 +13,7 @@ import (
 )
 
 func addHeaders(req http.Request) http.Request {
-	req.Header.Set("Metadata-Flavor", "xGoogle")
+	req.Header.Set("Metadata-Flavor", "Google")
 	req.Header.Set("Host", "metadata.google.internal")
 	return req
 }

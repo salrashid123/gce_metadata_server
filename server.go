@@ -242,6 +242,10 @@ func (h *MetadataServer) checkMetadataHeaders(next http.Handler) http.Handler {
 			httpError(w, "Missing required header \"Metadata-Flavor\": \"Google\"", http.StatusForbidden, "text/html; charset=UTF-8")
 			return
 		}
+		if flavor != "Google" {
+			h.notFound(w, r)
+			return
+		}
 
 		next.ServeHTTP(w, r)
 	})

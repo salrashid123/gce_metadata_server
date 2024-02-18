@@ -238,11 +238,12 @@ func (h *MetadataServer) checkMetadataHeaders(next http.Handler) http.Handler {
 		}
 
 		flavor := r.Header.Get("Metadata-Flavor")
+		glog.Infof("%s flavor", flavor)
 		if flavor == "" && r.RequestURI != "/" {
 			httpError(w, "Missing required header \"Metadata-Flavor\": \"Google\"", http.StatusForbidden, "text/html; charset=UTF-8")
 			return
 		}
-		if flavor != "Google" {
+		if flavor != "Google"  && r.RequestURI != "/" {
 			h.notFound(w, r)
 			return
 		}

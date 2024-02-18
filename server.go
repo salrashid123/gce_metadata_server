@@ -769,6 +769,10 @@ func (h *MetadataServer) computeMetadatav1InstanceKeyHandler(w http.ResponseWrit
 		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.Hostname)
 	case "zone":
 		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.Zone)
+	case "machine-type":
+		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.MachineType)
+	case "tags":
+		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.Tags)
 	default:
 		httpError(w, http.StatusText(http.StatusNotFound), http.StatusNotFound, "text/html; charset=UTF-8")
 		return

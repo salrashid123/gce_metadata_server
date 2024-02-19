@@ -772,7 +772,14 @@ func (h *MetadataServer) computeMetadatav1InstanceKeyHandler(w http.ResponseWrit
 	case "machine-type":
 		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.MachineType)
 	case "tags":
-		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.Tags)
+		jsonResponse, err := json.Marshal(h.c.ComputeMetadata.V1.Instance.Tags)
+		if err != nil {
+			glog.Errorf("Error converting value to JSON %v\n", err)
+			httpError(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError, "text/plain; charset=UTF-8")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(jsonResponse)
 	default:
 		httpError(w, http.StatusText(http.StatusNotFound), http.StatusNotFound, "text/html; charset=UTF-8")
 		return

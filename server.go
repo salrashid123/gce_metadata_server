@@ -238,11 +238,14 @@ func (h *MetadataServer) checkMetadataHeaders(next http.Handler) http.Handler {
 		}
 
 		flavor := r.Header.Get("Metadata-Flavor")
+		glog.V(20).Infof("%s flavor", flavor)
+
 		if flavor == "" && r.RequestURI != "/" {
 			httpError(w, "Missing required header \"Metadata-Flavor\": \"Google\"", http.StatusForbidden, "text/html; charset=UTF-8")
 			return
 		}
-		if flavor != "Google" {
+		if flavor != "Google" && r.RequestURI != "/" {
+			glog.Infof("%s flavor", flavor)
 			h.notFound(w, r)
 			return
 		}
@@ -768,6 +771,10 @@ func (h *MetadataServer) computeMetadatav1InstanceKeyHandler(w http.ResponseWrit
 		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.Hostname)
 	case "zone":
 		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.Zone)
+	case "machine-type":
+		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.MachineType)
+	case "tags":
+		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.Tags)
 	default:
 		httpError(w, http.StatusText(http.StatusNotFound), http.StatusNotFound, "text/html; charset=UTF-8")
 		return

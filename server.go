@@ -238,11 +238,12 @@ func (h *MetadataServer) checkMetadataHeaders(next http.Handler) http.Handler {
 		}
 
 		flavor := r.Header.Get("Metadata-Flavor")
+		glog.V(20).Infof("%s flavor", flavor)
 		if flavor == "" && r.RequestURI != "/" {
 			httpError(w, "Missing required header \"Metadata-Flavor\": \"Google\"", http.StatusForbidden, "text/html; charset=UTF-8")
 			return
 		}
-		if flavor != "Google" {
+		if flavor != "Google" && r.RequestURI != "/" {
 			h.notFound(w, r)
 			return
 		}
@@ -768,6 +769,17 @@ func (h *MetadataServer) computeMetadatav1InstanceKeyHandler(w http.ResponseWrit
 		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.Hostname)
 	case "zone":
 		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.Zone)
+	case "machine-type":
+		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.MachineType)
+	case "tags":
+		jsonResponse, err := json.Marshal(h.c.ComputeMetadata.V1.Instance.Tags)
+		if err != nil {
+			glog.Errorf("Error converting value to JSON %v\n", err)
+			httpError(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError, "text/plain; charset=UTF-8")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(jsonResponse)
 	default:
 		httpError(w, http.StatusText(http.StatusNotFound), http.StatusNotFound, "text/html; charset=UTF-8")
 		return

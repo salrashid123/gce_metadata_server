@@ -596,6 +596,10 @@ func (h *MetadataServer) getIDToken(targetAudience string) (string, error) {
 				IncludeEmail:    true,
 			},
 		)
+		if err != nil {
+			glog.Errorln(err)
+			return "", fmt.Errorf("could not generateID Token %v", err)
+		}
 	} else if h.cfg.flFederate {
 
 		cr, err := iamcredentials.NewIamCredentialsClient(ctx)
@@ -862,7 +866,8 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceKeyHandler(w h
 	// 	h.handleBasePathRedirect(w, r)
 	// 	return
 	case "dns-servers":
-		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i].DNSServers)
+		// gce metadata server default returns "application/text" for dns-servers
+		fmt.Fprint(w, strings.Join(h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i].DNSServers, "\n"))
 	case "forwarded-ips":
 		h.handleBasePathRedirect(w, r)
 		return

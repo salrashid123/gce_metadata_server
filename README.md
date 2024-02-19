@@ -160,23 +160,8 @@ You can either create a key that represents this service account and download it
 gcloud iam service-accounts keys create metadata-sa.json --iam-account=metadata-sa@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com
 ```
 
-or preferably assign your user impersonation capabilities on it:
+or preferably assign your user impersonation capabilities on it (see section below)
 
-```bash
-gcloud iam service-accounts \
-  add-iam-policy-binding metadata-sa@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com \
-  --member=user:`gcloud config get-value core/account` \
-  --role=roles/iam.serviceAccountTokenCreator
-```
-
-If you intend to use the samples in the `examples/` folder, add some viewer permission to list gcs buckets (because this is what all the stuff in the `examples/` folder shows)
-
-```bash
-# note roles/storage.admin is over-permissioned...we only need storage.buckets.list on the project...
-gcloud projects add-iam-policy-binding $GOOGLE_PROJECT_ID  \
-     --member="serviceAccount:metadata-sa@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com"  \
-     --role=roles/storage.admin
-```
 
 You can assign IAM permissions now to the service account for whatever resources it may need to access
 
@@ -197,6 +182,17 @@ go run main.go -logtostderr \
 #### With Impersonation
 
 If you use impersonation, the `serviceAccountEmail` and `scopes` are taken from the config file's default service account.
+
+First setup impersonation for your user account:
+
+```bash
+gcloud iam service-accounts \
+  add-iam-policy-binding metadata-sa@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com \
+  --member=user:`gcloud config get-value core/account` \
+  --role=roles/iam.serviceAccountTokenCreator
+```
+
+then,
 
 ```bash
  go run main.go -logtostderr    -alsologtostderr -v 5  -port :8080 --impersonate 
@@ -343,6 +339,17 @@ Each language library has their own nuances so please read the sections elow
 
 
 These are not documented but you can _generally_ just set the value of.
+
+If you intend to use the samples in the `examples/` folder, add some viewer permission to list gcs buckets (because this is what all the stuff in the `examples/` folder shows)
+
+```bash
+# note roles/storage.admin is over-permissioned...we only need storage.buckets.list on the project...
+gcloud projects add-iam-policy-binding $GOOGLE_PROJECT_ID  \
+     --member="serviceAccount:metadata-sa@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com"  \
+     --role=roles/storage.admin
+```
+
+then usually just,
 
 ```bash
 export GCE_METADATA_HOST=localhost:8080

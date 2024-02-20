@@ -784,6 +784,7 @@ func (h *MetadataServer) computeMetadatav1InstanceKeyHandler(w http.ResponseWrit
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(jsonResponse)
+		return
 	default:
 		httpError(w, http.StatusText(http.StatusNotFound), http.StatusNotFound, "text/html; charset=UTF-8")
 		return

@@ -86,6 +86,34 @@ r.Handle("/computeMetadata/v1/instance/{key}")
 r.Handle("/")
 ```
 
+---
+
+* [Usage](#usage)
+* [Configuration](#configuration)
+  - [With JSON ServiceAccount file](#with-json-serviceaccount-file)
+  - [With Impersonation](#with-impersonation)
+  - [With Workload Federation](#with-workload-federation)
+  - [With TPM](#with-tpm)    
+* [Startup](#startup)
+* [Using Google Auth clients](#using-google-auth-clients)
+  - [python](#python)
+  - [java](#java)
+  - [golang](#golang)
+  - [nodejs](#nodejs) 
+  - [dotnet](#dotnet)  
+  - [gcloud](#gcloud)        
+* [IDToken](#idtoken)
+* [Other Runtimes](#other-runtimes)
+    - [Run with containers](#run-with-containers)
+    - [Running as Kubernetes Service](#running-as-kubernetes-service)
+    - [Static environment variables](#static-environment-variables)
+- [Extending the sample](#extending-the-sample)
+- [Building with Kaniko](#building-with-kaniko)
+- [Using link-local address](#using-link-local-address)
+- [Using domain sockets](#using-domain-sockets)
+* [Testting](#testing)
+
+---
 
 Note, the real metadata server has some additional query parameters which are either partially or not implemented:
 
@@ -113,21 +141,38 @@ You can run the emulator:
 4.  and with some difficulty, using a link-local address (`169.254.169.254`)
 
 
-### Configuration 
+## Configuration 
 
 The metadata server reads a configuration file for static values and uses a service account for dynamically getting `access_token` and `id_token`.
 
 The basic config file format roughly maps the uri path of the actual metadata server and the emulator uses these values to populate responses.
 
-For example, the `instance_id`, `project_id`, `serviceAccountEmail` and other files are read from the values here
+For example, the `instance_id`, `project_id`, `serviceAccountEmail` and other files are read from the values here, for example, see [config.juson](config.json):
 
 ```json
 {
   "computeMetadata": {
     "v1":{
-      "instance": {},
+      "instance": {
+        "id": 5775171277418378000,
+        "serviceAccounts": {
+          "default": {
+            "aliases": [
+              "default"
+            ],
+            "email": "metadata-sa@your-project-id.iam.gserviceaccount.com",
+            "scopes": [
+              "https://www.googleapis.com/auth/cloud-platform",
+              "https://www.googleapis.com/auth/userinfo.email"
+            ]
+          }
+        },        
+      },
       "oslogin": {},
-      "project": {}    
+      "project": {
+        "numericProjectId": 708288290784,
+        "projectId": "your-project-id"
+      }    
     }
   }
 } 
@@ -141,12 +186,27 @@ $ curl -v -H 'Metadata-Flavor: Google' http://metadata/computeMetadata/v1/?recur
 
 Any requests for an `access_token` or an `id_token` are dynamically generated using the credential provided.  The scopes for any token uses the values set in the config file
 
-### Running the metadata server directly
+## Usage
 
 The following steps details how you can run the emulator on your laptop.
 
 
-#### Download JSON ServiceAccount file or use impersonation
+| Option | Description |
+|:------------|-------------|
+| **`-port`** | port to listen on (default: `:8080`) |
+| **`-serviceAccountFile`** | path to serviceAccount json Key file |
+| **`-impersonate`** | use impersonation |
+| **`-federate`** | use workload identity federation |
+| **`-tpm`** | use TPM |
+| **`-persistentHandle`** | TPM persistentHandle |
+| **`GCE_METADATA_HOST`** | environment variable for SDK libraries to point to the metadata server (as `host:port`) |
+| **`GOOGLE_PROJECT_ID`** | static environment variable for PROJECT_ID to return |
+| **`GOOGLE_NUMERIC_PROJECT_ID`** | static environment variable for the numeric project id to return |
+| **`GOOGLE_ACCESS_TOKEN`** | static environment variable for access_token to return |
+| **`GOOGLE_ID_TOKEN`** | static environment variable for id_token to return |
+
+
+### With JSON ServiceAccount file
 
 Create a GCP Service Account JSON file (you should strongly prefer using impersonation..)
 
@@ -162,12 +222,7 @@ gcloud iam service-accounts keys create metadata-sa.json --iam-account=metadata-
 
 or preferably assign your user impersonation capabilities on it (see section below)
 
-
 You can assign IAM permissions now to the service account for whatever resources it may need to access
-
-#### Run the metadata server
-
-#### With Certificates
 
 ```bash
 mkdir certs/
@@ -179,7 +234,7 @@ go run main.go -logtostderr \
   --serviceAccountFile certs/metadata-sa.json 
 ```
 
-#### With Impersonation
+### With Impersonation
 
 If you use impersonation, the `serviceAccountEmail` and `scopes` are taken from the config file's default service account.
 
@@ -198,7 +253,11 @@ then,
  go run main.go -logtostderr    -alsologtostderr -v 5  -port :8080 --impersonate 
 ```
 
-#### With [workload identity federation](https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation)
+### With Workload Federation
+
+For [workload identity federation](https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation), you need to reference the credentials.json file as usual:
+
+then just use the default env-var and run:
 
 ```bash
 export GOOGLE_APPLICATION_CREDENTIALS=`pwd`/sts-creds.json
@@ -247,17 +306,6 @@ ultimately, the `sts-creds.json` will look like (note:, the `service_account_imp
 
 where `/tmp/oidcred.txt` contains the original oidc token
 
-or via docker
-
-```bash
-docker run \
-  -v `pwd`/certs/:/certs/ \
-  -p 8080:8080 \
-  -t salrashid123/gcemetadataserver \
-  -serviceAccountFile /certs/metadata-sa.json \
-  -logtostderr -alsologtostderr -v 5 \
-  -port :8080 
-```
 
 #### With Trusted Platform Module (TPM)
 
@@ -300,7 +348,7 @@ also see:
 * [TPM Credential Source for Google Cloud SDK](https://github.com/salrashid123/gcp-adc-tpm)
 * [PKCS-11 Credential Source for Google Cloud SDK](https://github.com/salrashid123/gcp-adc-pkcs)
 
-#### Startup
+## Startup
 
 On startup, you will see something like:
 
@@ -330,7 +378,7 @@ curl -v -H 'Metadata-Flavor: Google' --connect-to metadata.google.internal:80:12
 
 Please note the scopes used for this token is read in from the declared values in the config file
 
-#### Run with Google Auth clients
+## Using Google Auth clients
 
 GCP Auth libraries support overriding the host/port for the metadata server.  
 
@@ -431,7 +479,7 @@ project = mineral-minutia-820
 `gcloud` uses a different env-var but if you want to use `gcloud auth application-default print-access-token`, you need to _also_ use `GCE_METADATA_HOST` and `GCE_METADATA_IP`
 
 
-### IDToken
+## IDToken
 
 The following endpoints shows how to acquire an IDToken
 
@@ -461,6 +509,8 @@ The `id_token` will be signed by google but issued by the service account you us
 ```
 >>> Unlike the _real_ gce metadataserver, this will **NOT** return the full identity document or license info :(`&format=[FORMAT]&licenses=[LICENSES]`)
 
+## Other Runtimes
+
 ### Run with containers
 
 To access the local emulator _from_ containers
@@ -469,6 +519,18 @@ To access the local emulator _from_ containers
 cd examples/container
 docker build -t myapp .
 docker run -t --net=host -e GCE_METADATA_HOST=localhost:8080  myapp
+```
+
+you can run the server itself directly 
+
+```bash
+docker run \
+  -v `pwd`/certs/:/certs/ \
+  -p 8080:8080 \
+  -t salrashid123/gcemetadataserver \
+  -serviceAccountFile /certs/metadata-sa.json \
+  -logtostderr -alsologtostderr -v 5 \
+  -port :8080 
 ```
 
 ### Running as Kubernetes Service
@@ -511,7 +573,7 @@ Number of Buckets: 62
 
 >> needless to say, the metadata Service should be accessed only form authorized pods
 
-### Using static environment variables
+### Static environment variables
 
 If you do not have access to certificate file or would like to specify **static** token values via env-var, the metadata server supports the following environment variables as substitutions.  Once you set these environment variables, the service will not look for anything using the service Account JSON file (even if specified)
 
@@ -651,7 +713,7 @@ socat TCP-LISTEN:8080,fork,reuseaddr UNIX-CONNECT:/tmp/metadata.sock
 ```
 
 
-### Testing
+## Testing
 
 a lot todo here, right...thats just life
 

@@ -153,7 +153,7 @@ For example, the `instance_id`, `project_id`, `serviceAccountEmail` and other fi
 ```json
 {
   "computeMetadata": {
-    "v1":{
+    "v1": {
       "instance": {
         "id": 5775171277418378000,
         "serviceAccounts": {
@@ -161,22 +161,22 @@ For example, the `instance_id`, `project_id`, `serviceAccountEmail` and other fi
             "aliases": [
               "default"
             ],
-            "email": "metadata-sa@your-project-id.iam.gserviceaccount.com",
+            "email": "metadata-sa@your-project.iam.gserviceaccount.com",
             "scopes": [
               "https://www.googleapis.com/auth/cloud-platform",
               "https://www.googleapis.com/auth/userinfo.email"
             ]
           }
-        },        
+        }
       },
       "oslogin": {},
       "project": {
         "numericProjectId": 708288290784,
-        "projectId": "your-project-id"
-      }    
+        "projectId": "your-project"
+      }
     }
   }
-} 
+}
 ```
 
 The field are basically a JSON representation of what the real metadata server returns recursively
@@ -200,6 +200,7 @@ The following steps details how you can run the emulator on your laptop.
 | **`-federate`** | use workload identity federation |
 | **`-tpm`** | use TPM |
 | **`-persistentHandle`** | TPM persistentHandle |
+| **`-domainsocket`** | listen on unix socket |
 | **`GCE_METADATA_HOST`** | environment variable for SDK libraries to point to the metadata server (as `host:port`) |
 | **`GOOGLE_PROJECT_ID`** | static environment variable for PROJECT_ID to return |
 | **`GOOGLE_NUMERIC_PROJECT_ID`** | static environment variable for the numeric project id to return |

@@ -44,6 +44,7 @@ or
 
  You can also run this as a service inside a kubernetes cluster and allow any other pod virtual access to GCP metadata server without even running in GCP.
 
+ The metadata server supports additional endpoints that simulate other instance attributes normally only visible inside a GCE instance like `instance_id`, `disks`, `network-interfaces` and so on.
 
 See
 
@@ -66,9 +67,9 @@ and
    * service account impersonation
    * statically from a provided environment variable
    * service account RSA key on `HSM` or `Trusted Platform Module (TPM)`
- * returns Google issued OpendID token (`id_token`) for the Service Account using the audience you specify
- * return custom key-value attributes
- * Identity Token document
+ * return `id_token`
+ * return project attributes (`project_id`, `numeric-project-id`)
+ * return instance attributes (`instance-id`, `tags`, `network-interfaces`, `disks`)
 
 The endpoints that are exposed are:
 

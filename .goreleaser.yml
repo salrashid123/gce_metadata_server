@@ -17,7 +17,6 @@ scoop:
 builds:
   - id: gce_metadata_server
     goos:
-      - windows
       - linux
       - darwin
     goarch:

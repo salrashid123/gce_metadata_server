@@ -18,17 +18,14 @@ builds:
   - id: gce_metadata_server
     goos:
       - linux
-      - darwin
     goarch:
       - amd64
-      - '386'
-    ignore:
-      - goos: darwin
-        goarch: '386'
     goamd64:
       - v1
     env:
       - CGO_ENABLED=0
+    targets:
+      - linux_amd64_v1
     binary: gce_metadata_server
     builder: go
     gobinary: go
@@ -89,4 +86,3 @@ sboms:
     documents:
       - ${artifact}.spdx.sbom
     artifacts: archive
-

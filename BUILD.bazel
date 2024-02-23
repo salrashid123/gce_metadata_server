@@ -9,7 +9,7 @@ exports_files(["config.json"])
 
 go_binary(
     name = "main",
-    out = "server",
+    out = "gce_metadata_server",
     embed = [":go_default_library"],
     visibility = ["//visibility:public"],
     goos = "linux", 

@@ -94,7 +94,7 @@ r.Handle("/")
   - [With JSON ServiceAccount file](#with-json-serviceaccount-file)
   - [With Impersonation](#with-impersonation)
   - [With Workload Federation](#with-workload-federation)
-  - [With TPM](#with-tpm)    
+  - [With TPM](#with-trusted-platform-module-tpm)    
 * [Startup](#startup)
 * [Using Google Auth clients](#using-google-auth-clients)
   - [python](#python)
@@ -312,6 +312,8 @@ where `/tmp/oidcred.txt` contains the original oidc token
 #### With Trusted Platform Module (TPM)
 
 If the service account private key is bound inside a `Trusted Platform Module (TPM)`, the metadata server can use that key to issue an `access_token` or an `id_token`
+
+>> Note: not all platforms supports this mode.  The underlying go-tpm library is only supported on a few of the targets (`linux/darwin + amd64,arm64`).  If you need support for other platforms, one option is to comment the sections for the TPM, remove the library bindings and compile.
 
 Before using this mode, the key _must be_ sealed into the TPM and surfaced as a `persistentHandle`.  This can be done in a number of ways described [here](https://github.com/salrashid123/oauth2/blob/master/README.md#usage-tpmtokensource): 
 

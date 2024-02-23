@@ -18,14 +18,16 @@ builds:
   - id: gce_metadata_server
     goos:
       - linux
+      - darwin
     goarch:
       - amd64
+      - arm64
     goamd64:
       - v1
+    goarm:
+      - 7
     env:
       - CGO_ENABLED=0
-    targets:
-      - linux_amd64_v1
     binary: gce_metadata_server
     builder: go
     gobinary: go

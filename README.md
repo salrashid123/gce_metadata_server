@@ -112,6 +112,7 @@ r.Handle("/")
 - [Building with Kaniko](#building-with-kaniko)
 - [Using link-local address](#using-link-local-address)
 - [Using domain sockets](#using-domain-sockets)
+- [Bazel Build](#bazel-build)
 * [Testting](#testing)
 
 ---
@@ -716,6 +717,21 @@ anyway, just for fun, you can pipe a tcp socket to domain using `socat` (or vice
 socat TCP-LISTEN:8080,fork,reuseaddr UNIX-CONNECT:/tmp/metadata.sock
 ```
 
+## Bazel Build
+
+If you want to build the server using bazel (eg, [deterministic](https://github.com/salrashid123/go-grpc-bazel-docker)),
+
+```bash
+## generate dependencies
+bazel run :gazelle -- update-repos -from_file=go.mod -prune=true -to_macro=repositories.bzl%go_repositories
+
+## run
+bazel run :main -- --configFile=`pwd`/config.json   -alsologtostderr -v 5 -port :8080 --serviceAccountFile=`pwd/certs/metadata-sa.json 
+
+## to build the image
+bazel   build  :tar-oci-index
+  ## oci image at bazel-bin/tar-oci-index/tarball.tar
+```
 
 ## Testing
 

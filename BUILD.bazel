@@ -1,0 +1,99 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_pkg//:pkg.bzl", "pkg_tar")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push", "oci_tarball", "oci_image_index")
+load("@bazel_gazelle//:def.bzl", "gazelle")
+
+gazelle(name = "gazelle")
+
+exports_files(["config.json"])
+
+go_binary(
+    name = "main",
+    out = "server",
+    embed = [":go_default_library"],
+    visibility = ["//visibility:public"],
+    goos = "linux", 
+    goarch = "amd64",     
+)
+
+go_library(
+    name = "go_default_library",
+    srcs = [
+        "server.go",
+    ],
+    importpath = "github.com/salrashid123/gce_metadata_server",
+    visibility = ["//visibility:private"],
+    deps = [
+        "@org_golang_x_oauth2//:go_default_library",
+        "@org_golang_x_oauth2//google:go_default_library", 
+        "@org_golang_google_api//idtoken:go_default_library",
+        "@org_golang_google_api//impersonate:go_default_library",
+        "@com_github_google_go_tpm_tools//client:go_default_library",
+        "@com_github_google_go_tpm//tpmutil:go_default_library",
+        "@com_google_cloud_go_iam//credentials/apiv1:go_default_library",
+        "@com_google_cloud_go_iam//credentials/apiv1/credentialspb:go_default_library",
+        "@com_github_google_go_tpm//legacy/tpm2:go_default_library", 
+        "@com_github_salrashid123_golang_jwt_tpm//:go_default_library",
+        "@com_github_golang_jwt_jwt_v4//:go_default_library",
+        "@com_github_golang_glog//:go_default_library",
+        "@com_github_gorilla_mux//:go_default_library",
+        "@org_golang_x_net//http2:go_default_library",
+        "@org_golang_google_api//option:go_default_library",
+    ],
+)
+
+
+
+pkg_tar(
+    name = "config_bundle",
+    srcs = [
+        ":config.json",
+    ],
+    package_dir = "/",
+)
+
+pkg_tar(
+    name = "app-tar",
+    srcs = [":main"],
+    package_dir = "/",
+)
+
+oci_image(
+    name = "server-image",
+    base = "@distroless_base",
+    tars = [":config_bundle", ":app-tar"],   
+    entrypoint = ["/gce_metadata_server"],
+    cmd = [],
+    env = {},
+    exposed_ports = [
+        "8080/tcp",
+    ],    
+)
+
+oci_tarball(
+    name = "tar-docker",
+    image = "server-image",
+    format = "docker",
+    repo_tags = ["index.docker.io/salrashid123/gcemetadataserver"],
+)
+
+oci_image_index(
+    name = "app-index",
+    images = [
+        ":server-image",
+    ]
+)
+
+oci_tarball(
+    name = "tar-oci-index",
+    image = ":app-index",
+    format = "oci",
+    repo_tags = ["index.docker.io/salrashid123/gcemetadataserver"],
+)
+
+oci_push(
+    name = "push-image",
+    image = ":server-image",
+    repository = "index.docker.io/salrashid123/gcemetadataserver",
+    remote_tags = ["server"]
+)

@@ -113,7 +113,7 @@ r.Handle("/")
 - [Using link-local address](#using-link-local-address)
 - [Using domain sockets](#using-domain-sockets)
 - [Bazel Build](#bazel-build)
-* [Testting](#testing)
+* [Testing](#testing)
 
 ---
 
@@ -195,6 +195,7 @@ The following steps details how you can run the emulator on your laptop.
 
 | Option | Description |
 |:------------|-------------|
+| **`-configFile`** | configuration File (default: `config.json`) |
 | **`-port`** | port to listen on (default: `:8080`) |
 | **`-serviceAccountFile`** | path to serviceAccount json Key file |
 | **`-impersonate`** | use impersonation |
@@ -231,7 +232,7 @@ You can assign IAM permissions now to the service account for whatever resources
 mkdir certs/
 mv metadata-sa.json certs
 
-go run main.go -logtostderr \
+go run server.go -logtostderr --configFile=config.json \
   -alsologtostderr -v 5 \
   -port :8080 \
   --serviceAccountFile certs/metadata-sa.json 
@@ -253,7 +254,9 @@ gcloud iam service-accounts \
 then,
 
 ```bash
- go run main.go -logtostderr    -alsologtostderr -v 5  -port :8080 --impersonate 
+ go run server.go -logtostderr \
+     -alsologtostderr -v 5  -port :8080 \
+     --impersonate --configFile=config.json
 ```
 
 ### With Workload Federation
@@ -264,7 +267,7 @@ then just use the default env-var and run:
 
 ```bash
 export GOOGLE_APPLICATION_CREDENTIALS=`pwd`/sts-creds.json
-go run main.go -logtostderr \
+go run server.go -logtostderr --configFile=config.json \
   -alsologtostderr -v 5 \
   -port :8080 --federate 
 ```
@@ -331,7 +334,7 @@ Anyway, once the RSA key is present as a handle, start the metadata server using
 You will also need to set a number of other variables similar to the service account JSON file:
 
 ```bash
-go run server.go -logtostderr \
+go run server.go -logtostderr --configFile=config.json \
   -alsologtostderr -v 5 \
   -port :8080 \
   --tpm --persistentHandle=0x81008000 

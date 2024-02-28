@@ -95,5 +95,5 @@ oci_push(
     name = "push-image",
     image = ":server-image",
     repository = "index.docker.io/salrashid123/gcemetadataserver",
-    remote_tags = ["server"]
+    remote_tags = ["latest"]
 )

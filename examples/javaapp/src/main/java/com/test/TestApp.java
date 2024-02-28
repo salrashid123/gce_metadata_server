@@ -20,6 +20,11 @@ public class TestApp {
 			  System.out.println(b);
 		  }
 
+		  // get arbitrary metadata values directly 
+		  // unfortunately, its hardcoded here with a metadata.google.internal
+		  // https://github.com/googleapis/sdk-platform-java/blob/main/java-core/google-cloud-core/src/main/java/com/google/cloud/MetadataConfig.java#L36
+		  // so you have to use a raw httpclient
+		  // System.out.println(com.google.cloud.MetadataConfig.getInstanceId());
 		} 
 		catch (Exception ex) {
 			System.out.println("Error:  " + ex);

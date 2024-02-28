@@ -20,6 +20,10 @@ async function main() {
         });
       }
     });
+
+    // get arbitrary metadata values directly 
+    const instance_hostname = await gcpMetadata.instance('hostname');
+    logger.info(instance_hostname);
   }
 }
 

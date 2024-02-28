@@ -48,4 +48,11 @@ func main() {
 		buckets = append(buckets, battrs.Name)
 		fmt.Printf("Bucket: %v\n", battrs.Name)
 	}
+
+	// get arbitrary metadata values directly
+	instanceID, err := metadata.InstanceID()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("InstanceID %s\n", instanceID)
 }

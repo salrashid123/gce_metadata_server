@@ -6,7 +6,7 @@ This script acts as a GCE's internal metadata server.
 
 It returns a live `access_token` that can be used directly by [Application Default Credentials](https://developers.google.com/identity/protocols/application-default-credentials) transparently.
 
-For example, you can use `ADC` with metadata or `ComputeCredentials` on your laptop:
+For example, you can use `ADC` with metadata or `ComputeCredentials` on your laptop and also get arbitrary values
 
 ```python
 #!/usr/bin/python
@@ -17,19 +17,26 @@ import google.auth
 import google.auth.compute_engine
 import google.auth.transport.requests
 
-## with ADC
+from google.auth.compute_engine import _metadata
+
+## with ADC metadata server
 credentials, project = google.auth.default()    
 client = storage.Client(credentials=credentials)
 buckets = client.list_buckets()
 for bkt in buckets:
   print(bkt)
 
-## direct
+## as compute credential
 creds = google.auth.compute_engine.Credentials()
 request = google.auth.transport.requests.Request()
 session = google.auth.transport.requests.AuthorizedSession(creds)
 r = session.get('https://www.googleapis.com/userinfo/v2/me').json()
 print(str(r))
+
+
+## get arbitrary metadata values directly 
+print(_metadata.get_project_id(request))
+print(_metadata.get(request,"instance/id"))
 ```
 
 or 
@@ -109,10 +116,10 @@ r.Handle("/")
     - [Running as Kubernetes Service](#running-as-kubernetes-service)
     - [Static environment variables](#static-environment-variables)
 - [Extending the sample](#extending-the-sample)
-- [Building with Kaniko](#building-with-kaniko)
 - [Using link-local address](#using-link-local-address)
 - [Using domain sockets](#using-domain-sockets)
-- [Bazel Build](#bazel-build)
+- [Building with Bazel](#building-with-bazel)
+- [Building with Kaniko](#building-with-kaniko)
 * [Testing](#testing)
 
 ---
@@ -149,7 +156,7 @@ The metadata server reads a configuration file for static values and uses a serv
 
 The basic config file format roughly maps the uri path of the actual metadata server and the emulator uses these values to populate responses.
 
-For example, the `instance_id`, `project_id`, `serviceAccountEmail` and other files are read from the values here, for example, see [config.juson](config.json):
+For example, the `instance_id`, `project_id`, `serviceAccountEmail` and other files are read from the values here, for example, see [config.json](config.json):
 
 ```json
 {
@@ -629,23 +636,6 @@ You can extend this sample for any arbitrary metadata you are interested in emul
 Simply add the routes to the webserver and handle the responses accordingly.  It is recommended to view the request-response format directly on the metadata server to compare against.
 
 
-#### Building with Kaniko
-
-The container image is built using kaniko with the `--reproducible` flag enabled:
-
-```bash
-export TAG=...
-docker run    -v `pwd`:/workspace -v $HOME/.docker/config.json:/kaniko/.docker/config.json:ro    -v /var/run/docker.sock:/var/run/docker.sock   \
-      gcr.io/kaniko-project/executor@sha256:034f15e6fe235490e64a4173d02d0a41f61382450c314fffed9b8ca96dff66b2  \
-      --dockerfile=Dockerfile \
-      --reproducible \
-      --destination "docker.io/salrashid123/gcemetadataserver:$TAG" \
-      --context dir:///workspace/
-
-syft packages docker.io/salrashid123/gcemetadataserver:$TAG
-skopeo copy  --preserve-digests  docker://docker.io/salrashid123/gcemetadataserver:$TAG docker://docker.io/salrashid123/gcemetadataserver:latest
-```
-
 #### Using Link-Local address
 
 GCE's metadata server's IP address on GCE is a special link-local address: `169.254.169.254`.  Certain application default credential libraries for google cloud _may_ reference the metadata server by IP address so we're adding this in.
@@ -720,7 +710,7 @@ anyway, just for fun, you can pipe a tcp socket to domain using `socat` (or vice
 socat TCP-LISTEN:8080,fork,reuseaddr UNIX-CONNECT:/tmp/metadata.sock
 ```
 
-## Bazel Build
+#### Building with Bazel
 
 If you want to build the server using bazel (eg, [deterministic](https://github.com/salrashid123/go-grpc-bazel-docker)),
 
@@ -734,6 +724,23 @@ bazel run :main -- --configFile=`pwd`/config.json   -alsologtostderr -v 5 -port 
 ## to build the image
 bazel   build  :tar-oci-index
   ## oci image at bazel-bin/tar-oci-index/tarball.tar
+```
+
+#### Building with Kaniko
+
+The container image is built using kaniko with the `--reproducible` flag enabled:
+
+```bash
+export TAG=...
+docker run    -v `pwd`:/workspace -v $HOME/.docker/config.json:/kaniko/.docker/config.json:ro    -v /var/run/docker.sock:/var/run/docker.sock   \
+      gcr.io/kaniko-project/executor@sha256:034f15e6fe235490e64a4173d02d0a41f61382450c314fffed9b8ca96dff66b2  \
+      --dockerfile=Dockerfile \
+      --reproducible \
+      --destination "docker.io/salrashid123/gcemetadataserver:$TAG" \
+      --context dir:///workspace/
+
+syft packages docker.io/salrashid123/gcemetadataserver:$TAG
+skopeo copy  --preserve-digests  docker://docker.io/salrashid123/gcemetadataserver:$TAG docker://docker.io/salrashid123/gcemetadataserver:latest
 ```
 
 ## Testing

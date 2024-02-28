@@ -44,6 +44,11 @@ namespace AuthHarness
                 {
                     Console.WriteLine(bucket.Name);
                 }
+
+                // TODO: get metadata values directly without using a raw httpclient 
+                // the following is limited to a few compute-centric values 
+                // var instance_host = Google.Api.Gax.Platform.Instance().GceDetails;
+                // Console.WriteLine(instance_host);    
             } else {
                 Console.WriteLine("not on gce");
                 return;

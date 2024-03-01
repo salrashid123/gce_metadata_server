@@ -28,13 +28,13 @@ for bkt in buckets:
 
 ## as compute credential
 creds = google.auth.compute_engine.Credentials()
-request = google.auth.transport.requests.Request()
 session = google.auth.transport.requests.AuthorizedSession(creds)
 r = session.get('https://www.googleapis.com/userinfo/v2/me').json()
 print(str(r))
 
 
 ## get arbitrary metadata values directly 
+request = google.auth.transport.requests.Request()
 print(_metadata.get_project_id(request))
 print(_metadata.get(request,"instance/id"))
 ```
@@ -103,6 +103,9 @@ r.Handle("/")
   - [With Workload Federation](#with-workload-federation)
   - [With TPM](#with-trusted-platform-module-tpm)    
 * [Startup](#startup)
+  - [AccessToken](#accesstoken)
+  - [IDToken](#idtoken)
+  - [Attributes](#attributes)
 * [Using Google Auth clients](#using-google-auth-clients)
   - [python](#python)
   - [java](#java)
@@ -110,7 +113,6 @@ r.Handle("/")
   - [nodejs](#nodejs) 
   - [dotnet](#dotnet)  
   - [gcloud](#gcloud)        
-* [IDToken](#idtoken)
 * [Other Runtimes](#other-runtimes)
     - [Run with containers](#run-with-containers)
     - [Running as Kubernetes Service](#running-as-kubernetes-service)
@@ -365,11 +367,18 @@ also see:
 
 ## Startup
 
-On startup, you will see something like:
+Use any of the credential initializations described above and on startup, you will see something like:
+
+```bash
+go run server.go -logtostderr --configFile=config.json \
+  -alsologtostderr -v 5 \
+  -port :8080 \
+  --serviceAccountFile certs/metadata-sa.json 
+```
 
 - ![images/setup_2.png](images/setup_2.png)
 
-#### Test access to the metadata server
+### AccessToken
 
 In a new window, run
 
@@ -392,6 +401,51 @@ curl -v -H 'Metadata-Flavor: Google' --connect-to metadata.google.internal:80:12
 
 
 Please note the scopes used for this token is read in from the declared values in the config file
+
+
+### IDToken
+
+The following endpoints shows how to acquire an IDToken
+
+```bash
+curl -H "Metadata-Flavor: Google" --connect-to metadata.google.internal:80:127.0.0.1:8080 \
+'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://foo.bar'
+```
+
+The `id_token` will be signed by google but issued by the service account you used
+```json
+{
+  "alg": "RS256",
+  "kid": "178ab1dc5913d929d37c23dcaa961872f8d70b68",
+  "typ": "JWT"
+}.
+{
+  "aud": "https://foo.bar",
+  "azp": "metadata-sa@$PROJECT.iam.gserviceaccount.com",
+  "email": "metadata-sa@PROJECT.iam.gserviceaccount.com",
+  "email_verified": true,
+  "exp": 1603550806,
+  "iat": 1603547206,
+  "iss": "https://accounts.google.com",
+  "sub": "117605711420724299222"
+}
+
+```
+>>> Unlike the _real_ gce metadataserver, this will **NOT** return the full identity document or license info :(`&format=[FORMAT]&licenses=[LICENSES]`)
+
+
+### Attributes
+
+To acquire instance or project attributes, simply call the endpoint:
+
+For example, to get the instance id:
+
+```bash
+curl -s -H 'Metadata-Flavor: Google' --connect-to metadata.google.internal:80:127.0.0.1:8080 \
+      http://metadata.google.internal/computeMetadata/v1/instance/id
+
+5775171277418378000
+```
 
 ## Using Google Auth clients
 
@@ -493,36 +547,6 @@ project = mineral-minutia-820
 
 `gcloud` uses a different env-var but if you want to use `gcloud auth application-default print-access-token`, you need to _also_ use `GCE_METADATA_HOST` and `GCE_METADATA_IP`
 
-
-## IDToken
-
-The following endpoints shows how to acquire an IDToken
-
-```bash
-curl -H "Metadata-Flavor: Google" --connect-to metadata.google.internal:80:127.0.0.1:8080 \
-'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://foo.bar'
-```
-
-The `id_token` will be signed by google but issued by the service account you used
-```json
-{
-  "alg": "RS256",
-  "kid": "178ab1dc5913d929d37c23dcaa961872f8d70b68",
-  "typ": "JWT"
-}.
-{
-  "aud": "https://foo.bar",
-  "azp": "metadata-sa@$PROJECT.iam.gserviceaccount.com",
-  "email": "metadata-sa@PROJECT.iam.gserviceaccount.com",
-  "email_verified": true,
-  "exp": 1603550806,
-  "iat": 1603547206,
-  "iss": "https://accounts.google.com",
-  "sub": "117605711420724299222"
-}
-
-```
->>> Unlike the _real_ gce metadataserver, this will **NOT** return the full identity document or license info :(`&format=[FORMAT]&licenses=[LICENSES]`)
 
 ## Other Runtimes
 

@@ -122,6 +122,7 @@ r.Handle("/")
 - [Using domain sockets](#using-domain-sockets)
 - [Building with Bazel](#building-with-bazel)
 - [Building with Kaniko](#building-with-kaniko)
+- [Run MetadataServer from Go Tests](#run-metadataserver-from-go-tests)
 * [Testing](#testing)
 
 ---
@@ -241,7 +242,7 @@ You can assign IAM permissions now to the service account for whatever resources
 mkdir certs/
 mv metadata-sa.json certs
 
-go run server.go -logtostderr --configFile=config.json \
+go run cmd/main.go -logtostderr --configFile=config.json \
   -alsologtostderr -v 5 \
   -port :8080 \
   --serviceAccountFile certs/metadata-sa.json 
@@ -263,7 +264,7 @@ gcloud iam service-accounts \
 then,
 
 ```bash
- go run server.go -logtostderr \
+go run cmd/main.go -logtostderr \
      -alsologtostderr -v 5  -port :8080 \
      --impersonate --configFile=config.json
 ```
@@ -276,7 +277,7 @@ then just use the default env-var and run:
 
 ```bash
 export GOOGLE_APPLICATION_CREDENTIALS=`pwd`/sts-creds.json
-go run server.go -logtostderr --configFile=config.json \
+go run cmd/main.go -logtostderr --configFile=config.json \
   -alsologtostderr -v 5 \
   -port :8080 --federate 
 ```
@@ -343,7 +344,7 @@ Anyway, once the RSA key is present as a handle, start the metadata server using
 You will also need to set a number of other variables similar to the service account JSON file:
 
 ```bash
-go run server.go -logtostderr --configFile=config.json \
+go run cmd/main.go -logtostderr --configFile=config.json \
   -alsologtostderr -v 5 \
   -port :8080 \
   --tpm --persistentHandle=0x81008000 
@@ -370,7 +371,7 @@ also see:
 Use any of the credential initializations described above and on startup, you will see something like:
 
 ```bash
-go run server.go -logtostderr --configFile=config.json \
+go run cmd/main.go -logtostderr --configFile=config.json \
   -alsologtostderr -v 5 \
   -port :8080 \
   --serviceAccountFile certs/metadata-sa.json 
@@ -743,10 +744,10 @@ If you want to build the server using bazel (eg, [deterministic](https://github.
 bazel run :gazelle -- update-repos -from_file=go.mod -prune=true -to_macro=repositories.bzl%go_repositories
 
 ## run
-bazel run :main -- --configFile=`pwd`/config.json   -alsologtostderr -v 5 -port :8080 --serviceAccountFile=`pwd/certs/metadata-sa.json 
+bazel run cmd:main -- --configFile=`pwd`/config.json   -alsologtostderr -v 5 -port :8080 --serviceAccountFile=`pwd`/certs/metadata-sa.json 
 
 ## to build the image
-bazel   build  :tar-oci-index
+bazel   build  cmd:tar-oci-index
   ## oci image at bazel-bin/tar-oci-index/tarball.tar
 ```
 
@@ -767,18 +768,52 @@ syft packages docker.io/salrashid123/gcemetadataserver:$TAG
 skopeo copy  --preserve-digests  docker://docker.io/salrashid123/gcemetadataserver:$TAG docker://docker.io/salrashid123/gcemetadataserver:latest
 ```
 
+## Run MetadataServer from Go Tests
+
+You can also run the metadata server directly:
+
+For example, import the metadata server, configure and launch:
+
+```golang
+import (
+  	mds "github.com/salrashid123/gce_metadata_server"
+)
+
+	f := &mds.MetadataServer{
+		Claims: &mds.Claims{},
+		Creds:  google.FindDefaultCredentials(ctx, scopes...),
+		ServerConfig: mds.ServerConfig{
+			BindInterface:    *bindInterface,
+			Port:             *port,
+		},
+	}
+
+	err = f.Start()
+  defer f.Shutdown()
+  // do other stuff here
+```
+
+This is useful for unit tests and fakes.  For additional examples, please see the `server_test.go` and `cmd/main.go`
+
 ## Testing
 
 a lot todo here, right...thats just life
 
 ```bash
 $ go test -v 
+
 === RUN   TestBasePathRedirectHandler
 --- PASS: TestBasePathRedirectHandler (0.00s)
 === RUN   TestProjectIDHandler
 --- PASS: TestProjectIDHandler (0.00s)
 === RUN   TestAccessTokenHandler
 --- PASS: TestAccessTokenHandler (0.00s)
+=== RUN   TestAccessTokenCredentialHandler
+--- PASS: TestAccessTokenCredentialHandler (0.00s)
+=== RUN   TestOnGCEHandler
+--- PASS: TestOnGCEHandler (0.00s)
+=== RUN   TestProjectNumberHandler
+--- PASS: TestProjectNumberHandler (0.00s)
 PASS
-ok  	github.com/salrashid123/gce_metadata_server	0.045s
+ok  	github.com/salrashid123/gce_metadata_server	0.050s
 ```

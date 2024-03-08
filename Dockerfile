@@ -4,7 +4,7 @@ FROM docker.io/golang@sha256:6fbd2d3398db924f8d708cf6e94bd3a436bb468195daa6a96e8
 WORKDIR /go/src/app
 COPY . .
 RUN go mod download
-RUN GOOS=linux GOARCH=amd64 go build -buildvcs=false  -o /go/bin/gce_metadata_server
+RUN GOOS=linux GOARCH=amd64 go build cmd/main.go -buildvcs=false  -o /go/bin/gce_metadata_server
 RUN chown root:root /go/bin/gce_metadata_server
 
 # base-debian11-root

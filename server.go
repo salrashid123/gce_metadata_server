@@ -11,7 +11,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package main
+package mds
 
 import (
 	"bytes"
@@ -24,16 +24,12 @@ import (
 	"time"
 
 	"context"
-	"flag"
 	"fmt"
 
-	"log"
 	"net/http"
 	"net/url"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/golang/glog"
@@ -57,14 +53,16 @@ import (
 )
 
 type MetadataServer struct {
-	tokenMutex sync.Mutex
-	creds      *google.Credentials
-	c          claims
-	cfg        serverConfig
+	tokenMutex   sync.Mutex
+	srv          *http.Server
+	Creds        *google.Credentials
+	Claims       Claims
+	ServerConfig ServerConfig
 }
 
 var (
 	hostHeaders = []string{"metadata", "metadata.google.internal", "169.254.169.254"}
+	quit        = make(chan bool)
 )
 
 const (
@@ -91,21 +89,17 @@ const (
 `
 )
 
-type serverConfig struct {
-	flInterface    string
-	flPort         string
-	flDomainSocket string
+type ServerConfig struct {
+	BindInterface string
+	Port          string
+	DomainSocket  string
 
-	flConfigFile string
+	Impersonate bool
+	Federate    bool
 
-	serviceAccountFile string
-
-	flImpersonate bool
-	flFederate    bool
-
-	flTPM              bool
-	flTPMPath          string
-	flPersistentHandle int
+	UseTPM           bool
+	TPMPath          string
+	PersistentHandle int
 }
 
 func httpError(w http.ResponseWriter, error string, code int, contentType string) {
@@ -132,19 +126,19 @@ type serviceAccountDetails struct {
 	Token    string   `json:"token" altjson:"token"`
 }
 
-type claims struct {
-	ComputeMetadata computeMetadata `json:"computeMetadata"  altjson:"computeMetadata"`
+type Claims struct {
+	ComputeMetadata ComputeMetadata `json:"computeMetadata"  altjson:"computeMetadata"`
 }
-type computeMetadata struct {
-	V1 v1 `json:"v1" altjson:"v1"`
+type ComputeMetadata struct {
+	V1 V1 `json:"v1" altjson:"v1"`
 }
-type v1 struct {
-	Instance instance `json:"instance" altjson:"instance"`
-	Oslogin  oslogin  `json:"oslogin"  altjson:"oslogin"`
-	Project  project  `json:"project"  altjson:"project"`
+type V1 struct {
+	Instance Instance `json:"instance" altjson:"instance"`
+	Oslogin  OSlogin  `json:"oslogin"  altjson:"oslogin"`
+	Project  Project  `json:"project"  altjson:"project"`
 }
 
-type instance struct {
+type Instance struct {
 	Attributes  map[string]string `json:"attributes"  altjson:"attributes"`
 	CPUPlatform string            `json:"cpuPlatform"  altjson:"cpu-platform"`
 	Description string            `json:"description"  altjson:"description"`
@@ -199,14 +193,14 @@ type instance struct {
 	Zone string `json:"zone" altjson:"zone"`
 }
 
-type oslogin struct {
+type OSlogin struct {
 	Authenticate struct {
 		Sessions struct {
 		} `json:"sessions" altjson:"sessions"`
 	} `json:"authenticate" altjson:"authenticate"`
 }
 
-type project struct {
+type Project struct {
 	Attributes       map[string]string `json:"attributes" altjson:"attributes"`
 	NumericProjectID int64             `json:"numericProjectId" altjson:"numeric-project-id"`
 	ProjectID        string            `json:"projectId" altjson:"project-id"`
@@ -268,7 +262,7 @@ func (h *MetadataServer) pathListFields(b interface{}) string {
 
 func (h *MetadataServer) rootHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/text")
-	resp := h.pathListFields(h.c)
+	resp := h.pathListFields(h.Claims)
 	fmt.Fprint(w, resp)
 }
 
@@ -279,25 +273,25 @@ func (h *MetadataServer) notFound(w http.ResponseWriter, r *http.Request) {
 
 func (h *MetadataServer) computeMetadataHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/text")
-	resp := h.pathListFields(h.c.ComputeMetadata)
+	resp := h.pathListFields(h.Claims.ComputeMetadata)
 	fmt.Fprint(w, resp)
 }
 
 func (h *MetadataServer) computeMetadatav1Handler(w http.ResponseWriter, r *http.Request) {
-	if h.handleRecursion(w, r, h.c.ComputeMetadata.V1) {
+	if h.handleRecursion(w, r, h.Claims.ComputeMetadata.V1) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/text")
-	resp := h.pathListFields(h.c.ComputeMetadata.V1)
+	resp := h.pathListFields(h.Claims.ComputeMetadata.V1)
 	fmt.Fprint(w, resp)
 }
 
 func (h *MetadataServer) computeMetadatav1ProjectHandler(w http.ResponseWriter, r *http.Request) {
-	if h.handleRecursion(w, r, h.c.ComputeMetadata.V1.Project) {
+	if h.handleRecursion(w, r, h.Claims.ComputeMetadata.V1.Project) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/text")
-	resp := h.pathListFields(h.c.ComputeMetadata.V1.Project)
+	resp := h.pathListFields(h.Claims.ComputeMetadata.V1.Project)
 	fmt.Fprint(w, resp)
 }
 
@@ -307,7 +301,7 @@ func (h *MetadataServer) computeMetadatav1ProjectProjectIDHandler(w http.Respons
 		fmt.Fprint(w, os.Getenv(googleProjectID))
 
 	} else {
-		fmt.Fprint(w, h.c.ComputeMetadata.V1.Project.ProjectID)
+		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Project.ProjectID)
 	}
 }
 
@@ -316,7 +310,7 @@ func (h *MetadataServer) computeMetadatav1ProjectNumericProjectIDHandler(w http.
 	if os.Getenv(googleProjectNumber) != "" {
 		fmt.Fprint(w, os.Getenv(googleProjectNumber))
 	} else {
-		fmt.Fprint(w, h.c.ComputeMetadata.V1.Project.NumericProjectID)
+		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Project.NumericProjectID)
 	}
 }
 
@@ -346,11 +340,11 @@ func (h *MetadataServer) handleBasePathRedirect(w http.ResponseWriter, r *http.R
 }
 
 func (h *MetadataServer) computeMetadatav1ProjectAttributesHandler(w http.ResponseWriter, r *http.Request) {
-	if h.handleRecursion(w, r, h.c.ComputeMetadata.V1.Project.Attributes) {
+	if h.handleRecursion(w, r, h.Claims.ComputeMetadata.V1.Project.Attributes) {
 		return
 	}
 	var keys string
-	for k, _ := range h.c.ComputeMetadata.V1.Project.Attributes {
+	for k, _ := range h.Claims.ComputeMetadata.V1.Project.Attributes {
 		keys = keys + k + "\n"
 	}
 	w.Header().Set("Content-Type", "application/text")
@@ -361,7 +355,7 @@ func (h *MetadataServer) computeMetadatav1ProjectAttributesKeyHandler(w http.Res
 	// recursion isn't applicable
 	// todo: ?alt=json returns content-type=application/json but the payload is text..
 	vars := mux.Vars(r)
-	if val, ok := h.c.ComputeMetadata.V1.Project.Attributes[vars["key"]]; ok {
+	if val, ok := h.Claims.ComputeMetadata.V1.Project.Attributes[vars["key"]]; ok {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, val)
 	} else {
@@ -383,7 +377,7 @@ func (h *MetadataServer) getServiceAccountHandler(w http.ResponseWriter, r *http
 		if os.Getenv(googleServiceAccountEmail) != "" {
 			fmt.Fprint(w, os.Getenv(googleServiceAccountEmail))
 		} else {
-			fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email)
+			fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email)
 		}
 	case "identity":
 		k, ok := r.URL.Query()["audience"]
@@ -401,7 +395,7 @@ func (h *MetadataServer) getServiceAccountHandler(w http.ResponseWriter, r *http
 		fmt.Fprint(w, idtok)
 	case "scopes":
 		var scopes string
-		for _, e := range h.c.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes {
+		for _, e := range h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes {
 			scopes = scopes + e + "\n"
 		}
 		w.Header().Set("Content-Type", "application/text")
@@ -441,10 +435,10 @@ func (h *MetadataServer) getAccessToken() (*metadataToken, error) {
 		}, nil
 	}
 
-	if h.cfg.flTPM {
+	if h.ServerConfig.UseTPM {
 		// return a cached token
-		if h.creds != nil {
-			tok, err := h.creds.TokenSource.Token()
+		if h.Creds != nil {
+			tok, err := h.Creds.TokenSource.Token()
 			if err != nil {
 				glog.Error(err)
 				return nil, err
@@ -461,13 +455,13 @@ func (h *MetadataServer) getAccessToken() (*metadataToken, error) {
 			}
 		}
 
-		rwc, err := tpm2.OpenTPM(h.cfg.flTPMPath)
+		rwc, err := tpm2.OpenTPM(h.ServerConfig.TPMPath)
 		if err != nil {
-			glog.Errorf("can't open TPM %s: %v", h.cfg.flTPMPath, err)
+			glog.Errorf("can't open TPM %s: %v", h.ServerConfig.TPMPath, err)
 			return nil, err
 		}
 		defer rwc.Close()
-		k, err := client.LoadCachedKey(rwc, tpmutil.Handle(h.cfg.flPersistentHandle), nil)
+		k, err := client.LoadCachedKey(rwc, tpmutil.Handle(h.ServerConfig.PersistentHandle), nil)
 		if err != nil {
 			glog.Errorf("ERROR:  could not initialize Key: %v", err)
 			return nil, err
@@ -485,12 +479,12 @@ func (h *MetadataServer) getAccessToken() (*metadataToken, error) {
 
 		claims := &oauthJWT{
 			jwt.RegisteredClaims{
-				Issuer:    h.c.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
+				Issuer:    h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
 				Audience:  []string{"https://oauth2.googleapis.com/token"},
 				IssuedAt:  jwt.NewNumericDate(iat),
 				ExpiresAt: jwt.NewNumericDate(exp),
 			},
-			strings.Join(h.c.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes, " "),
+			strings.Join(h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes, " "),
 		}
 
 		tpmjwt.SigningMethodTPMRS256.Override()
@@ -554,13 +548,13 @@ func (h *MetadataServer) getAccessToken() (*metadataToken, error) {
 			Expiry:      time.Now().Add(time.Second * time.Duration(ret.ExpiresIn)),
 			TokenType:   ret.TokenType,
 		}
-		h.creds = &google.Credentials{
-			ProjectID:   h.c.ComputeMetadata.V1.Project.ProjectID,
+		h.Creds = &google.Credentials{
+			ProjectID:   h.Claims.ComputeMetadata.V1.Project.ProjectID,
 			TokenSource: oauth2.StaticTokenSource(&t),
 		}
 		return &ret, nil
 	}
-	tok, err := h.creds.TokenSource.Token()
+	tok, err := h.Creds.TokenSource.Token()
 	if err != nil {
 		glog.Error(err)
 		return nil, err
@@ -588,11 +582,11 @@ func (h *MetadataServer) getIDToken(targetAudience string) (string, error) {
 	}
 
 	ctx := context.Background()
-	if h.cfg.flImpersonate {
+	if h.ServerConfig.Impersonate {
 
 		idTokenSource, err = impersonate.IDTokenSource(ctx,
 			impersonate.IDTokenConfig{
-				TargetPrincipal: h.c.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
+				TargetPrincipal: h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
 				Audience:        targetAudience,
 				IncludeEmail:    true,
 			},
@@ -601,7 +595,7 @@ func (h *MetadataServer) getIDToken(targetAudience string) (string, error) {
 			glog.Errorln(err)
 			return "", fmt.Errorf("could not generateID Token %v", err)
 		}
-	} else if h.cfg.flFederate {
+	} else if h.ServerConfig.Federate {
 
 		cr, err := iamcredentials.NewIamCredentialsClient(ctx)
 		if err != nil {
@@ -610,7 +604,7 @@ func (h *MetadataServer) getIDToken(targetAudience string) (string, error) {
 		defer cr.Close()
 
 		req := &iamcredentialspb.GenerateIdTokenRequest{
-			Name:         fmt.Sprintf("projects/-/serviceAccounts/%s", h.c.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email),
+			Name:         fmt.Sprintf("projects/-/serviceAccounts/%s", h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email),
 			Audience:     targetAudience,
 			IncludeEmail: true,
 		}
@@ -623,14 +617,14 @@ func (h *MetadataServer) getIDToken(targetAudience string) (string, error) {
 		idTokenSource = oauth2.StaticTokenSource(&oauth2.Token{
 			AccessToken: resp.Token,
 		})
-	} else if h.cfg.flTPM {
-		rwc, err := tpm2.OpenTPM(h.cfg.flTPMPath)
+	} else if h.ServerConfig.UseTPM {
+		rwc, err := tpm2.OpenTPM(h.ServerConfig.TPMPath)
 		if err != nil {
-			glog.Errorf("can't open TPM %s: %v", h.cfg.flTPMPath, err)
+			glog.Errorf("can't open TPM %s: %v", h.ServerConfig.TPMPath, err)
 			return "", err
 		}
 		defer rwc.Close()
-		k, err := client.LoadCachedKey(rwc, tpmutil.Handle(h.cfg.flPersistentHandle), nil)
+		k, err := client.LoadCachedKey(rwc, tpmutil.Handle(h.ServerConfig.PersistentHandle), nil)
 		if err != nil {
 			glog.Errorf("ERROR:  could not initialize Key: %v", err)
 			return "", err
@@ -648,7 +642,7 @@ func (h *MetadataServer) getIDToken(targetAudience string) (string, error) {
 
 		claims := &idTokenJWT{
 			jwt.RegisteredClaims{
-				Issuer:    h.c.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
+				Issuer:    h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
 				IssuedAt:  jwt.NewNumericDate(iat),
 				ExpiresAt: jwt.NewNumericDate(exp),
 				Audience:  []string{"https://oauth2.googleapis.com/token"},
@@ -718,7 +712,7 @@ func (h *MetadataServer) getIDToken(targetAudience string) (string, error) {
 		}
 		return ret.IdToken, nil
 	} else {
-		idTokenSource, err = idtoken.NewTokenSource(ctx, targetAudience, idtoken.WithCredentialsJSON(h.creds.JSON))
+		idTokenSource, err = idtoken.NewTokenSource(ctx, targetAudience, idtoken.WithCredentialsJSON(h.Creds.JSON))
 		if err != nil {
 			glog.Errorf("Error getting tokenSource %v\n")
 			return "", fmt.Errorf("could not get id_token %v", err)
@@ -733,11 +727,11 @@ func (h *MetadataServer) getIDToken(targetAudience string) (string, error) {
 }
 
 func (h *MetadataServer) listServiceAccountsIndexHandler(w http.ResponseWriter, r *http.Request) {
-	if h.handleRecursion(w, r, h.c.ComputeMetadata.V1.Instance.ServiceAccounts) {
+	if h.handleRecursion(w, r, h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts) {
 		return
 	}
 	var keys string
-	for k, _ := range h.c.ComputeMetadata.V1.Instance.ServiceAccounts {
+	for k, _ := range h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts {
 		keys = keys + k + "\n"
 	}
 	w.Header().Set("Content-Type", "application/text")
@@ -746,19 +740,19 @@ func (h *MetadataServer) listServiceAccountsIndexHandler(w http.ResponseWriter, 
 
 func (h *MetadataServer) listServiceAccountHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	if h.handleRecursion(w, r, h.c.ComputeMetadata.V1.Instance.ServiceAccounts[vars["acct"]]) {
+	if h.handleRecursion(w, r, h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts[vars["acct"]]) {
 		return
 	}
-	keys := h.pathListFields(h.c.ComputeMetadata.V1.Instance.ServiceAccounts[vars["acct"]])
+	keys := h.pathListFields(h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts[vars["acct"]])
 	w.Header().Set("Content-Type", "application/text")
 	fmt.Fprint(w, keys)
 }
 
 func (h *MetadataServer) computeMetadatav1InstanceHandler(w http.ResponseWriter, r *http.Request) {
-	if h.handleRecursion(w, r, h.c.ComputeMetadata.V1.Instance) {
+	if h.handleRecursion(w, r, h.Claims.ComputeMetadata.V1.Instance) {
 		return
 	}
-	resp := h.pathListFields(h.c.ComputeMetadata.V1.Instance)
+	resp := h.pathListFields(h.Claims.ComputeMetadata.V1.Instance)
 	w.Header().Set("Content-Type", "application/text")
 	fmt.Fprint(w, resp)
 }
@@ -767,17 +761,17 @@ func (h *MetadataServer) computeMetadatav1InstanceKeyHandler(w http.ResponseWrit
 	vars := mux.Vars(r)
 	switch vars["key"] {
 	case "id":
-		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.ID)
+		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.ID)
 	case "name":
-		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.Name)
+		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.Name)
 	case "hostname":
-		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.Hostname)
+		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.Hostname)
 	case "zone":
-		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.Zone)
+		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.Zone)
 	case "machine-type":
-		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.MachineType)
+		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.MachineType)
 	case "tags":
-		jsonResponse, err := json.Marshal(h.c.ComputeMetadata.V1.Instance.Tags)
+		jsonResponse, err := json.Marshal(h.Claims.ComputeMetadata.V1.Instance.Tags)
 		if err != nil {
 			glog.Errorf("Error converting value to JSON %v\n", err)
 			httpError(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError, "text/plain; charset=UTF-8")
@@ -795,11 +789,11 @@ func (h *MetadataServer) computeMetadatav1InstanceKeyHandler(w http.ResponseWrit
 }
 
 func (h *MetadataServer) computeMetadatav1InstanceAttributesHandler(w http.ResponseWriter, r *http.Request) {
-	if h.handleRecursion(w, r, h.c.ComputeMetadata.V1.Instance.Attributes) {
+	if h.handleRecursion(w, r, h.Claims.ComputeMetadata.V1.Instance.Attributes) {
 		return
 	}
 	var keys string
-	for k, _ := range h.c.ComputeMetadata.V1.Instance.Attributes {
+	for k, _ := range h.Claims.ComputeMetadata.V1.Instance.Attributes {
 		keys = keys + k + "\n"
 	}
 	w.Header().Set("Content-Type", "application/text")
@@ -807,11 +801,11 @@ func (h *MetadataServer) computeMetadatav1InstanceAttributesHandler(w http.Respo
 }
 
 func (h *MetadataServer) computeMetadatav1InstanceAttributesKeyHandler(w http.ResponseWriter, r *http.Request) {
-	if h.handleRecursion(w, r, h.c.ComputeMetadata.V1.Instance.Attributes) {
+	if h.handleRecursion(w, r, h.Claims.ComputeMetadata.V1.Instance.Attributes) {
 		return
 	}
 	vars := mux.Vars(r)
-	if val, ok := h.c.ComputeMetadata.V1.Instance.Attributes[vars["key"]]; ok {
+	if val, ok := h.Claims.ComputeMetadata.V1.Instance.Attributes[vars["key"]]; ok {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, val)
 	} else {
@@ -822,11 +816,11 @@ func (h *MetadataServer) computeMetadatav1InstanceAttributesKeyHandler(w http.Re
 }
 
 func (h *MetadataServer) computeMetadatav1InstanceNetworkHandler(w http.ResponseWriter, r *http.Request) {
-	if h.handleRecursion(w, r, h.c.ComputeMetadata.V1.Instance.NetworkInterfaces) {
+	if h.handleRecursion(w, r, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces) {
 		return
 	}
 	var resp string
-	for i, _ := range h.c.ComputeMetadata.V1.Instance.NetworkInterfaces {
+	for i, _ := range h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces {
 		resp = resp + fmt.Sprintf("%d/\n", i)
 	}
 	w.Header().Set("Content-Type", "application/text")
@@ -840,14 +834,14 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceHandler(w http
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
-	if len(h.c.ComputeMetadata.V1.Instance.NetworkInterfaces) < i+1 {
+	if len(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces) < i+1 {
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
-	if h.handleRecursion(w, r, h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i]) {
+	if h.handleRecursion(w, r, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i]) {
 		return
 	}
-	resp := h.pathListFields(h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i])
+	resp := h.pathListFields(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i])
 	w.Header().Set("Content-Type", "application/text")
 	fmt.Fprint(w, resp)
 }
@@ -859,7 +853,7 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceKeyHandler(w h
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
-	if len(h.c.ComputeMetadata.V1.Instance.NetworkInterfaces) < i+1 {
+	if len(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces) < i+1 {
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
@@ -869,25 +863,25 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceKeyHandler(w h
 	// 	return
 	case "dns-servers":
 		// gce metadata server default returns "application/text" for dns-servers
-		fmt.Fprint(w, strings.Join(h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i].DNSServers, "\n"))
+		fmt.Fprint(w, strings.Join(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].DNSServers, "\n"))
 	case "forwarded-ips":
 		h.handleBasePathRedirect(w, r)
 		return
 	case "gateway":
-		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Gateway)
+		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Gateway)
 	case "ip":
-		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i].IP)
+		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].IP)
 	case "ip-aliases":
 		h.handleBasePathRedirect(w, r)
 		return
 	case "mac":
-		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Mac)
+		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Mac)
 	case "mtu":
-		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Mtu)
+		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Mtu)
 	case "network":
-		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Network)
+		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Network)
 	case "subnet-mask":
-		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Subnetmask)
+		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Subnetmask)
 	default:
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
@@ -902,15 +896,15 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsH
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
-	if len(h.c.ComputeMetadata.V1.Instance.NetworkInterfaces) < i+1 {
+	if len(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces) < i+1 {
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
-	if h.handleRecursion(w, r, h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs) {
+	if h.handleRecursion(w, r, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs) {
 		return
 	}
 	var resp string
-	for i, _ := range h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs {
+	for i, _ := range h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs {
 		resp = resp + fmt.Sprintf("%d/\n", i)
 	}
 	w.Header().Set("Content-Type", "application/text")
@@ -924,7 +918,7 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsI
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
-	if len(h.c.ComputeMetadata.V1.Instance.NetworkInterfaces) < i+1 {
+	if len(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces) < i+1 {
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
@@ -933,16 +927,16 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsI
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
-	if len(h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs) < k+1 {
+	if len(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs) < k+1 {
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 
-	if h.handleRecursion(w, r, h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs[k]) {
+	if h.handleRecursion(w, r, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs[k]) {
 		return
 	}
 
-	resp := h.pathListFields(h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs[k])
+	resp := h.pathListFields(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs[k])
 	w.Header().Set("Content-Type", "application/text")
 	fmt.Fprint(w, resp)
 }
@@ -954,7 +948,7 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsI
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
-	if len(h.c.ComputeMetadata.V1.Instance.NetworkInterfaces) < i+1 {
+	if len(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces) < i+1 {
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
@@ -963,7 +957,7 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsI
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
-	if len(h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs) < k+1 {
+	if len(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs) < k+1 {
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
@@ -977,7 +971,7 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsK
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
-	if len(h.c.ComputeMetadata.V1.Instance.NetworkInterfaces) < i+1 {
+	if len(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces) < i+1 {
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
@@ -987,16 +981,16 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsK
 		return
 	}
 
-	if len(h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs) < k+1 {
+	if len(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs) < k+1 {
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 
 	switch vars["key"] {
 	case "external-ip":
-		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs[k].ExternalIP)
+		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs[k].ExternalIP)
 	case "type":
-		fmt.Fprint(w, h.c.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs[k].Type)
+		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs[k].Type)
 	default:
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
@@ -1005,205 +999,105 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsK
 
 }
 
-func main() {
-	ctx := context.Background()
-	var cfg serverConfig
-	flag.StringVar(&cfg.flInterface, "interface", "127.0.0.1", "interface address to bind to")
-	flag.StringVar(&cfg.flPort, "port", ":8080", "port...")
-	flag.StringVar(&cfg.flDomainSocket, "domainsocket", "", "listen only on unix socket")
-	flag.StringVar(&cfg.flConfigFile, "configFile", "config.json", "config file")
+func (h *MetadataServer) Start() error {
 
-	flag.StringVar(&cfg.serviceAccountFile, "serviceAccountFile", "", "serviceAccountFile...")
-	flag.BoolVar(&cfg.flImpersonate, "impersonate", false, "Impersonate a service Account instead of using the keyfile")
-	flag.BoolVar(&cfg.flFederate, "federate", false, "Use Workload Identity Federation ADC")
-	flag.BoolVar(&cfg.flTPM, "tpm", false, "Use TPM to get access and id_token")
-	flag.StringVar(&cfg.flTPMPath, "tpm-path", "/dev/tpm0", "Path to the TPM device (character device or a Unix socket).")
-	flag.IntVar(&cfg.flPersistentHandle, "persistentHandle", 0x81008000, "Handle value")
-
-	flag.Parse()
-
-	glog.Infof("Starting GCP metadataserver")
-
-	var a MetadataServer
 	r := mux.NewRouter()
 	r.StrictSlash(false)
 
-	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}", http.HandlerFunc(a.getServiceAccountHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/", http.HandlerFunc(a.listServiceAccountHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}", http.HandlerFunc(a.handleBasePathRedirect)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/instance/service-accounts/", http.HandlerFunc(a.listServiceAccountsIndexHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/instance/service-accounts", http.HandlerFunc(a.handleBasePathRedirect)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/{key}", http.HandlerFunc(h.getServiceAccountHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}/", http.HandlerFunc(h.listServiceAccountHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/service-accounts/{acct}", http.HandlerFunc(h.handleBasePathRedirect)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/service-accounts/", http.HandlerFunc(h.listServiceAccountsIndexHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/service-accounts", http.HandlerFunc(h.handleBasePathRedirect)).Methods(http.MethodGet)
 
-	r.Handle("/computeMetadata/v1/instance/network-interfaces/{index}/access-configs/{index2}/{key}", http.HandlerFunc(a.computeMetadatav1InstanceNetworkInterfaceAccessConfigsKeyHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/instance/network-interfaces/{index}/access-configs/{index2}/", http.HandlerFunc(a.computeMetadatav1InstanceNetworkInterfaceAccessConfigsIndexHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/instance/network-interfaces/{index}/access-configs/{index2}", http.HandlerFunc(a.computeMetadatav1InstanceNetworkInterfaceAccessConfigsIndexRedirectHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/instance/network-interfaces/{index}/access-configs/", http.HandlerFunc(a.computeMetadatav1InstanceNetworkInterfaceAccessConfigsHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/instance/network-interfaces/{index}/access-configs", http.HandlerFunc(a.handleBasePathRedirect)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/instance/network-interfaces/{index}/{key}", http.HandlerFunc(a.computeMetadatav1InstanceNetworkInterfaceKeyHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/instance/network-interfaces/{index}/", http.HandlerFunc(a.computeMetadatav1InstanceNetworkInterfaceHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/instance/network-interfaces/{index}", http.HandlerFunc(a.handleBasePathRedirect)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/instance/network-interfaces/", http.HandlerFunc(a.computeMetadatav1InstanceNetworkHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/instance/network-interfaces", http.HandlerFunc(a.handleBasePathRedirect)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/network-interfaces/{index}/access-configs/{index2}/{key}", http.HandlerFunc(h.computeMetadatav1InstanceNetworkInterfaceAccessConfigsKeyHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/network-interfaces/{index}/access-configs/{index2}/", http.HandlerFunc(h.computeMetadatav1InstanceNetworkInterfaceAccessConfigsIndexHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/network-interfaces/{index}/access-configs/{index2}", http.HandlerFunc(h.computeMetadatav1InstanceNetworkInterfaceAccessConfigsIndexRedirectHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/network-interfaces/{index}/access-configs/", http.HandlerFunc(h.computeMetadatav1InstanceNetworkInterfaceAccessConfigsHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/network-interfaces/{index}/access-configs", http.HandlerFunc(h.handleBasePathRedirect)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/network-interfaces/{index}/{key}", http.HandlerFunc(h.computeMetadatav1InstanceNetworkInterfaceKeyHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/network-interfaces/{index}/", http.HandlerFunc(h.computeMetadatav1InstanceNetworkInterfaceHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/network-interfaces/{index}", http.HandlerFunc(h.handleBasePathRedirect)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/network-interfaces/", http.HandlerFunc(h.computeMetadatav1InstanceNetworkHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/network-interfaces", http.HandlerFunc(h.handleBasePathRedirect)).Methods(http.MethodGet)
 
-	r.Handle("/computeMetadata/v1/instance/attributes/{key}", http.HandlerFunc(a.computeMetadatav1InstanceAttributesKeyHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/instance/attributes/", http.HandlerFunc(a.computeMetadatav1InstanceAttributesHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/instance/attributes", http.HandlerFunc(a.handleBasePathRedirect)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/instance/{key}", http.HandlerFunc(a.computeMetadatav1InstanceKeyHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/instance/", http.HandlerFunc(a.computeMetadatav1InstanceHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/instance", http.HandlerFunc(a.handleBasePathRedirect)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/attributes/{key}", http.HandlerFunc(h.computeMetadatav1InstanceAttributesKeyHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/attributes/", http.HandlerFunc(h.computeMetadatav1InstanceAttributesHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/attributes", http.HandlerFunc(h.handleBasePathRedirect)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/{key}", http.HandlerFunc(h.computeMetadatav1InstanceKeyHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance/", http.HandlerFunc(h.computeMetadatav1InstanceHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/instance", http.HandlerFunc(h.handleBasePathRedirect)).Methods(http.MethodGet)
 
-	r.Handle("/computeMetadata/v1/project/project-id", http.HandlerFunc(a.computeMetadatav1ProjectProjectIDHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/project/numeric-project-id", http.HandlerFunc(a.computeMetadatav1ProjectNumericProjectIDHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/project/attributes/{key}", http.HandlerFunc(a.computeMetadatav1ProjectAttributesKeyHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/project/attributes/", http.HandlerFunc(a.computeMetadatav1ProjectAttributesHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/project/attributes", http.HandlerFunc(a.handleBasePathRedirect)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/project/", http.HandlerFunc(a.computeMetadatav1ProjectHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1/project", http.HandlerFunc(a.handleBasePathRedirect)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/project/project-id", http.HandlerFunc(h.computeMetadatav1ProjectProjectIDHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/project/numeric-project-id", http.HandlerFunc(h.computeMetadatav1ProjectNumericProjectIDHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/project/attributes/{key}", http.HandlerFunc(h.computeMetadatav1ProjectAttributesKeyHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/project/attributes/", http.HandlerFunc(h.computeMetadatav1ProjectAttributesHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/project/attributes", http.HandlerFunc(h.handleBasePathRedirect)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/project/", http.HandlerFunc(h.computeMetadatav1ProjectHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/project", http.HandlerFunc(h.handleBasePathRedirect)).Methods(http.MethodGet)
 
-	r.Handle("/computeMetadata/v1/", http.HandlerFunc(a.computeMetadatav1Handler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata/v1", http.HandlerFunc(a.handleBasePathRedirect)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/", http.HandlerFunc(h.computeMetadatav1Handler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1", http.HandlerFunc(h.handleBasePathRedirect)).Methods(http.MethodGet)
 
-	r.Handle("/computeMetadata/", http.HandlerFunc(a.computeMetadataHandler)).Methods(http.MethodGet)
-	r.Handle("/computeMetadata", http.HandlerFunc(a.handleBasePathRedirect)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/", http.HandlerFunc(h.computeMetadataHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata", http.HandlerFunc(h.handleBasePathRedirect)).Methods(http.MethodGet)
 
-	r.Handle("/", http.HandlerFunc(a.rootHandler)).Methods(http.MethodGet)
+	r.Handle("/", http.HandlerFunc(h.rootHandler)).Methods(http.MethodGet)
 
-	r.NotFoundHandler = http.HandlerFunc(a.notFound)
+	r.NotFoundHandler = http.HandlerFunc(h.notFound)
 
-	http.Handle("/", a.checkMetadataHeaders(r))
+	m := http.NewServeMux()
+	m.Handle("/", h.checkMetadataHeaders(r))
 
 	var l net.Listener
 	var err error
-	var configCliams claims
-	var creds *google.Credentials
 
-	if cfg.flDomainSocket != "" {
-		glog.Infof("domain socket specified, ignoring TCP listers, %s", cfg.flDomainSocket)
-		l, err = net.Listen("unix", cfg.flDomainSocket)
+	h.srv = &http.Server{Handler: m}
+	http2.ConfigureServer(h.srv, &http2.Server{})
+
+	if h.ServerConfig.DomainSocket != "" {
+		glog.Infof("domain socket specified, ignoring TCP listers, %s", h.ServerConfig.DomainSocket)
+		l, err = net.Listen("unix", h.ServerConfig.DomainSocket)
 		if err != nil {
 			glog.Errorf("Error listening to domain socket: %v\n", err)
-			os.Exit(-1)
+			return err
 		}
 	} else {
-		glog.Infof("tcp socket specified %s", fmt.Sprintf("%s%s", cfg.flInterface, cfg.flPort))
-		l, err = net.Listen("tcp", fmt.Sprintf("%s%s", cfg.flInterface, cfg.flPort))
+		glog.Infof("tcp socket specified %s", fmt.Sprintf("%s%s", h.ServerConfig.BindInterface, h.ServerConfig.Port))
+		l, err = net.Listen("tcp", fmt.Sprintf("%s%s", h.ServerConfig.BindInterface, h.ServerConfig.Port))
 		if err != nil {
 			glog.Errorf("Error listening to tcp socket: %v\n", err)
-			os.Exit(-1)
+			return err
 		}
-	}
-	defer l.Close()
-
-	configData, err := os.ReadFile(cfg.flConfigFile)
-	if err != nil {
-		glog.Errorf("Error listening to domain socket: %v\n", err)
-
-	}
-	err = json.Unmarshal(configData, &configCliams)
-	if err != nil {
-		glog.Errorf("Error parsing json: %v\n", err)
-		os.Exit(-1)
-	}
-
-	srv := &http.Server{}
-	http2.ConfigureServer(srv, &http2.Server{})
-
-	done := make(chan os.Signal, 1)
-	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-
-	_, ok := configCliams.ComputeMetadata.V1.Instance.ServiceAccounts["default"]
-	if !ok {
-		glog.Errorf("default service account must be set")
-		os.Exit(-1)
-	}
-
-	if cfg.flImpersonate {
-		glog.Infoln("Using Service Account Impersonation")
-
-		ts, err := impersonate.CredentialsTokenSource(ctx, impersonate.CredentialsConfig{
-			TargetPrincipal: configCliams.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
-			Scopes:          configCliams.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
-		})
-		if err != nil {
-			glog.Errorf("Unable to create Impersonated TokenSource %v ", err)
-			os.Exit(1)
-		}
-
-		creds = &google.Credentials{
-			TokenSource: ts,
-		}
-	} else if cfg.flFederate {
-		glog.Infoln("Using Workload Identity Federation")
-
-		if os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") == "" {
-			glog.Error("GOOGLE_APPLICATION_CREDENTIALSh --federate")
-			os.Exit(1)
-		}
-
-		glog.Infof("Federation path: %s", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
-		var err error
-		creds, err = google.FindDefaultCredentials(ctx, configCliams.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes...)
-		if err != nil {
-			glog.Errorf("Unable load federated credentials %v", err)
-			os.Exit(1)
-		}
-	} else if cfg.flTPM {
-		glog.Infoln("Using TPM based token handle")
-
-		if cfg.flPersistentHandle == 0 {
-			glog.Error("persistent handle must be specified TPM")
-			os.Exit(1)
-		}
-		// verify we actually have access to the TPM
-		rwc, err := tpm2.OpenTPM(cfg.flTPMPath)
-		if err != nil {
-			glog.Errorf("can't open TPM %s: %v", cfg.flTPM, err)
-			os.Exit(1)
-		}
-		err = rwc.Close()
-		if err != nil {
-			glog.Errorf("can't closing TPM %s: %v", cfg.flTPM, err)
-			os.Exit(1)
-		}
-	} else {
-
-		glog.Infoln("Using serviceAccountFile for credentials")
-		var err error
-		//creds, err = google.FindDefaultCredentials(ctx, tokenScopes)
-		data, err := os.ReadFile(cfg.serviceAccountFile)
-		if err != nil {
-			glog.Errorf("Unable to read serviceAccountFile %v", err)
-			os.Exit(1)
-		}
-		creds, err = google.CredentialsFromJSON(ctx, data, configCliams.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes...)
-		if err != nil {
-			glog.Errorf("Unable to parse serviceAccountFile %v ", err)
-			os.Exit(1)
-		}
-
-		if creds.ProjectID != configCliams.ComputeMetadata.V1.Project.ProjectID {
-			glog.Warning("ProjectID in config file does not match project from credentials")
-		}
-	}
-
-	a = MetadataServer{
-		cfg:   cfg,
-		creds: creds,
-		c:     configCliams,
 	}
 
 	go func() {
-		if err := srv.Serve(l); err != nil && err != http.ErrServerClosed {
-			glog.Fatalf("listen: %s\n", err)
+		if err := h.srv.Serve(l); err != nil && err != http.ErrServerClosed {
+			glog.Error("listen: %s\n", err)
 		}
 	}()
-	glog.Infoln("Server Started")
-	<-done
-	glog.Infoln("Server Stopped")
 
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("Server Shutdown Failed:%+v", err)
+	return nil
+}
+
+func (h *MetadataServer) Shutdown() error {
+	ctx := context.Background()
+	if err := h.srv.Shutdown(ctx); err != nil {
+		glog.Errorf("Server Shutdown Failed:%+v", err)
+		return err
 	}
 	glog.Infoln("Server Exited Properly")
+	return nil
+}
 
+func NewMetadataServer(ctx context.Context, serverConfig *ServerConfig, creds *google.Credentials, claims *Claims) (*MetadataServer, error) {
+
+	// do some input validation here
+
+	h := &MetadataServer{
+		Creds:        creds,
+		Claims:       *claims,
+		ServerConfig: *serverConfig,
+	}
+	return h, nil
 }

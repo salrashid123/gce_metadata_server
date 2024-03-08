@@ -1,7 +1,9 @@
-package main
+package mds
 
 import (
+	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -10,7 +12,21 @@ import (
 	"github.com/gorilla/mux"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+
+	"cloud.google.com/go/compute/metadata"
 )
+
+func getFreePort() (port int, err error) {
+	var a *net.TCPAddr
+	if a, err = net.ResolveTCPAddr("tcp", "127.0.0.1:0"); err == nil {
+		var l *net.TCPListener
+		if l, err = net.ListenTCP("tcp", a); err == nil {
+			defer l.Close()
+			return l.Addr().(*net.TCPAddr).Port, nil
+		}
+	}
+	return
+}
 
 func addHeaders(req http.Request) http.Request {
 	req.Header.Set("Metadata-Flavor", "Google")
@@ -67,10 +83,10 @@ func TestBasePathRedirectHandler(t *testing.T) {
 func TestProjectIDHandler(t *testing.T) {
 	expectedProjectID := "some-project-id"
 	h := &MetadataServer{
-		c: claims{
-			ComputeMetadata: computeMetadata{
-				V1: v1{
-					Project: project{
+		Claims: Claims{
+			ComputeMetadata: ComputeMetadata{
+				V1: V1{
+					Project: Project{
 						ProjectID: expectedProjectID,
 					},
 				},
@@ -107,7 +123,7 @@ func TestAccessTokenHandler(t *testing.T) {
 	expectedToken := "foo"
 	expireInSeconds := 60
 	h := &MetadataServer{
-		creds: &google.Credentials{
+		Creds: &google.Credentials{
 			ProjectID: "bar",
 			TokenSource: oauth2.StaticTokenSource(&oauth2.Token{
 				AccessToken: expectedToken,
@@ -148,5 +164,122 @@ func TestAccessTokenHandler(t *testing.T) {
 	if rr.Body.String() != resp {
 		t.Errorf("handler returned unexpected body: got %v want %v",
 			rr.Body.String(), resp)
+	}
+}
+
+func TestAccessTokenCredentialHandler(t *testing.T) {
+	expectedToken := "foo"
+	expireInSeconds := 60
+
+	creds := &google.Credentials{
+		ProjectID: "bar",
+		TokenSource: oauth2.StaticTokenSource(&oauth2.Token{
+			AccessToken: expectedToken,
+			Expiry:      time.Now().Add(time.Second * time.Duration(expireInSeconds)),
+			TokenType:   "Bearer",
+		})}
+
+	p, err := getFreePort()
+	if err != nil {
+		t.Errorf("error getting emulator port %v", err)
+	}
+	sc := &ServerConfig{
+		Port: fmt.Sprintf(":%d", p),
+	}
+
+	h, err := NewMetadataServer(context.Background(), sc, creds, &Claims{})
+	if err != nil {
+		t.Errorf("error creating emulator %v", err)
+	}
+	err = h.Start()
+	if err != nil {
+		t.Errorf("error starting emulator %v", err)
+	}
+	defer h.Shutdown()
+
+	t.Setenv("GCE_METADATA_HOST", fmt.Sprintf("127.0.0.1:%d", p))
+
+	ts, err := google.DefaultTokenSource(context.Background(), cloudPlatformScope)
+	if err != nil {
+		t.Errorf("error getting tokenSource %v", err)
+	}
+	//ts := google.ComputeTokenSource("default", cloudPlatformScope)
+
+	tok, err := ts.Token()
+	if err != nil {
+		t.Errorf("error getting token %v", err)
+	}
+
+	if tok.AccessToken != expectedToken {
+		t.Errorf("handler returned unexpected body: got %v want %v", tok.AccessToken, expectedToken)
+	}
+}
+
+func TestOnGCEHandler(t *testing.T) {
+
+	p, err := getFreePort()
+	if err != nil {
+		t.Errorf("error getting emulator port %v", err)
+	}
+	sc := &ServerConfig{
+		Port: fmt.Sprintf(":%d", p),
+	}
+
+	h, err := NewMetadataServer(context.Background(), sc, &google.Credentials{}, &Claims{})
+	if err != nil {
+		t.Errorf("error creating emulator %v", err)
+	}
+	err = h.Start()
+	if err != nil {
+		t.Errorf("error starting emulator %v", err)
+	}
+	defer h.Shutdown()
+
+	t.Setenv("GCE_METADATA_HOST", fmt.Sprintf("127.0.0.1:%d", p))
+
+	if !metadata.OnGCE() {
+		t.Errorf("handler returned unexpected response expected got true")
+	}
+}
+
+func TestProjectNumberHandler(t *testing.T) {
+	expectedProjectNumber := int64(123456)
+	p, err := getFreePort()
+	if err != nil {
+		t.Errorf("error getting emulator port %v", err)
+	}
+	cc := &Claims{
+		ComputeMetadata: ComputeMetadata{
+			V1: V1{
+				Project: Project{
+					NumericProjectID: expectedProjectNumber,
+				},
+			},
+		},
+	}
+	sc := &ServerConfig{
+		Port: fmt.Sprintf(":%d", p),
+	}
+
+	h, err := NewMetadataServer(context.Background(), sc, &google.Credentials{}, cc)
+	if err != nil {
+		t.Errorf("error creating emulator %v", err)
+	}
+	err = h.Start()
+	if err != nil {
+		t.Errorf("error starting emulator %v", err)
+	}
+	defer h.Shutdown()
+
+	t.Setenv("GCE_METADATA_HOST", fmt.Sprintf("127.0.0.1:%d", p))
+
+	projectNumber, err := metadata.NumericProjectID()
+	if err != nil {
+		t.Errorf("error getting ProjectNumber: got %v", err)
+	}
+
+	if projectNumber != fmt.Sprintf("%d", expectedProjectNumber) {
+		t.Errorf("handler returned unexpected body: got %v want %v",
+			fmt.Sprintf("%d", expectedProjectNumber), expectedProjectNumber)
 	}
 }

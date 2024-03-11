@@ -167,7 +167,7 @@ func TestAccessTokenHandler(t *testing.T) {
 	}
 }
 
-func TestAccessTokenCredentialHandler(t *testing.T) {
+func TestAccessTokenDefaultCredentialHandler(t *testing.T) {
 	expectedToken := "foo"
 	expireInSeconds := 60
 
@@ -199,11 +199,101 @@ func TestAccessTokenCredentialHandler(t *testing.T) {
 
 	t.Setenv("GCE_METADATA_HOST", fmt.Sprintf("127.0.0.1:%d", p))
 
+	// note default credentials here will attempt to use your actual token instead of the emulator value
+	//  for this test to pass, run `gcloud auth application-default revoke` first
 	ts, err := google.DefaultTokenSource(context.Background(), cloudPlatformScope)
 	if err != nil {
 		t.Errorf("error getting tokenSource %v", err)
 	}
-	//ts := google.ComputeTokenSource("default", cloudPlatformScope)
+
+	tok, err := ts.Token()
+	if err != nil {
+		t.Errorf("error getting token %v", err)
+	}
+
+	if tok.AccessToken != expectedToken {
+		t.Errorf("handler returned unexpected body: got %v want %v", tok.AccessToken, expectedToken)
+	}
+}
+
+func TestAccessTokenComputeCredentialHandler(t *testing.T) {
+	expectedToken := "foo"
+	expireInSeconds := 60
+
+	creds := &google.Credentials{
+		ProjectID: "bar",
+		TokenSource: oauth2.StaticTokenSource(&oauth2.Token{
+			AccessToken: expectedToken,
+			Expiry:      time.Now().Add(time.Second * time.Duration(expireInSeconds)),
+			TokenType:   "Bearer",
+		})}
+
+	p, err := getFreePort()
+	if err != nil {
+		t.Errorf("error getting emulator port %v", err)
+	}
+	sc := &ServerConfig{
+		Port: fmt.Sprintf(":%d", p),
+	}
+
+	h, err := NewMetadataServer(context.Background(), sc, creds, &Claims{})
+	if err != nil {
+		t.Errorf("error creating emulator %v", err)
+	}
+	err = h.Start()
+	if err != nil {
+		t.Errorf("error starting emulator %v", err)
+	}
+	defer h.Shutdown()
+
+	t.Setenv("GCE_METADATA_HOST", fmt.Sprintf("127.0.0.1:%d", p))
+
+	ts := google.ComputeTokenSource("default", cloudPlatformScope)
+	if err != nil {
+		t.Errorf("error getting tokenSource %v", err)
+	}
+
+	tok, err := ts.Token()
+	if err != nil {
+		t.Errorf("error getting token %v", err)
+	}
+
+	if tok.AccessToken != expectedToken {
+		t.Errorf("handler returned unexpected body: got %v want %v", tok.AccessToken, expectedToken)
+	}
+}
+
+func TestAccessTokenEnvironmentCredentialHandler(t *testing.T) {
+	expectedToken := "foo"
+
+	p, err := getFreePort()
+	if err != nil {
+		t.Errorf("error getting emulator port %v", err)
+	}
+	sc := &ServerConfig{
+		Port: fmt.Sprintf(":%d", p),
+	}
+
+	t.Setenv("GOOGLE_ACCESS_TOKEN", expectedToken)
+
+	h, err := NewMetadataServer(context.Background(), sc, &google.Credentials{}, &Claims{})
+	if err != nil {
+		t.Errorf("error creating emulator %v", err)
+	}
+	err = h.Start()
+	if err != nil {
+		t.Errorf("error starting emulator %v", err)
+	}
+	defer h.Shutdown()
+
+	t.Setenv("GCE_METADATA_HOST", fmt.Sprintf("127.0.0.1:%d", p))
+
+	// note default credentials here will attempt to use your actual token instead of the emulator value
+	//  for this test to pass, run `gcloud auth application-default revoke` first
+	ts, err := google.DefaultTokenSource(context.Background(), cloudPlatformScope)
+	if err != nil {
+		t.Errorf("error getting tokenSource %v", err)
+	}
 
 	tok, err := ts.Token()
 	if err != nil {
@@ -281,5 +371,47 @@ func TestProjectNumberHandler(t *testing.T) {
 	if projectNumber != fmt.Sprintf("%d", expectedProjectNumber) {
 		t.Errorf("handler returned unexpected body: got %v want %v",
 			fmt.Sprintf("%d", expectedProjectNumber), expectedProjectNumber)
+	}
+}
+
+func TestInstanceIDHandler(t *testing.T) {
+	expectedInstanceID := int64(123456)
+	p, err := getFreePort()
+	if err != nil {
+		t.Errorf("error getting emulator port %v", err)
+	}
+	cc := &Claims{
+		ComputeMetadata: ComputeMetadata{
+			V1: V1{
+				Instance: Instance{
+					ID: expectedInstanceID,
+				},
+			},
+		},
+	}
+	sc := &ServerConfig{
+		Port: fmt.Sprintf(":%d", p),
+	}
+
+	h, err := NewMetadataServer(context.Background(), sc, &google.Credentials{}, cc)
+	if err != nil {
+		t.Errorf("error creating emulator %v", err)
+	}
+	err = h.Start()
+	if err != nil {
+		t.Errorf("error starting emulator %v", err)
+	}
+	defer h.Shutdown()
+
+	t.Setenv("GCE_METADATA_HOST", fmt.Sprintf("127.0.0.1:%d", p))
+
+	mid, err := metadata.InstanceID()
+	if err != nil {
+		t.Errorf("error getting ProjectNumber: got %v", err)
+	}
+
+	if mid != fmt.Sprintf("%d", expectedInstanceID) {
+		t.Errorf("handler returned unexpected body: got %s want %v",
+			mid, expectedInstanceID)
 	}
 }

@@ -19,7 +19,6 @@ go_library(
     srcs = [
         "main.go",
     ],
-    importpath = "github.com/salrashid123/gce_metadata_server/cmd",
     visibility = ["//visibility:private"],
     deps = [
         "//:go_default_library",

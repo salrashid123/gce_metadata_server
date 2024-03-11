@@ -11,11 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+// Creates a Google Cloud Platform local MetadataServer used for test, emulation or to run
+// applications outside of a google cloud environment.
+//
+// Supports reading credentials from a service account key file, workload federation,
+// statically or from a key saved on a Trusted Platform Module (TPM).
+//
+// [GCE Metadata Server Emulator]: https://github.com/salrashid123/gce_metadata_server
 package mds
 
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"reflect"
@@ -52,17 +61,22 @@ import (
 	iamcredentialspb "cloud.google.com/go/iam/credentials/apiv1/credentialspb"
 )
 
+// Configures and manages the server and is used as a receiver to start and stop the server.
+//
+// Applications can initialize the metadata server using this struct by providing it
+// with the credentials to use, the claims it provides as well as runtime specifications
+// like the port and interface to use
 type MetadataServer struct {
 	tokenMutex   sync.Mutex
 	srv          *http.Server
-	Creds        *google.Credentials
-	Claims       Claims
-	ServerConfig ServerConfig
+	initNew      bool
+	Creds        *google.Credentials // credentials to use
+	Claims       Claims              // values for the runtime attributes and values the metadata server returns
+	ServerConfig ServerConfig        // base system configuration (listen interface, port, etc)
 }
 
 var (
-	hostHeaders = []string{"metadata", "metadata.google.internal", "169.254.169.254"}
-	quit        = make(chan bool)
+// hostHeaders = []string{"metadata", "metadata.google.internal", "169.254.169.254"}
 )
 
 const (
@@ -89,17 +103,19 @@ const (
 `
 )
 
+// Configures the base runtime for the metadata server.
+// Set the port, bind-address and what mode this server will acquire credentials through
 type ServerConfig struct {
-	BindInterface string
-	Port          string
-	DomainSocket  string
+	BindInterface string // interface to bind to (default 127.0.0.1)
+	Port          string // port to listen on (default :8080)
+	DomainSocket  string // toggle if unix domain sockets should be used.
 
-	Impersonate bool
-	Federate    bool
+	Impersonate bool // toggle if provided default credentials should be impersonated (default: false)
+	Federate    bool // toggle if workload federation should be used (default: false)
 
-	UseTPM           bool
-	TPMPath          string
-	PersistentHandle int
+	UseTPM           bool   // toggle if TPM should be used for credentials (default: false)
+	TPMPath          string // path to the TPM (default /dev/tpm0)
+	PersistentHandle int    // persistent handle for the TPM pointing to the credentials (default: 0)
 }
 
 func httpError(w http.ResponseWriter, error string, code int, contentType string) {
@@ -111,11 +127,11 @@ func httpError(w http.ResponseWriter, error string, code int, contentType string
 	fmt.Fprintln(w, error)
 }
 
-// metadata server returns an "expires_in" while oauth2.Token returns Expiry time.time
 type metadataToken struct {
 	AccessToken string `json:"access_token"`
-	ExpiresIn   int    `json:"expires_in"`
-	TokenType   string `json:"token_type"`
+	// metadata server returns an "expires_in" while oauth2.Token returns Expiry time.time
+	ExpiresIn int    `json:"expires_in"`
+	TokenType string `json:"token_type"`
 }
 
 type serviceAccountDetails struct {
@@ -126,12 +142,19 @@ type serviceAccountDetails struct {
 	Token    string   `json:"token" altjson:"token"`
 }
 
+// Base claims returned by the metadata server
+// Claims are structured in the same format as provided by a 'real' metadata server
+//
+// eg   `curl -v -H 'Metadata-Flavor: Google' http://metadata/computeMetadata/v1/?recursive=true`
 type Claims struct {
 	ComputeMetadata ComputeMetadata `json:"computeMetadata"  altjson:"computeMetadata"`
 }
+
 type ComputeMetadata struct {
 	V1 V1 `json:"v1" altjson:"v1"`
 }
+
+// Configuration of the v1 settings for the metadata server.
 type V1 struct {
 	Instance Instance `json:"instance" altjson:"instance"`
 	Oslogin  OSlogin  `json:"oslogin"  altjson:"oslogin"`
@@ -193,6 +216,7 @@ type Instance struct {
 	Zone string `json:"zone" altjson:"zone"`
 }
 
+// OSLogin configuration to apply
 type OSlogin struct {
 	Authenticate struct {
 		Sessions struct {
@@ -200,6 +224,7 @@ type OSlogin struct {
 	} `json:"authenticate" altjson:"authenticate"`
 }
 
+// Project configuration to apply
 type Project struct {
 	Attributes       map[string]string `json:"attributes" altjson:"attributes"`
 	NumericProjectID int64             `json:"numericProjectId" altjson:"numeric-project-id"`
@@ -999,7 +1024,12 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsK
 
 }
 
+// Start running the metadata server using the configuration provided through `NewMetadataServer()`
 func (h *MetadataServer) Start() error {
+
+	if !h.initNew {
+		return errors.New("metadata server was not created using NewMetadataServer()")
+	}
 
 	r := mux.NewRouter()
 	r.StrictSlash(false)
@@ -1080,6 +1110,7 @@ func (h *MetadataServer) Start() error {
 	return nil
 }
 
+// Stop a running metadata server
 func (h *MetadataServer) Shutdown() error {
 	ctx := context.Background()
 	if err := h.srv.Shutdown(ctx); err != nil {
@@ -1090,14 +1121,27 @@ func (h *MetadataServer) Shutdown() error {
 	return nil
 }
 
+// Configure a new MetadataServer instance.
+//
+// This will not start the instance (to do that, use the .Start() method).
+//
+// - ServerConfig:  This configures the core/baseline runtime.  Specify the interface,port and credential scheme to use
+//
+// - google.Credentials:  Credentials to use for the access or id_token
+//
+// - Claims:  The runtime claims returned by the metadata server
 func NewMetadataServer(ctx context.Context, serverConfig *ServerConfig, creds *google.Credentials, claims *Claims) (*MetadataServer, error) {
 
 	// do some input validation here
+	if serverConfig == nil || creds == nil || claims == nil {
+		return nil, errors.New("serverConfig, credential and claims cannot be nil")
+	}
 
 	h := &MetadataServer{
 		Creds:        creds,
 		Claims:       *claims,
 		ServerConfig: *serverConfig,
+		initNew:      true, // confirms the MetadataServer was started with NewMetadataServer()
 	}
 	return h, nil
 }

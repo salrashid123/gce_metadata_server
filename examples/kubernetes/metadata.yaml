@@ -39,10 +39,12 @@ spec:
     spec:
       containers:
       - name: service
-        image: docker.io/salrashid123/gcemetadataserver@sha256:0c5e5b2f5172c0da2c01a73014dc325aaefb92ec825e5f9b4f383d86f11f1f07
+        image: docker.io/salrashid123/gcemetadataserver
         args: [
           "-serviceAccountFile=/certs/metadata-sa.json", 
+          "-configFile=/config/config.json",
           "-logtostderr","-alsologtostderr",
+          "-interface=0.0.0.0",
           "-v=50",
           "-port=:8080"
         ]        
@@ -54,8 +56,22 @@ spec:
         - name: metadata-sa
           mountPath: "/certs"
           readOnly: true
+        - name: mds-config-vol
+          mountPath: "/config"
+          readOnly: true
       volumes:
       - name: metadata-sa
         secret:
           secretName: gcp-svc-account
           optional: false
+      - name: mds-config-vol
+        configMap:
+          name: mds-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mds-config
+data:
+  config.json: |
+     "replace with contents of config.json"

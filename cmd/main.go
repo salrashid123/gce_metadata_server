@@ -42,8 +42,8 @@ func main() {
 		os.Exit(-1)
 	}
 
-	var claims mds.Claims
-	err = json.Unmarshal(configData, &claims)
+	claims := &mds.Claims{}
+	err = json.Unmarshal(configData, claims)
 	if err != nil {
 		glog.Errorf("Error parsing json: %v\n", err)
 		os.Exit(-1)
@@ -90,7 +90,7 @@ func main() {
 		glog.Infoln("Using TPM based token handle")
 
 		if *persistentHandle == 0 {
-			glog.Error("persistent handle must be specified TPM")
+			glog.Error("persistent handle must be specified")
 			os.Exit(1)
 		}
 		// verify we actually have access to the TPM
@@ -101,14 +101,13 @@ func main() {
 		}
 		err = rwc.Close()
 		if err != nil {
-			glog.Errorf("can't closing TPM %s: %v", *tpmPath, err)
+			glog.Errorf("can't close TPM %s: %v", *tpmPath, err)
 			os.Exit(1)
 		}
 	} else {
 
 		glog.Infoln("Using serviceAccountFile for credentials")
 		var err error
-		//creds, err = google.FindDefaultCredentials(ctx, tokenScopes)
 		data, err := os.ReadFile(*serviceAccountFile)
 		if err != nil {
 			glog.Errorf("Unable to read serviceAccountFile %v", err)
@@ -121,22 +120,40 @@ func main() {
 		}
 
 		if creds.ProjectID != claims.ComputeMetadata.V1.Project.ProjectID {
-			glog.Warning("ProjectID in config file does not match project from credentials")
+			glog.Warningf("Warning: ProjectID in config file [%s] does not match project from credentials [%s]", claims.ComputeMetadata.V1.Project.ProjectID, creds.ProjectID)
 		}
+
+		// compare the svc account email in the cred file vs the config file
+		//       note json struct for the service account file isn't exported  https://github.com/golang/oauth2/blob/master/google/google.go#L109
+		// for now i'm parsing it directly
+		credJsonMap := make(map[string](interface{}))
+		err = json.Unmarshal(creds.JSON, &credJsonMap)
+		if err != nil {
+			glog.Errorf("Unable to parse serviceAccountFile as json %v ", err)
+			os.Exit(1)
+		}
+		credFileEmail := credJsonMap["client_email"]
+		if credFileEmail != claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email {
+			glog.Warningf("Warning: service account email in config file [%s] does not match project from credentials [%s]", claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email, credFileEmail)
+		}
+
 	}
 
-	f := &mds.MetadataServer{
-		Claims: claims,
-		Creds:  creds,
-		ServerConfig: mds.ServerConfig{
-			BindInterface:    *bindInterface,
-			Port:             *port,
-			Impersonate:      *useImpersonate,
-			Federate:         *useFederate,
-			DomainSocket:     *useDomainSocket,
-			TPMPath:          *tpmPath,
-			PersistentHandle: *persistentHandle,
-		},
+	serverConfig := &mds.ServerConfig{
+		BindInterface:    *bindInterface,
+		Port:             *port,
+		Impersonate:      *useImpersonate,
+		Federate:         *useFederate,
+		DomainSocket:     *useDomainSocket,
+		UseTPM:           *useTPM,
+		TPMPath:          *tpmPath,
+		PersistentHandle: *persistentHandle,
+	}
+
+	f, err := mds.NewMetadataServer(ctx, serverConfig, creds, claims)
+	if err != nil {
+		glog.Errorf("Error creating metadata server %v\n", err)
+		os.Exit(1)
 	}
 
 	done := make(chan os.Signal, 1)

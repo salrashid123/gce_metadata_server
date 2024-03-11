@@ -67,11 +67,11 @@
           "preemptible": "FALSE"
         },
         "serviceAccounts": {
-          "708288290784-compute@developer.gserviceaccount.com": {
+          "metadata-sa@$PROJECT.iam.gserviceaccount.com": {
             "aliases": [
               "default"
             ],
-            "email": "708288290784-compute@developer.gserviceaccount.com",
+            "email": "metadata-sa@$PROJECT.iam.gserviceaccount.com",
             "scopes": [
               "https://www.googleapis.com/auth/cloud-platform",
               "https://www.googleapis.com/auth/userinfo.email"
@@ -81,7 +81,7 @@
             "aliases": [
               "default"
             ],
-            "email": "tpm-sa@core-eso.iam.gserviceaccount.com",
+            "email": "metadata-sa@$PROJECT.iam.gserviceaccount.com",
             "scopes": [
               "https://www.googleapis.com/auth/cloud-platform",
               "https://www.googleapis.com/auth/userinfo.email"

@@ -16,6 +16,7 @@ scoop:
   goamd64: v1
 builds:
   - id: gce_metadata_server
+    main: ./cmd
     goos:
       - linux
       - darwin

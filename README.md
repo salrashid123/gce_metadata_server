@@ -1,12 +1,10 @@
 # GCE Metadata Server Emulator
 
-
-## Background
 This script acts as a GCE's internal metadata server.
 
-It returns a live `access_token` that can be used directly by [Application Default Credentials](https://developers.google.com/identity/protocols/application-default-credentials) transparently.
+It returns a live `access_token` that can be used directly by [Application Default Credentials](https://developers.google.com/identity/protocols/application-default-credentials) from any SDK library or return any GCE metadata key-value pairs and attributes.
 
-For example, you can use `ADC` with metadata or `ComputeCredentials` on your laptop and also get arbitrary values
+For example, you can call `ADC` using default credentials or specifically with `ComputeCredentials` and also recall any GCE project or instance attribute.
 
 ```python
 #!/usr/bin/python
@@ -32,51 +30,77 @@ session = google.auth.transport.requests.AuthorizedSession(creds)
 r = session.get('https://www.googleapis.com/userinfo/v2/me').json()
 print(str(r))
 
-
 ## get arbitrary metadata values directly 
 request = google.auth.transport.requests.Request()
 print(_metadata.get_project_id(request))
 print(_metadata.get(request,"instance/id"))
 ```
 
-or 
+You can also run the metadata server directly in your app or in unit tests:
 
-- [Run with Google Auth clients](#run-with-google-auth-clients)
-- [Running as kubernetes service](#running-as-kubernetes-service)
-- [Run the metadata server with containers](#run-with-containers)
+```golang
+package main
 
- This is useful to test any script or code locally that my need to contact GCE's metadata server for custom, user-defined variables or access_tokens.
+import (
+  	mds "github.com/salrashid123/gce_metadata_server"    
+)
 
- Another usecase for this is to verify how `Application Defaults` will behave while running a local docker container. A local running docker container will not have access to GCE's metadata server but by bridging your container to the emulator, you are basically allowing GCP API access directly from within a container on your local workstation (vs. running the code comprising the container directly on the workstation and relying on gcloud credentials (not metadata)).
+func TestSomething(t *testing.T) {
 
- You can also run this as a service inside a kubernetes cluster and allow any other pod virtual access to GCP metadata server without even running in GCP.
+  // use any any credentials (static, real or fake)
+  creds, _ := google.FindDefaultCredentials(ctx, "https://www.googleapis.com/auth/cloud-platform")
 
- The metadata server supports additional endpoints that simulate other instance attributes normally only visible inside a GCE instance like `instance_id`, `disks`, `network-interfaces` and so on.
+  serverConfig := &mds.ServerConfig{
+		BindInterface: "127.0.0.1",
+		Port:          ":8080",
+  }
 
-See
+  claims := &mds.Claims{
+		ComputeMetadata: mds.ComputeMetadata{
+			V1: mds.V1{
+				Project: mds.Project{
+					ProjectID: "some_project_id",
+				},
+			},
+		},
+  }
 
->> This is not an officially supported Google product
+  f, _ := mds.NewMetadataServer(ctx, serverConfig, creds, claims)
 
+  err = f.Start()
+  defer f.Shutdown()
+
+  // optionally set a env var google sdk libraries understand
+  // t.Setenv("GCE_METADATA_HOST", "127.0.0.1:8080")
+  // do tests here, eg with "cloud.google.com/go/compute/metadata"
+  // mid, _ := metadata.ProjectID()
+}
+```
+
+The metadata server supports additional endpoints that simulate other instance attributes normally only visible inside a GCE instance like `instance_id`, `disks`, `network-interfaces` and so on.
 
 For more information on the request-response characteristics:
 * [GCE Metadata Server](https://cloud.google.com/compute/docs/storing-retrieving-metadata)
-
-and 
-
 * [Predefined metadata keys](https://cloud.google.com/compute/docs/metadata/predefined-metadata-keys)
 * [Set and remove custom metadata](https://cloud.google.com/compute/docs/metadata/setting-custom-metadata)
 
-
  The script performs the following:
- * returns the `access_token` provided by either
+ * returns the `access_token` and `id_token` provided by either
    * the serviceAccount JSON file you specify.
    * [workload identity federation](https://cloud.google.com/iam/docs/how-to#using-workload-identity-federation) configuration
    * service account impersonation
    * statically from a provided environment variable
    * service account RSA key on `HSM` or `Trusted Platform Module (TPM)`
- * return `id_token`
  * return project attributes (`project_id`, `numeric-project-id`)
  * return instance attributes (`instance-id`, `tags`, `network-interfaces`, `disks`)
+
+You can run the emulator:
+
+1.  directly on your laptop
+2.  within a docker container locally.
+3.  as a kubernetes service
+4.  with some difficulty, bound to the link-local address (`169.254.169.254`)
+5.  within unit tests
 
 The endpoints that are exposed are:
 
@@ -96,12 +120,16 @@ r.Handle("/")
 
 ---
 
-* [Usage](#usage)
+>> This is not an officially supported Google product
+
+---
+
 * [Configuration](#configuration)
   - [With JSON ServiceAccount file](#with-json-serviceaccount-file)
   - [With Impersonation](#with-impersonation)
   - [With Workload Federation](#with-workload-federation)
-  - [With TPM](#with-trusted-platform-module-tpm)    
+  - [With TPM](#with-trusted-platform-module-tpm)
+* [Usage](#usage)      
 * [Startup](#startup)
   - [AccessToken](#accesstoken)
   - [IDToken](#idtoken)
@@ -120,9 +148,9 @@ r.Handle("/")
 - [Extending the sample](#extending-the-sample)
 - [Using link-local address](#using-link-local-address)
 - [Using domain sockets](#using-domain-sockets)
+- [Running GCP ops-agent](#running-gcp-ops-agent)
 - [Building with Bazel](#building-with-bazel)
 - [Building with Kaniko](#building-with-kaniko)
-- [Run MetadataServer from Go Tests](#run-metadataserver-from-go-tests)
 * [Testing](#testing)
 
 ---
@@ -133,25 +161,11 @@ Note, the real metadata server has some additional query parameters which are ei
 - [?alt=json](https://cloud.google.com/compute/docs/metadata/querying-metadata#format_query_output) not implemented
 - [?wait_for_change=true](https://cloud.google.com/compute/docs/metadata/querying-metadata#waitforchange) not implemented
 
-
 You are free to expand on the endpoints surfaced here..pls feel free to file a PR!
 
+ ![images/metadata_proxy.png](images/metadata_proxy.png)
 
- - ![images/metadata_proxy.png](images/metadata_proxy.png)
-
-
-## Usage
-
-This script runs a basic webserver and responds back as the Google Compute Engine's metadata server.  A local webserver
-runs on a non-privileged port (default: 8080) and uses a `serviceAccountFile`, service account impersonation or GCP workload federation to return GCP `access_token`, `id_token` and optional live project user-defined metadata
-
-You can run the emulator:
-
-1.  directly on your laptop
-2.  within a docker container running locally.
-3.  as a kubernetes service
-4.  and with some difficulty, using a link-local address (`169.254.169.254`)
-
+---
 
 ## Configuration 
 
@@ -202,10 +216,10 @@ Any requests for an `access_token` or an `id_token` are dynamically generated us
 
 The following steps details how you can run the emulator on your laptop.
 
-
 | Option | Description |
 |:------------|-------------|
 | **`-configFile`** | configuration File (default: `config.json`) |
+| **`-interface`** | interface to bind to (default: `127.0.0.1`) |
 | **`-port`** | port to listen on (default: `:8080`) |
 | **`-serviceAccountFile`** | path to serviceAccount json Key file |
 | **`-impersonate`** | use impersonation |
@@ -213,30 +227,30 @@ The following steps details how you can run the emulator on your laptop.
 | **`-tpm`** | use TPM |
 | **`-persistentHandle`** | TPM persistentHandle |
 | **`-domainsocket`** | listen on unix socket |
-| **`GCE_METADATA_HOST`** | environment variable for SDK libraries to point to the metadata server (as `host:port`) |
 | **`GOOGLE_PROJECT_ID`** | static environment variable for PROJECT_ID to return |
 | **`GOOGLE_NUMERIC_PROJECT_ID`** | static environment variable for the numeric project id to return |
 | **`GOOGLE_ACCESS_TOKEN`** | static environment variable for access_token to return |
 | **`GOOGLE_ID_TOKEN`** | static environment variable for id_token to return |
-
 
 ### With JSON ServiceAccount file
 
 Create a GCP Service Account JSON file (you should strongly prefer using impersonation..)
 
 ```bash
+export PROJECT_ID=`gcloud config get-value core/project`
 gcloud iam service-accounts create metadata-sa
 ```
 
 You can either create a key that represents this service account and download it locally
 
 ```bash
-gcloud iam service-accounts keys create metadata-sa.json --iam-account=metadata-sa@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com
+gcloud iam service-accounts keys create metadata-sa.json \
+   --iam-account=metadata-sa@$PROJECT_ID.iam.gserviceaccount.com
 ```
 
 or preferably assign your user impersonation capabilities on it (see section below)
 
-You can assign IAM permissions now to the service account for whatever resources it may need to access
+You can assign IAM permissions now to the service account for whatever resources it may need to access and then run:
 
 ```bash
 mkdir certs/
@@ -256,7 +270,7 @@ First setup impersonation for your user account:
 
 ```bash
 gcloud iam service-accounts \
-  add-iam-policy-binding metadata-sa@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com \
+  add-iam-policy-binding metadata-sa@$PROJECT_ID.iam.gserviceaccount.com \
   --member=user:`gcloud config get-value core/account` \
   --role=roles/iam.serviceAccountTokenCreator
 ```
@@ -322,8 +336,7 @@ ultimately, the `sts-creds.json` will look like (note:, the `service_account_imp
 
 where `/tmp/oidcred.txt` contains the original oidc token
 
-
-#### With Trusted Platform Module (TPM)
+### With Trusted Platform Module (TPM)
 
 If the service account private key is bound inside a `Trusted Platform Module (TPM)`, the metadata server can use that key to issue an `access_token` or an `id_token`
 
@@ -331,17 +344,19 @@ If the service account private key is bound inside a `Trusted Platform Module (T
 
 Before using this mode, the key _must be_ sealed into the TPM and surfaced as a `persistentHandle`.  This can be done in a number of ways described [here](https://github.com/salrashid123/oauth2/blob/master/README.md#usage-tpmtokensource): 
 
-Basically, you can
+Basically, you can either
 
-- `A` download a Google ServiceAccount's json file and embed the private part to the TPM or
-- `B` Generate a Key ON THE TPM and then import the public part to GCP. or
-- `C` remote seal the service accounts RSA Private key remotely, encrypt it with the remote TPM's Endorsement Key and load it
+- `A` download a Google ServiceAccount's json file and embed the private part to the TPM. [example](https://github.com/salrashid123/oauth2/blob/master/README.md#a-import-service-account-json-to-tpm)
+- `B` Generate a Key _on the TPM_ and then import the public part to GCP. [example](https://github.com/salrashid123/oauth2/blob/master/README.md#b-generate-key-on-tpm-and-export-public-x509-certificate-to-gcp)
+- `C` remote seal the service accounts RSA Private key, encrypt it with TPM's Endorsement Key and load it securely inside the TPM. [example](https://gist.github.com/salrashid123/9e4a0328fd8c84374ace78c76a1e34cb)
 
 `B` is the most secure but `C` allows for multiple TPMs to use the same key 
 
 Anyway, once the RSA key is present as a handle, start the metadata server using the `--tpm` flag and set the `--persistentHandle=` value.
 
-You will also need to set a number of other variables similar to the service account JSON file:
+TPM based tokens derives the serivceAccount email from the configuration file.   You must first edit `config.json` and set the value of `Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email`.
+
+After that, run
 
 ```bash
 go run cmd/main.go -logtostderr --configFile=config.json \
@@ -352,16 +367,13 @@ go run cmd/main.go -logtostderr --configFile=config.json \
 
 we're using a `persistentHandle` to save/load the key but a TODO is to load from the [context tree from files](https://github.com/salrashid123/tpm2/tree/master/context_chain)
 
-Final note:  if you run on kubernetes on-prem or outside of GCP managed environments, you can also use a sealed key for GCP access:
+The TPM based credentials imports a JWT generator library to perform the oauth and id_token exchanges: 
 
-While not included in this repo, if you provision a service account's key into the k8s node, you can start the metadata server as shown at the end of this repo but critically, the key it uses can be derived from the TPM itself.
+* [salrashid123/golang-jwt-tpm](https://github.com/salrashid123/golang-jwt-tpm)
 
-To do this, you would use a combination of the samples shown here where after attestation, you seal an RSA key and then  run the metadata server as a pod as described in the section titled `Running as Kubernetes Service`:
+A TODO enhancement could be to add on support for `PKCS-11` systems:  eg [salrashid123/golang-jwt-pkcs11](https://github.com/salrashid123/golang-jwt-pkcs11)
 
 also see:
-
-* [Kubernetes Trusted Platform Module (TPM) using Device Plugin and Gatekeeper](https://github.com/salrashid123/tpm_kubernetes)
-* [Kubernetes Trusted Platform Module (TPM) DaemonSet](https://github.com/salrashid123/tpm_daemonset)
 
 * [TPM Credential Source for Google Cloud SDK](https://github.com/salrashid123/gcp-adc-tpm)
 * [PKCS-11 Credential Source for Google Cloud SDK](https://github.com/salrashid123/gcp-adc-pkcs)
@@ -377,32 +389,24 @@ go run cmd/main.go -logtostderr --configFile=config.json \
   --serviceAccountFile certs/metadata-sa.json 
 ```
 
-- ![images/setup_2.png](images/setup_2.png)
+![images/setup_2.png](images/setup_2.png)
 
 ### AccessToken
 
 In a new window, run
 
 ```bash
-curl -v -H 'Metadata-Flavor: Google' --connect-to metadata.google.internal:80:127.0.0.1:8080 \
+curl -s -H 'Metadata-Flavor: Google' --connect-to metadata.google.internal:80:127.0.0.1:8080 \
    http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
 
->
-< HTTP/1.1 200 OK
-< Content-Type: application/json
-< Metadata-Flavor: Google
-< Server: Metadata Server for VM
-< X-Frame-Options: 0
-< X-Xss-Protection: 0
-< Date: Mon, 26 Aug 2019 21:50:09 GMT
-< Content-Length: 190
-<
-{"access_token":"ya29.c.EltxByD8vfv2ACageADlorFHWd2ZUIgGdU-redacted","expires_in":3600,"token_type":"Bearer"}
+{
+  "access_token": "ya29.c.EltxByD8vfv2ACageADlorFHWd2ZUIgGdU-redacted",
+  "expires_in": 3600,
+  "token_type": "Bearer"
+}
 ```
 
-
 Please note the scopes used for this token is read in from the declared values in the config file
-
 
 ### IDToken
 
@@ -414,6 +418,7 @@ curl -H "Metadata-Flavor: Google" --connect-to metadata.google.internal:80:127.0
 ```
 
 The `id_token` will be signed by google but issued by the service account you used
+
 ```json
 {
   "alg": "RS256",
@@ -430,8 +435,14 @@ The `id_token` will be signed by google but issued by the service account you us
   "iss": "https://accounts.google.com",
   "sub": "117605711420724299222"
 }
-
 ```
+
+*Important:* To get `id_tokens`, you must edit `config.json` and set the value of
+
+- `Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email`
+
+to the value present for the credentials you are using (eg set it to `metadata-sa@$PROJECT.iam.gserviceaccount.com` (substituting in value for your real $PROJECT))
+
 >>> Unlike the _real_ gce metadataserver, this will **NOT** return the full identity document or license info :(`&format=[FORMAT]&licenses=[LICENSES]`)
 
 
@@ -462,8 +473,8 @@ If you intend to use the samples in the `examples/` folder, add some viewer perm
 
 ```bash
 # note roles/storage.admin is over-permissioned...we only need storage.buckets.list on the project...
-gcloud projects add-iam-policy-binding $GOOGLE_PROJECT_ID  \
-     --member="serviceAccount:metadata-sa@$GOOGLE_PROJECT_ID.iam.gserviceaccount.com"  \
+gcloud projects add-iam-policy-binding $PROJECT_ID  \
+     --member="serviceAccount:metadata-sa@$PROJECT_ID.iam.gserviceaccount.com"  \
      --role=roles/storage.admin
 ```
 
@@ -530,9 +541,6 @@ Remember to run `gcloud auth application-default revoke` in any new client libra
 Note, `Google.Api.Gax.Platform.Instance().ProjectId` requests the full [recursive path](https://github.com/googleapis/gax-dotnet/blob/main/Google.Api.Gax/Platform.cs#LL61C69-L61C103)
 
 
-- ![images/setup_5.png](images/setup_5.png)
-
-
 #### gcloud
 
 ```bash
@@ -566,11 +574,13 @@ you can run the server itself directly
 ```bash
 docker run \
   -v `pwd`/certs/:/certs/ \
+  -v `pwd`/config.json:/config.json \
   -p 8080:8080 \
-  -t salrashid123/gcemetadataserver \
-  -serviceAccountFile /certs/metadata-sa.json \
-  -logtostderr -alsologtostderr -v 5 \
-  -port :8080 
+  -t salrashid123/gcemetadataserver  \
+      -serviceAccountFile /certs/metadata-sa.json \
+      --configFile=/config.json \
+      -logtostderr -alsologtostderr -v 5 \
+      -interface 0.0.0.0 -port :8080
 ```
 
 ### Running as Kubernetes Service
@@ -580,7 +590,7 @@ You can run the emulator as a kubernetes `Service`  and reference it from other 
 If you want test this with `minikube` locally,
 
 ```bash
-## first create the base64encoded form of the service account keydefine a
+## first create the base64encoded form of the service account key
 cat certs/metadata-sa.json | base64  --wrap=0 -
 cd examples/kubernetes
 ```
@@ -588,7 +598,6 @@ cd examples/kubernetes
 then edit metadata.yaml and replace the values: 
 
 ```yaml
----
 apiVersion: v1
 kind: Secret
 metadata:
@@ -596,6 +605,14 @@ metadata:
 type: Opaque
 data:
   metadata-sa.json: "replace with contents of cat certs/metadata-sa.json | base64  --wrap=0 -"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mds-config
+data:
+  config.json: |
+     "replace with contents of config.json"  
 ```
 
 Finally test
@@ -624,12 +641,12 @@ export GOOGLE_ACCESS_TOKEN="some_static_token"
 export GOOGLE_ID_TOKEN="some_id_token"
 ```
 
-for example,
+for example you can use those env vars and specify a fake svc account json key file (fake since its not actually even used)
 
 ```bash
-go run server.go -logtostderr  \
+go run cmd/main.go -logtostderr  \
    -alsologtostderr -v 5 \
-   -port :8080
+   -port :8080 --configFile=`pwd`/config.json  --serviceAccountFile=certs/fake_sa.json
 ```
 
 or
@@ -642,9 +659,11 @@ docker run \
   -e GOOGLE_PROJECT_ID=$GOOGLE_PROJECT_ID \
   -e GOOGLE_ACCOUNT_EMAIL=$GOOGLE_ACCOUNT_EMAIL \
   -e GOOGLE_ID_TOKEN=$GOOGLE_ID_TOKEN \  
+  -v `pwd`/config.json:/config.json \
+  -v `pwd`/certs/fake_sa.json:/certs/fake_sa.json \
   -t salrashid123/gcemetadataserver \
-  -port :8080 -logtostderr -alsologtostderr -v 5
-
+  -port :8080 --configFile=/config.json --serviceAccountFile=/certs/fake_sa.json \
+  --interface=0.0.0.0 -logtostderr -alsologtostderr -v 5
 ```
 
 ```bash
@@ -659,7 +678,6 @@ some_static_token
 
 You can extend this sample for any arbitrary metadata you are interested in emulating (eg, disks, hostname, etc).
 Simply add the routes to the webserver and handle the responses accordingly.  It is recommended to view the request-response format directly on the metadata server to compare against.
-
 
 #### Using Link-Local address
 
@@ -706,8 +724,7 @@ curl -v -H 'Metadata-Flavor: Google' \
      http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
 ```
 
-If you don't mind running the program on port `:80` directly, you can skip the socat and iptables and simply start the emulator on the default http port after setting the /etc/hosts variable.
-
+If you don't mind running the program on port `:80` directly, you can skip the socat and iptables and simply start the emulator to on the link address (`-port :80 --interface=169.254.169.254`)  after setting the `/etc/hosts` variable.
 
 #### Using Domain Sockets
 
@@ -735,6 +752,82 @@ anyway, just for fun, you can pipe a tcp socket to domain using `socat` (or vice
 socat TCP-LISTEN:8080,fork,reuseaddr UNIX-CONNECT:/tmp/metadata.sock
 ```
 
+#### Running GCP Ops Agent
+
+This emulator can also be configured to get called by the [GCP ops-agent](https://cloud.google.com/monitoring/agent/ops-agent) (see [pr/30](https://github.com/salrashid123/gce_metadata_server/pull/30)) which would otherwise only run on GCP VMs.
+
+Note: running the ops-agent on any other platform is not supported (by definition).
+
+Anyway, if you are interested in testing, the following setup demonstrates its usage.  I used qemu and debain 12 as a setup; you can use vagrant, vmware or anything else to create the vm on your laptop
+
+Running ops agent on local VM will require creating a service account key.  
+
+Assign the service account the project you want to use and the iam permissions listed [here](https://cloud.google.com/logging/docs/agent/ops-agent/authorization#create-service-account).  Copy the service account key into the vm.
+
+```bash
+## i used debian12 image
+wget https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.5.0-amd64-netinst.iso
+
+## create the disk and VM itself
+qemu-img create -f qcow2 boot.img 40G
+qemu-system-x86_64 -hda boot.img -net nic -net user,hostfwd=tcp::10022-:22 \
+   -cpu host -smp `nproc` -cdrom  debian-12.5.0-amd64-netinst.iso  \
+   --enable-kvm -m 2048 --vga vmware
+
+## ssh in; i created a user called 'sal' so i logged in with that:
+ssh -o UserKnownHostsFile=/dev/null     -o CheckHostIP=no -o StrictHostKeyChecking=no sal@127.0.0.1 -p 10022
+
+# once on the VM,
+su -
+apt-get update
+apt-get install curl git
+
+vi /etc/hosts
+## set 169.254.169.254       metadata metadata.google.internal
+
+# create the link-local interface (note that this should not be necessary but i could not get it to work without this)
+ifconfig lo:0 169.254.169.254 up
+
+## download the metadata server
+git clone https://github.com/salrashid123/gce_metadata_server.git
+cd gce_metadata_server
+
+# edit config.json and set service account, projectID,number
+
+## copy the service account key created earlier and save to /path/to/svcaccount.json
+
+## then start the emulator
+go run cmd/main.go   -logtostderr   -alsologtostderr -v 40  \
+   -port :80 --interface=169.254.169.254 --configFile=`pwd`/config.json \
+   --serviceAccountFile=/path/to/svcaccount.json
+
+### now install the ops agent
+# https://cloud.google.com/stackdriver/docs/solutions/agents/ops-agent/installation
+
+# install ops-agent
+curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
+sudo bash add-google-cloud-ops-agent-repo.sh --also-install
+
+## restart
+systemctl restart google-cloud-ops-agent"*"
+
+systemctl status google-cloud-ops-agent"*"
+```
+
+note,  you should be able to run the emulator on default `127.0.0.1:8080`  if each service  has the following env-var in its config set but i could not get it to work:
+
+```bash
+#export SYSTEMD_EDITOR=/bin/vi
+#systemctl edit google-cloud-ops-agent-fluent-bit
+#systemctl edit google-cloud-ops-agent
+#systemctl edit google-cloud-ops-agent-diagnostics
+#systemctl edit google-cloud-ops-agent-opentelemetry-collector
+
+# set
+[Service]
+Environment="GCE_METADATA_HOST=localhost:8080"
+```
+
 #### Building with Bazel
 
 If you want to build the server using bazel (eg, [deterministic](https://github.com/salrashid123/go-grpc-bazel-docker)),
@@ -747,8 +840,11 @@ bazel run :gazelle -- update-repos -from_file=go.mod -prune=true -to_macro=repos
 bazel run cmd:main -- --configFile=`pwd`/config.json   -alsologtostderr -v 5 -port :8080 --serviceAccountFile=`pwd`/certs/metadata-sa.json 
 
 ## to build the image
-bazel   build  cmd:tar-oci-index
+bazel build cmd:tar-oci-index
   ## oci image at bazel-bin/tar-oci-index/tarball.tar
+
+## to push the image a repo, edit cmd/BUILD.bazel and set the push-image target repository
+bazel run cmd:push-image  
 ```
 
 #### Building with Kaniko
@@ -768,30 +864,6 @@ syft packages docker.io/salrashid123/gcemetadataserver:$TAG
 skopeo copy  --preserve-digests  docker://docker.io/salrashid123/gcemetadataserver:$TAG docker://docker.io/salrashid123/gcemetadataserver:latest
 ```
 
-## Run MetadataServer from Go Tests
-
-You can also run the metadata server directly:
-
-For example, import the metadata server, configure and launch:
-
-```golang
-import (
-  	mds "github.com/salrashid123/gce_metadata_server"
-)
-
-	f := &mds.MetadataServer{
-		Claims: &mds.Claims{},
-		Creds:  google.FindDefaultCredentials(ctx, scopes...),
-		ServerConfig: mds.ServerConfig{
-			BindInterface:    *bindInterface,
-			Port:             *port,
-		},
-	}
-
-	err = f.Start()
-  defer f.Shutdown()
-  // do other stuff here
-```
 
 This is useful for unit tests and fakes.  For additional examples, please see the `server_test.go` and `cmd/main.go`
 
@@ -808,12 +880,18 @@ $ go test -v
 --- PASS: TestProjectIDHandler (0.00s)
 === RUN   TestAccessTokenHandler
 --- PASS: TestAccessTokenHandler (0.00s)
-=== RUN   TestAccessTokenCredentialHandler
---- PASS: TestAccessTokenCredentialHandler (0.00s)
+=== RUN   TestAccessTokenDefaultCredentialHandler
+--- PASS: TestAccessTokenDefaultCredentialHandler (0.00s)
+=== RUN   TestAccessTokenComputeCredentialHandler
+--- PASS: TestAccessTokenComputeCredentialHandler (0.00s)
+=== RUN   TestAccessTokenEnvironmentCredentialHandler
+--- PASS: TestAccessTokenEnvironmentCredentialHandler (0.00s)
 === RUN   TestOnGCEHandler
 --- PASS: TestOnGCEHandler (0.00s)
 === RUN   TestProjectNumberHandler
 --- PASS: TestProjectNumberHandler (0.00s)
+=== RUN   TestInstanceIDHandler
+--- PASS: TestInstanceIDHandler (0.00s)
 PASS
-ok  	github.com/salrashid123/gce_metadata_server	0.050s
+ok  	github.com/salrashid123/gce_metadata_server	0.053s
 ```

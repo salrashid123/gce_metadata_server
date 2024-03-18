@@ -36,7 +36,7 @@ print(_metadata.get_project_id(request))
 print(_metadata.get(request,"instance/id"))
 ```
 
-You can also run the metadata server directly in your app or in unit tests:
+You can also launch the metadata server directly from your app or use in unit tests:
 
 ```golang
 package main
@@ -74,6 +74,12 @@ func TestSomething(t *testing.T) {
   // t.Setenv("GCE_METADATA_HOST", "127.0.0.1:8080")
   // do tests here, eg with "cloud.google.com/go/compute/metadata"
   // mid, _ := metadata.ProjectID()
+
+  // or call it directly
+  // client := &http.Client{}
+  // req, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1:8080/computeMetadata/v1/project/project-id", nil)
+  // req.Header.Set("Metadata-Flavor", "Google")
+  // res, _ := client.Do(req)  
 }
 ```
 
@@ -142,6 +148,7 @@ r.Handle("/")
   - [dotnet](#dotnet)  
   - [gcloud](#gcloud)        
 * [Other Runtimes](#other-runtimes)
+    - [Run emulator as container](#run-emulator-as-container)    
     - [Run with containers](#run-with-containers)
     - [Running as Kubernetes Service](#running-as-kubernetes-service)
     - [Static environment variables](#static-environment-variables)
@@ -216,6 +223,16 @@ Any requests for an `access_token` or an `id_token` are dynamically generated us
 
 The following steps details how you can run the emulator on your laptop.
 
+You can either build from source:
+
+```bash
+go build -o gce_metadata_server cmd/main.go
+```
+
+Or download an appropriate binary from the [Releases](https://github.com/salrashid123/gce_metadata_server/releases) page
+
+You can set the following options on usage:
+
 | Option | Description |
 |:------------|-------------|
 | **`-configFile`** | configuration File (default: `config.json`) |
@@ -256,7 +273,7 @@ You can assign IAM permissions now to the service account for whatever resources
 mkdir certs/
 mv metadata-sa.json certs
 
-go run cmd/main.go -logtostderr --configFile=config.json \
+./gce_metadata_server -logtostderr --configFile=config.json \
   -alsologtostderr -v 5 \
   -port :8080 \
   --serviceAccountFile certs/metadata-sa.json 
@@ -278,7 +295,7 @@ gcloud iam service-accounts \
 then,
 
 ```bash
-go run cmd/main.go -logtostderr \
+./gce_metadata_server -logtostderr \
      -alsologtostderr -v 5  -port :8080 \
      --impersonate --configFile=config.json
 ```
@@ -291,7 +308,7 @@ then just use the default env-var and run:
 
 ```bash
 export GOOGLE_APPLICATION_CREDENTIALS=`pwd`/sts-creds.json
-go run cmd/main.go -logtostderr --configFile=config.json \
+./gce_metadata_server -logtostderr --configFile=config.json \
   -alsologtostderr -v 5 \
   -port :8080 --federate 
 ```
@@ -359,7 +376,7 @@ TPM based tokens derives the serivceAccount email from the configuration file.  
 After that, run
 
 ```bash
-go run cmd/main.go -logtostderr --configFile=config.json \
+./gce_metadata_server -logtostderr --configFile=config.json \
   -alsologtostderr -v 5 \
   -port :8080 \
   --tpm --persistentHandle=0x81008000 
@@ -383,7 +400,7 @@ also see:
 Use any of the credential initializations described above and on startup, you will see something like:
 
 ```bash
-go run cmd/main.go -logtostderr --configFile=config.json \
+./gce_metadata_server -logtostderr --configFile=config.json \
   -alsologtostderr -v 5 \
   -port :8080 \
   --serviceAccountFile certs/metadata-sa.json 
@@ -490,6 +507,7 @@ Remember to run `gcloud auth application-default revoke` in any new client libra
 
 ##### [python](https://github.com/googleapis/google-auth-library-python/blob/main/google/auth/compute_engine/_metadata.py#L35-L50)
 
+see [examples/pyapp](examples/pyapp/)
 
 ```bash
   export GCE_METADATA_HOST=localhost:8080
@@ -505,6 +523,8 @@ Remember to run `gcloud auth application-default revoke` in any new client libra
 
 ##### [java](https://github.com/googleapis/google-auth-library-java/blob/main/oauth2_http/java/com/google/auth/oauth2/DefaultCredentialsProvider.java#L71)
 
+see [examples/javaapp](examples/javapp/)
+
 ```bash
    export GCE_METADATA_HOST=localhost:8080
 
@@ -512,7 +532,9 @@ Remember to run `gcloud auth application-default revoke` in any new client libra
 ```
 
 ##### [golang](https://github.com/googleapis/google-cloud-go/blob/main/compute/metadata/metadata.go#L41-L46)
-   
+
+see [examples/goapp](examples/goapp/)
+
 ```bash
   export GCE_METADATA_HOST=localhost:8080
 
@@ -521,6 +543,7 @@ Remember to run `gcloud auth application-default revoke` in any new client libra
 
 ##### [nodejs](https://github.com/googleapis/gcp-metadata/blob/main/src/index.ts#L36-L37)
 
+see [examples/nodeapp](examples/nodeapp/)
 
 ```bash
   export GCE_METADATA_HOST=localhost:8080
@@ -530,6 +553,8 @@ Remember to run `gcloud auth application-default revoke` in any new client libra
 ```
 
 ##### [dotnet](https://github.com/googleapis/google-api-dotnet-client/blob/main/Src/Support/Google.Apis.Auth/OAuth2/GoogleAuthConsts.cs#L136)
+
+see [examples/dotnet](examples/dotnet/)
 
 ```bash
   export GCE_METADATA_HOST=localhost:8080
@@ -559,6 +584,29 @@ project = mineral-minutia-820
 
 ## Other Runtimes
 
+### Run emulator as container
+
+This emulator is also published as a release-tagged container to dockerhub:
+
+* [https://hub.docker.com/r/salrashid123/gcemetadataserver](https://hub.docker.com/r/salrashid123/gcemetadataserver)
+
+The images are also signed using my github address (`salrashid123@gmail`).  If you really want to, you can verify each signature usign `cosign`:
+
+```bash
+## for tag/version  3.4.0:
+IMAGE="index.docker.io/salrashid123/gcemetadataserver@sha256:c3cec9e18adb87a14889f19ab0c3c87d66339284b35ca72135ff9dcd58a59671"
+
+## i signed it directly, keyless:
+# $ cosign sign $IMAGE
+
+## which you can verify:
+$ cosign verify --certificate-identity=salrashid123@gmail.com  --certificate-oidc-issuer=https://github.com/login/oauth $IMAGE | jq '.'
+
+## search and get 
+# $ rekor-cli search --rekor_server https://rekor.sigstore.dev  --email salrashid123@gmail.com
+# $ rekor-cli get --rekor_server https://rekor.sigstore.dev  --log-index $LogIndex  --format=json | jq '.'
+```
+
 ### Run with containers
 
 To access the local emulator _from_ containers
@@ -569,7 +617,7 @@ docker build -t myapp .
 docker run -t --net=host -e GCE_METADATA_HOST=localhost:8080  myapp
 ```
 
-you can run the server itself directly 
+then run the emulator standalone or as a container itself:
 
 ```bash
 docker run \
@@ -639,12 +687,13 @@ export GOOGLE_PROJECT_ID=`gcloud config get-value core/project`
 export GOOGLE_NUMERIC_PROJECT_ID=`gcloud projects describe $GOOGLE_PROJECT_ID --format="value(projectNumber)"`
 export GOOGLE_ACCESS_TOKEN="some_static_token"
 export GOOGLE_ID_TOKEN="some_id_token"
+export GOOGLE_ACCOUNT_EMAIL="metadata-sa@PROJECT.iam.gserviceaccount.com"
 ```
 
 for example you can use those env vars and specify a fake svc account json key file (fake since its not actually even used)
 
 ```bash
-go run cmd/main.go -logtostderr  \
+./gce_metadata_server -logtostderr  \
    -alsologtostderr -v 5 \
    -port :8080 --configFile=`pwd`/config.json  --serviceAccountFile=certs/fake_sa.json
 ```
@@ -756,9 +805,11 @@ socat TCP-LISTEN:8080,fork,reuseaddr UNIX-CONNECT:/tmp/metadata.sock
 
 This emulator can also be configured to get called by the [GCP ops-agent](https://cloud.google.com/monitoring/agent/ops-agent) (see [pr/30](https://github.com/salrashid123/gce_metadata_server/pull/30)) which would otherwise only run on GCP VMs.
 
-Note: running the ops-agent on any other platform is not supported (by definition).
+Note: running the ops-agent on any other platform is really not supported (by definition) and can return unexpected data.  Use with a lot of caution.
 
-Anyway, if you are interested in testing, the following setup demonstrates its usage.  I used qemu and debain 12 as a setup; you can use vagrant, vmware or anything else to create the vm on your laptop
+One of the main issues with running the ops-agent off GCP is that it is by default expecting to emit data for [resource.type=gce_instance](https://cloud.google.com/monitoring/api/resources#tag_gce_instance) ([here](https://github.com/GoogleCloudPlatform/ops-agent/blob/master/confgenerator/resourcedetector/detector.go#L54)]).  For true support of on-prem instances, it should emit with support for [resource.type=generic_node](https://cloud.google.com/monitoring/api/resources#tag_generic_node) and [resource.type=generice_task](https://cloud.google.com/monitoring/api/resources#tag_generic_task).  Those two resource types indicate arbitrary computing environments.  For background on those types, see  [Writing Developer logs with Google Cloud Logging](https://blog.salrashid.dev/articles/2019/writing_developer_logs/) (again, that article is dated and probably doens't work anymore but the metrics resource types are valid).  It maybe possible with the ops-agent to configure overrides it to define the `resource.type` and `labels` but i have not looked into it...
+
+Anyway, if you are still interested in testing, the following setup demonstrates its usage.  I used qemu and debian 12 as a setup; you can use vagrant, vmware or anything else to create the vm on your laptop
 
 Running ops agent on local VM will require creating a service account key.  
 
@@ -797,7 +848,7 @@ cd gce_metadata_server
 ## copy the service account key created earlier and save to /path/to/svcaccount.json
 
 ## then start the emulator
-go run cmd/main.go   -logtostderr   -alsologtostderr -v 40  \
+/path/to/gce_metadata_server   -logtostderr   -alsologtostderr -v 40  \
    -port :80 --interface=169.254.169.254 --configFile=`pwd`/config.json \
    --serviceAccountFile=/path/to/svcaccount.json
 
@@ -845,6 +896,29 @@ bazel build cmd:tar-oci-index
 
 ## to push the image a repo, edit cmd/BUILD.bazel and set the push-image target repository
 bazel run cmd:push-image  
+```
+
+side note:  getting bazel to work with google apis is a bit brittle.  
+
+make the following edits to `repositories.bzl`
+
+```bash
+### add build_file_proto_mode directive here
+    go_repository(
+        name = "com_github_googleapis_gax_go_v2",
+        importpath = "github.com/googleapis/gax-go/v2",
+        build_file_proto_mode = "disable_global",
+        sum = "h1:A+gCJKdRfqXkr+BIRGtZLibNXf0m1f9E4HG56etFpas=",
+        version = "v2.12.0",
+    )
+
+### after upgrading google.golang.org/protobuf-->v1.33.0, i had to comment out 
+    #go_repository(
+    #    name = "org_golang_google_protobuf",
+    #    importpath = "google.golang.org/protobuf",
+    #    sum = "h1:uNO2rsAINq/JlFpSdYEKIZ0uKD/R9cpdv0T+yoGwGmI=",
+    #    version = "v1.33.0",
+    #)
 ```
 
 #### Building with Kaniko

@@ -6,6 +6,24 @@ It returns a live `access_token` that can be used directly by [Application Defau
 
 For example, you can call `ADC` using default credentials or specifically with `ComputeCredentials` and also recall any GCE project or instance attribute.
 
+First run the emulator:
+
+```bash
+./gce_metadata_server -logtostderr --configFile=config.json \
+  -alsologtostderr -v 5 \
+  -port :8080 \
+  --serviceAccountFile certs/metadata-sa.json 
+```
+
+Then in a new window, export some env vars google SDK's under
+
+```bash
+export GCE_METADATA_HOST=localhost:8080
+export GCE_METADATA_IP=127.0.0.1:8080
+```
+
+and run any application using ADC:
+
 ```python
 #!/usr/bin/python
 
@@ -940,6 +958,20 @@ skopeo copy  --preserve-digests  docker://docker.io/salrashid123/gcemetadataserv
 
 
 This is useful for unit tests and fakes.  For additional examples, please see the `server_test.go` and `cmd/main.go`
+
+#### Verify Release Binary
+
+If you download a binary from the "Releases" page, you can verify the signature with GPG:
+
+```bash
+gpg --keyserver keyserver.ubuntu.com --recv-keys 5D8EA7261718FE5728BA937C97341836616BF511
+
+## to verify the checksum file for a given release:
+wget https://github.com/salrashid123/gce_metadata_server/releases/download/v3.4.1/gce_metadata_server_3.4.1_checksums.txt
+wget https://github.com/salrashid123/gce_metadata_server/releases/download/v3.4.1/gce_metadata_server_3.4.1_checksums.txt.sig
+
+gpg --verify gce_metadata_server_3.4.1_checksums.txt.sig gce_metadata_server_3.4.1_checksums.txt
+```
 
 ## Testing
 

@@ -170,6 +170,8 @@ r.Handle("/")
     - [Run with containers](#run-with-containers)
     - [Running as Kubernetes Service](#running-as-kubernetes-service)
     - [Static environment variables](#static-environment-variables)
+- [Dynamic Configuration File Updates](#dynamic-configuration-file-updates)
+- [ETag](#etag)    
 - [Extending the sample](#extending-the-sample)
 - [Using link-local address](#using-link-local-address)
 - [Using domain sockets](#using-domain-sockets)
@@ -608,22 +610,7 @@ This emulator is also published as a release-tagged container to dockerhub:
 
 * [https://hub.docker.com/r/salrashid123/gcemetadataserver](https://hub.docker.com/r/salrashid123/gcemetadataserver)
 
-The images are also signed using my github address (`salrashid123@gmail`).  If you really want to, you can verify each signature usign `cosign`:
-
-```bash
-## for tag/version  3.4.0:
-IMAGE="index.docker.io/salrashid123/gcemetadataserver@sha256:c3cec9e18adb87a14889f19ab0c3c87d66339284b35ca72135ff9dcd58a59671"
-
-## i signed it directly, keyless:
-# $ cosign sign $IMAGE
-
-## which you can verify:
-$ cosign verify --certificate-identity=salrashid123@gmail.com  --certificate-oidc-issuer=https://github.com/login/oauth $IMAGE | jq '.'
-
-## search and get 
-# $ rekor-cli search --rekor_server https://rekor.sigstore.dev  --email salrashid123@gmail.com
-# $ rekor-cli get --rekor_server https://rekor.sigstore.dev  --log-index $LogIndex  --format=json | jq '.'
-```
+You can verify the image were signed by the repo owner if you really want to (see section below). 
 
 ### Run with containers
 
@@ -695,6 +682,21 @@ Number of Buckets: 62
 ```
 
 >> needless to say, the metadata Service should be accessed only form authorized pods
+
+### Dynamic Configuration File Updates
+
+Changes to the claims configuration file (`--configFile=`) while the metadata server is running will automatically update values returned by the server.
+
+On startup, the metadata server sets a file listener on that config file and any updates to the values will propagate back to the server without requiring a restart.
+
+### ETag
+
+GCE metadata servers return values with [ETag](https://cloud.google.com/compute/docs/metadata/querying-metadata#etags) headers.  The ETag is used to check if a specific attribute or value has changed.  
+
+This metadata server will hash the value for the body to return and use that as the ETag.  If you update the configuration file with new attributes or values, the ETag for that node will change.  The `ETag` header key is returned in non-canonical format.
+
+Note `wait-for-change` value is not supported currently so while you can poll for etag changes, you cannot listen and hold.
+
 
 ### Static environment variables
 
@@ -971,6 +973,25 @@ wget https://github.com/salrashid123/gce_metadata_server/releases/download/v3.4.
 wget https://github.com/salrashid123/gce_metadata_server/releases/download/v3.4.1/gce_metadata_server_3.4.1_checksums.txt.sig
 
 gpg --verify gce_metadata_server_3.4.1_checksums.txt.sig gce_metadata_server_3.4.1_checksums.txt
+```
+
+#### Verify Container Image Signature
+
+The images are also signed using my github address (`salrashid123@gmail`).  If you really want to, you can verify each signature usign `cosign`:
+
+```bash
+## for tag/version  3.4.0:
+IMAGE="index.docker.io/salrashid123/gcemetadataserver@sha256:c3cec9e18adb87a14889f19ab0c3c87d66339284b35ca72135ff9dcd58a59671"
+
+## i signed it directly, keyless:
+# $ cosign sign $IMAGE
+
+## which you can verify:
+$ cosign verify --certificate-identity=salrashid123@gmail.com  --certificate-oidc-issuer=https://github.com/login/oauth $IMAGE | jq '.'
+
+## search and get 
+# $ rekor-cli search --rekor_server https://rekor.sigstore.dev  --email salrashid123@gmail.com
+# $ rekor-cli get --rekor_server https://rekor.sigstore.dev  --log-index $LogIndex  --format=json | jq '.'
 ```
 
 ## Testing

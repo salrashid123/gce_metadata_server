@@ -23,6 +23,7 @@ package mds
 
 import (
 	"bytes"
+	"crypto/md5"
 	"encoding/json"
 	"errors"
 	"io"
@@ -285,6 +286,12 @@ func (h *MetadataServer) pathListFields(b interface{}) string {
 	return resp
 }
 
+func getETag(body []byte) string {
+	hash := md5.Sum(body)
+	etag := fmt.Sprintf("%x", hash[8:])
+	return etag
+}
+
 func (h *MetadataServer) rootHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/text")
 	resp := h.pathListFields(h.Claims)
@@ -299,7 +306,7 @@ func (h *MetadataServer) notFound(w http.ResponseWriter, r *http.Request) {
 func (h *MetadataServer) computeMetadataHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/text")
 	resp := h.pathListFields(h.Claims.ComputeMetadata)
-	fmt.Fprint(w, resp)
+	w.Write([]byte(resp))
 }
 
 func (h *MetadataServer) computeMetadatav1Handler(w http.ResponseWriter, r *http.Request) {
@@ -308,7 +315,9 @@ func (h *MetadataServer) computeMetadatav1Handler(w http.ResponseWriter, r *http
 	}
 	w.Header().Set("Content-Type", "application/text")
 	resp := h.pathListFields(h.Claims.ComputeMetadata.V1)
-	fmt.Fprint(w, resp)
+	e := getETag([]byte(resp))
+	w.Header()["ETag"] = []string{e}
+	w.Write([]byte(resp))
 }
 
 func (h *MetadataServer) computeMetadatav1ProjectHandler(w http.ResponseWriter, r *http.Request) {
@@ -317,26 +326,36 @@ func (h *MetadataServer) computeMetadatav1ProjectHandler(w http.ResponseWriter, 
 	}
 	w.Header().Set("Content-Type", "application/text")
 	resp := h.pathListFields(h.Claims.ComputeMetadata.V1.Project)
-	fmt.Fprint(w, resp)
+	e := getETag([]byte(resp))
+	w.Header()["ETag"] = []string{e}
+	w.Write([]byte(resp))
 }
 
 func (h *MetadataServer) computeMetadatav1ProjectProjectIDHandler(w http.ResponseWriter, r *http.Request) {
+	var resp []byte
 	w.Header().Set("Content-Type", "application/text")
 	if os.Getenv(googleProjectID) != "" {
-		fmt.Fprint(w, os.Getenv(googleProjectID))
+		resp = []byte(os.Getenv(googleProjectID))
 
 	} else {
-		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Project.ProjectID)
+		resp = []byte(h.Claims.ComputeMetadata.V1.Project.ProjectID)
 	}
+	e := getETag(resp)
+	w.Header()["ETag"] = []string{e}
+	w.Write(resp)
 }
 
 func (h *MetadataServer) computeMetadatav1ProjectNumericProjectIDHandler(w http.ResponseWriter, r *http.Request) {
+	var resp []byte
 	w.Header().Set("Content-Type", "application/text")
 	if os.Getenv(googleProjectNumber) != "" {
-		fmt.Fprint(w, os.Getenv(googleProjectNumber))
+		resp = []byte(os.Getenv(googleProjectNumber))
 	} else {
-		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Project.NumericProjectID)
+		resp = []byte(strconv.FormatInt(h.Claims.ComputeMetadata.V1.Project.NumericProjectID, 10))
 	}
+	e := getETag(resp)
+	w.Header()["ETag"] = []string{e}
+	w.Write(resp)
 }
 
 func (h *MetadataServer) handleRecursion(w http.ResponseWriter, r *http.Request, s interface{}) bool {
@@ -349,6 +368,8 @@ func (h *MetadataServer) handleRecursion(w http.ResponseWriter, r *http.Request,
 				return true
 			}
 			w.Header().Set("Content-Type", "application/json")
+			e := getETag(jsonResponse)
+			w.Header()["ETag"] = []string{e}
 			w.WriteHeader(http.StatusOK)
 			w.Write(jsonResponse)
 			return true
@@ -361,7 +382,7 @@ func (h *MetadataServer) handleBasePathRedirect(w http.ResponseWriter, r *http.R
 	w.Header().Set("Location", fmt.Sprintf("http://%s%s/", r.Host, r.RequestURI))
 	w.Header().Set("Content-Type", "text/html")
 	w.WriteHeader(http.StatusMovedPermanently)
-	fmt.Fprint(w, fmt.Sprintf("%s/\n", r.RequestURI))
+	w.Write([]byte(fmt.Sprintf("%s/\n", r.RequestURI)))
 }
 
 func (h *MetadataServer) computeMetadatav1ProjectAttributesHandler(w http.ResponseWriter, r *http.Request) {
@@ -373,7 +394,10 @@ func (h *MetadataServer) computeMetadatav1ProjectAttributesHandler(w http.Respon
 		keys = keys + k + "\n"
 	}
 	w.Header().Set("Content-Type", "application/text")
-	fmt.Fprint(w, keys)
+
+	e := getETag([]byte(keys))
+	w.Header()["ETag"] = []string{e}
+	w.Write([]byte(keys))
 }
 
 func (h *MetadataServer) computeMetadatav1ProjectAttributesKeyHandler(w http.ResponseWriter, r *http.Request) {
@@ -381,8 +405,10 @@ func (h *MetadataServer) computeMetadatav1ProjectAttributesKeyHandler(w http.Res
 	// todo: ?alt=json returns content-type=application/json but the payload is text..
 	vars := mux.Vars(r)
 	if val, ok := h.Claims.ComputeMetadata.V1.Project.Attributes[vars["key"]]; ok {
+		e := getETag([]byte(val))
+		w.Header()["ETag"] = []string{e}
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, val)
+		w.Write([]byte(val))
 	} else {
 		w.WriteHeader(http.StatusNotFound)
 		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
@@ -391,18 +417,19 @@ func (h *MetadataServer) computeMetadatav1ProjectAttributesKeyHandler(w http.Res
 }
 
 func (h *MetadataServer) getServiceAccountHandler(w http.ResponseWriter, r *http.Request) {
+	var resp []byte
 	vars := mux.Vars(r)
 	switch vars["key"] {
 
 	case "aliases":
 		w.Header().Set("Content-Type", "application/text")
-		fmt.Fprint(w, "default")
+		resp = []byte("default")
 	case "email":
 		w.Header().Set("Content-Type", "application/text")
 		if os.Getenv(googleServiceAccountEmail) != "" {
-			fmt.Fprint(w, os.Getenv(googleServiceAccountEmail))
+			resp = []byte(os.Getenv(googleServiceAccountEmail))
 		} else {
-			fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email)
+			resp = []byte(h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email)
 		}
 	case "identity":
 		k, ok := r.URL.Query()["audience"]
@@ -418,13 +445,14 @@ func (h *MetadataServer) getServiceAccountHandler(w http.ResponseWriter, r *http
 		}
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, idtok)
+		return
 	case "scopes":
 		var scopes string
 		for _, e := range h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes {
 			scopes = scopes + e + "\n"
 		}
 		w.Header().Set("Content-Type", "application/text")
-		fmt.Fprint(w, scopes)
+		resp = []byte(scopes)
 	case "token":
 		tok, err := h.getAccessToken()
 		if err != nil {
@@ -440,12 +468,16 @@ func (h *MetadataServer) getServiceAccountHandler(w http.ResponseWriter, r *http
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(js)
+		return
 
 	default:
 		httpError(w, http.StatusText(http.StatusNotFound), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 
+	e := getETag([]byte(resp))
+	w.Header()["ETag"] = []string{e}
+	w.Write([]byte(resp))
 }
 
 func (h *MetadataServer) getAccessToken() (*metadataToken, error) {
@@ -760,7 +792,9 @@ func (h *MetadataServer) listServiceAccountsIndexHandler(w http.ResponseWriter, 
 		keys = keys + k + "\n"
 	}
 	w.Header().Set("Content-Type", "application/text")
-	fmt.Fprint(w, keys)
+	e := getETag([]byte(keys))
+	w.Header()["ETag"] = []string{e}
+	w.Write([]byte(keys))
 }
 
 func (h *MetadataServer) listServiceAccountHandler(w http.ResponseWriter, r *http.Request) {
@@ -770,7 +804,9 @@ func (h *MetadataServer) listServiceAccountHandler(w http.ResponseWriter, r *htt
 	}
 	keys := h.pathListFields(h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts[vars["acct"]])
 	w.Header().Set("Content-Type", "application/text")
-	fmt.Fprint(w, keys)
+	e := getETag([]byte(keys))
+	w.Header()["ETag"] = []string{e}
+	w.Write([]byte(keys))
 }
 
 func (h *MetadataServer) computeMetadatav1InstanceHandler(w http.ResponseWriter, r *http.Request) {
@@ -779,38 +815,46 @@ func (h *MetadataServer) computeMetadatav1InstanceHandler(w http.ResponseWriter,
 	}
 	resp := h.pathListFields(h.Claims.ComputeMetadata.V1.Instance)
 	w.Header().Set("Content-Type", "application/text")
-	fmt.Fprint(w, resp)
+	e := getETag([]byte(resp))
+	w.Header()["ETag"] = []string{e}
+	w.Write([]byte(resp))
+
 }
 
 func (h *MetadataServer) computeMetadatav1InstanceKeyHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
+
+	var res []byte
+	var err error
+
+	// default content-type
+	w.Header().Set("Content-Type", "application/text")
 	switch vars["key"] {
 	case "id":
-		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.ID)
+		res = []byte(strconv.FormatInt(h.Claims.ComputeMetadata.V1.Instance.ID, 10))
 	case "name":
-		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.Name)
+		res = []byte(h.Claims.ComputeMetadata.V1.Instance.Name)
 	case "hostname":
-		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.Hostname)
+		res = []byte(h.Claims.ComputeMetadata.V1.Instance.Hostname)
 	case "zone":
-		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.Zone)
+		res = []byte(h.Claims.ComputeMetadata.V1.Instance.Zone)
 	case "machine-type":
-		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.MachineType)
+		res = []byte(h.Claims.ComputeMetadata.V1.Instance.MachineType)
 	case "tags":
-		jsonResponse, err := json.Marshal(h.Claims.ComputeMetadata.V1.Instance.Tags)
+		res, err = json.Marshal(h.Claims.ComputeMetadata.V1.Instance.Tags)
 		if err != nil {
 			glog.Errorf("Error converting value to JSON %v\n", err)
 			httpError(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError, "text/plain; charset=UTF-8")
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(jsonResponse)
-		return
 	default:
 		httpError(w, http.StatusText(http.StatusNotFound), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
-	w.Header().Set("Content-Type", "application/text")
-	return
+	e := getETag(res)
+	w.Header()["ETag"] = []string{e}
+	w.Write(res)
 }
 
 func (h *MetadataServer) computeMetadatav1InstanceAttributesHandler(w http.ResponseWriter, r *http.Request) {
@@ -822,7 +866,10 @@ func (h *MetadataServer) computeMetadatav1InstanceAttributesHandler(w http.Respo
 		keys = keys + k + "\n"
 	}
 	w.Header().Set("Content-Type", "application/text")
-	fmt.Fprint(w, keys)
+
+	e := getETag([]byte(keys))
+	w.Header()["ETag"] = []string{e}
+	w.Write([]byte(keys))
 }
 
 func (h *MetadataServer) computeMetadatav1InstanceAttributesKeyHandler(w http.ResponseWriter, r *http.Request) {
@@ -831,8 +878,10 @@ func (h *MetadataServer) computeMetadatav1InstanceAttributesKeyHandler(w http.Re
 	}
 	vars := mux.Vars(r)
 	if val, ok := h.Claims.ComputeMetadata.V1.Instance.Attributes[vars["key"]]; ok {
+		e := getETag([]byte(val))
+		w.Header()["ETag"] = []string{e}
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, val)
+		w.Write([]byte(val))
 	} else {
 		w.WriteHeader(http.StatusNotFound)
 		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
@@ -849,7 +898,9 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkHandler(w http.Response
 		resp = resp + fmt.Sprintf("%d/\n", i)
 	}
 	w.Header().Set("Content-Type", "application/text")
-	fmt.Fprint(w, resp)
+	e := getETag([]byte(resp))
+	w.Header()["ETag"] = []string{e}
+	w.Write([]byte(resp))
 }
 
 func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceHandler(w http.ResponseWriter, r *http.Request) {
@@ -868,10 +919,13 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceHandler(w http
 	}
 	resp := h.pathListFields(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i])
 	w.Header().Set("Content-Type", "application/text")
-	fmt.Fprint(w, resp)
+	e := getETag([]byte(resp))
+	w.Header()["ETag"] = []string{e}
+	w.Write([]byte(resp))
 }
 
 func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceKeyHandler(w http.ResponseWriter, r *http.Request) {
+	var resp []byte
 	vars := mux.Vars(r)
 	i, err := strconv.Atoi(vars["index"])
 	if err != nil {
@@ -888,30 +942,33 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceKeyHandler(w h
 	// 	return
 	case "dns-servers":
 		// gce metadata server default returns "application/text" for dns-servers
-		fmt.Fprint(w, strings.Join(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].DNSServers, "\n"))
+		resp = []byte(strings.Join(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].DNSServers, "\n"))
 	case "forwarded-ips":
 		h.handleBasePathRedirect(w, r)
 		return
 	case "gateway":
-		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Gateway)
+		resp = []byte(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Gateway)
 	case "ip":
-		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].IP)
+		resp = []byte(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].IP)
 	case "ip-aliases":
 		h.handleBasePathRedirect(w, r)
 		return
 	case "mac":
-		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Mac)
+		resp = []byte(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Mac)
 	case "mtu":
-		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Mtu)
+		resp = []byte(strconv.Itoa(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Mtu))
 	case "network":
-		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Network)
+		resp = []byte(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Network)
 	case "subnet-mask":
-		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Subnetmask)
+		resp = []byte(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Subnetmask)
 	default:
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	w.Header().Set("Content-Type", "application/text")
+	e := getETag([]byte(resp))
+	w.Header()["ETag"] = []string{e}
+	w.Write([]byte(resp))
 }
 
 func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsHandler(w http.ResponseWriter, r *http.Request) {
@@ -933,7 +990,9 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsH
 		resp = resp + fmt.Sprintf("%d/\n", i)
 	}
 	w.Header().Set("Content-Type", "application/text")
-	fmt.Fprint(w, resp)
+	e := getETag([]byte(resp))
+	w.Header()["ETag"] = []string{e}
+	w.Write([]byte(resp))
 }
 
 func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsIndexHandler(w http.ResponseWriter, r *http.Request) {
@@ -963,7 +1022,9 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsI
 
 	resp := h.pathListFields(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs[k])
 	w.Header().Set("Content-Type", "application/text")
-	fmt.Fprint(w, resp)
+	e := getETag([]byte(resp))
+	w.Header()["ETag"] = []string{e}
+	w.Write([]byte(resp))
 }
 
 func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsIndexRedirectHandler(w http.ResponseWriter, r *http.Request) {
@@ -990,6 +1051,7 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsI
 }
 
 func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsKeyHandler(w http.ResponseWriter, r *http.Request) {
+	var resp []byte
 	vars := mux.Vars(r)
 	i, err := strconv.Atoi(vars["index"])
 	if err != nil {
@@ -1013,15 +1075,17 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsK
 
 	switch vars["key"] {
 	case "external-ip":
-		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs[k].ExternalIP)
+		resp = []byte(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs[k].ExternalIP)
 	case "type":
-		fmt.Fprint(w, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs[k].Type)
+		resp = []byte(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs[k].Type)
 	default:
 		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	w.Header().Set("Content-Type", "application/text")
-
+	e := getETag([]byte(resp))
+	w.Header()["ETag"] = []string{e}
+	w.Write([]byte(resp))
 }
 
 // Start running the metadata server using the configuration provided through `NewMetadataServer()`

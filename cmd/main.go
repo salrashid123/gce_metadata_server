@@ -6,8 +6,11 @@ import (
 	"flag"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
+	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/golang/glog"
 	"github.com/google/go-tpm/legacy/tpm2"
 	mds "github.com/salrashid123/gce_metadata_server"
@@ -153,6 +156,54 @@ func main() {
 	f, err := mds.NewMetadataServer(ctx, serverConfig, creds, claims)
 	if err != nil {
 		glog.Errorf("Error creating metadata server %v\n", err)
+		os.Exit(1)
+	}
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		glog.Errorf("Error creating file watcher: %v\n", err)
+		os.Exit(1)
+	}
+	defer watcher.Close()
+
+	go func() {
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+
+				if event.Has(fsnotify.Write) {
+					if event.Name == *configFile {
+						time.Sleep(8 * time.Millisecond) // https://github.com/fsnotify/fsnotify/issues/372
+						configData, err := os.ReadFile(*configFile)
+						if err != nil {
+							glog.Errorf("Error reading configFile: %v\n", err)
+							return
+						}
+
+						claims := &mds.Claims{}
+						err = json.Unmarshal(configData, claims)
+						if err != nil {
+							glog.Errorf("Error parsing json: %v\n", err)
+							return
+						}
+						f.Claims = *claims
+					}
+				}
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				glog.Errorf("Error on filewatcher %v\n", err)
+			}
+		}
+	}()
+
+	err = watcher.Add(filepath.Dir(*configFile))
+	if err != nil {
+		glog.Errorf("Error watching configFile: %v\n", err)
 		os.Exit(1)
 	}
 

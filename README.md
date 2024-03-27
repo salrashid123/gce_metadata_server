@@ -264,6 +264,7 @@ You can set the following options on usage:
 | **`-tpm`** | use TPM |
 | **`-persistentHandle`** | TPM persistentHandle |
 | **`-domainsocket`** | listen on unix socket |
+| **`-allowDynamicScopes`** | Allow access_token scopes to be set dynamically |
 | **`GOOGLE_PROJECT_ID`** | static environment variable for PROJECT_ID to return |
 | **`GOOGLE_NUMERIC_PROJECT_ID`** | static environment variable for the numeric project id to return |
 | **`GOOGLE_ACCESS_TOKEN`** | static environment variable for access_token to return |
@@ -889,10 +890,7 @@ note,  you should be able to run the emulator on default `127.0.0.1:8080`  if ea
 
 ```bash
 #export SYSTEMD_EDITOR=/bin/vi
-#systemctl edit google-cloud-ops-agent-fluent-bit
-#systemctl edit google-cloud-ops-agent
-#systemctl edit google-cloud-ops-agent-diagnostics
-#systemctl edit google-cloud-ops-agent-opentelemetry-collector
+#systemctl edit google-cloud-ops-agent"*"
 
 # set
 [Service]

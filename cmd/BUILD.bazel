@@ -28,6 +28,9 @@ go_library(
         "@com_google_cloud_go_iam//credentials/apiv1:go_default_library",
         "@com_github_google_go_tpm//legacy/tpm2:go_default_library", 
         "@com_github_golang_glog//:go_default_library",
+        "@com_github_google_go_tpm//tpmutil:go_default_library",
+        "@com_github_salrashid123_oauth2_tpm//:go_default_library",
+        "@com_github_google_go_tpm_tools//client:go_default_library", 
         "@com_github_fsnotify_fsnotify//:go_default_library",       
     ],
 )

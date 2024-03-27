@@ -250,6 +250,12 @@ def go_repositories():
         version = "v1.1.2",
     )
     go_repository(
+        name = "com_github_salrashid123_oauth2_tpm",
+        importpath = "github.com/salrashid123/oauth2/tpm",
+        sum = "h1:ys/1Qirzigaw+Wl2i7Ymx1y5P7AJGfZdfbbtQPT3Vac=",
+        version = "v0.0.0-20240327144837-141d9054501b",
+    )
+    go_repository(
         name = "com_github_stretchr_objx",
         importpath = "github.com/stretchr/objx",
         sum = "h1:1zr/of2m5FGMsad5YfcqgdqdWrIhu+EBEJRhR1U7z/c=",

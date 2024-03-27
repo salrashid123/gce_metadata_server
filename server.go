@@ -111,8 +111,9 @@ type ServerConfig struct {
 	Port          string // port to listen on (default :8080)
 	DomainSocket  string // toggle if unix domain sockets should be used.
 
-	Impersonate bool // toggle if provided default credentials should be impersonated (default: false)
-	Federate    bool // toggle if workload federation should be used (default: false)
+	Impersonate        bool // toggle if provided default credentials should be impersonated (default: false)
+	Federate           bool // toggle if workload federation should be used (default: false)
+	AllowDynamicScopes bool // toggle if dynamic scopes are enabled for access_tokens (default: false)
 
 	UseTPM           bool   // toggle if TPM should be used for credentials (default: false)
 	TPMPath          string // path to the TPM (default /dev/tpm0)
@@ -454,7 +455,14 @@ func (h *MetadataServer) getServiceAccountHandler(w http.ResponseWriter, r *http
 		w.Header().Set("Content-Type", "application/text")
 		resp = []byte(scopes)
 	case "token":
-		tok, err := h.getAccessToken()
+		var scopes []string
+		k, ok := r.URL.Query()["scopes"]
+		if ok {
+			glog.V(10).Infof("access_token requested with scopes: [%s]", scopes)
+			scopes = strings.Split(k[0], ",")
+
+		}
+		tok, err := h.getAccessToken(scopes)
 		if err != nil {
 			glog.Errorf("Error getting Token %v\n", err)
 			httpError(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError, "application/text")
@@ -480,7 +488,7 @@ func (h *MetadataServer) getServiceAccountHandler(w http.ResponseWriter, r *http
 	w.Write([]byte(resp))
 }
 
-func (h *MetadataServer) getAccessToken() (*metadataToken, error) {
+func (h *MetadataServer) getAccessToken(scopes []string) (*metadataToken, error) {
 	h.tokenMutex.Lock()
 	defer h.tokenMutex.Unlock()
 
@@ -492,139 +500,211 @@ func (h *MetadataServer) getAccessToken() (*metadataToken, error) {
 		}, nil
 	}
 
-	if h.ServerConfig.UseTPM {
-		// return a cached token
-		if h.Creds != nil {
-			tok, err := h.Creds.TokenSource.Token()
-			if err != nil {
-				glog.Error(err)
-				return nil, err
-			}
+	if h.ServerConfig.AllowDynamicScopes && len(scopes) != 0 {
 
-			if tok.Valid() {
-				now := time.Now().UTC()
-				diff := tok.Expiry.Sub(now)
-				return &metadataToken{
-					AccessToken: tok.AccessToken,
-					ExpiresIn:   int(diff.Round(time.Second).Seconds()),
-					TokenType:   tok.TokenType,
-				}, nil
-			}
-		}
-
-		rwc, err := tpm2.OpenTPM(h.ServerConfig.TPMPath)
-		if err != nil {
-			glog.Errorf("can't open TPM %s: %v", h.ServerConfig.TPMPath, err)
-			return nil, err
-		}
-		defer rwc.Close()
-		k, err := client.LoadCachedKey(rwc, tpmutil.Handle(h.ServerConfig.PersistentHandle), nil)
-		if err != nil {
-			glog.Errorf("ERROR:  could not initialize Key: %v", err)
-			return nil, err
-		}
-		defer k.Close()
-		// now we're ready to sign
-
-		iat := time.Now()
-		exp := iat.Add(time.Second * 10)
-
-		type oauthJWT struct {
-			jwt.RegisteredClaims
-			Scope string `json:"scope"`
-		}
-
-		claims := &oauthJWT{
-			jwt.RegisteredClaims{
-				Issuer:    h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
-				Audience:  []string{"https://oauth2.googleapis.com/token"},
-				IssuedAt:  jwt.NewNumericDate(iat),
-				ExpiresAt: jwt.NewNumericDate(exp),
-			},
-			strings.Join(h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes, " "),
-		}
-
-		tpmjwt.SigningMethodTPMRS256.Override()
-		jwt.MarshalSingleStringAsArray = false
-		token := jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
-
+		var err error
 		ctx := context.Background()
-		config := &tpmjwt.TPMConfig{
-			TPMDevice: rwc,
-			Key:       k,
-		}
+		if h.ServerConfig.Impersonate {
+			glog.Infoln("Using Service Account Impersonation")
 
-		keyctx, err := tpmjwt.NewTPMContext(ctx, config)
-		if err != nil {
-			glog.Errorf("Unable to initialize tpmJWT: %v", err)
-			return nil, err
-		}
-
-		tokenString, err := token.SignedString(keyctx)
-		if err != nil {
-			glog.Errorf("Error signing %v", err)
-			return nil, err
-		}
-
-		client := &http.Client{}
-
-		data := url.Values{}
-		data.Set("grant_type", "assertion")
-		data.Add("assertion_type", "http://oauth.net/grant_type/jwt/1.0/bearer")
-		data.Add("assertion", tokenString)
-
-		hreq, err := http.NewRequest("POST", "https://oauth2.googleapis.com/token", bytes.NewBufferString(data.Encode()))
-		if err != nil {
-			glog.Errorf("Error: Unable to generate token Request, %v\n", err)
-			return nil, err
-		}
-		hreq.Header.Set("Content-Type", "application/x-www-form-urlencoded; param=value")
-		resp, err := client.Do(hreq)
-		if err != nil {
-			glog.Errorf("Error: unable to POST token request, %v\n", err)
-			return nil, err
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			f, err := io.ReadAll(resp.Body)
+			ts, err := impersonate.CredentialsTokenSource(ctx, impersonate.CredentialsConfig{
+				TargetPrincipal: h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
+				Scopes:          scopes,
+			})
 			if err != nil {
-				glog.Errorf("Error Reading response body, %v\n", err)
+				glog.Errorf("Unable to create Impersonated TokenSource %v ", err)
 				return nil, err
 			}
-			glog.Errorf("Error: Token Request error:, %s\n", f)
-			return nil, fmt.Errorf("Error response from oauth2 %s\n", f)
+			tok, err := ts.Token()
+			if err != nil {
+				glog.Errorf("ERROR:  could not get Token: %v", err)
+				return nil, err
+			}
+			now := time.Now().UTC()
+			diff := tok.Expiry.Sub(now)
+			return &metadataToken{
+				AccessToken: tok.AccessToken,
+				ExpiresIn:   int(diff.Round(time.Second).Seconds()),
+				TokenType:   tok.TokenType,
+			}, nil
+		} else if h.ServerConfig.Federate {
+			glog.Infoln("Using Workload Identity Federation")
+
+			if os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") == "" {
+				glog.Error("GOOGLE_APPLICATION_CREDENTIAL must be set with --federate")
+				return nil, err
+			}
+
+			glog.Infof("Federation path: %s", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+			var err error
+			creds, err := google.FindDefaultCredentials(ctx, scopes...)
+			if err != nil {
+				glog.Errorf("Unable load federated credentials %v", err)
+				return nil, err
+			}
+			tok, err := creds.TokenSource.Token()
+			if err != nil {
+				glog.Errorf("ERROR:  could not get Token: %v", err)
+				return nil, err
+			}
+			now := time.Now().UTC()
+			diff := tok.Expiry.Sub(now)
+			return &metadataToken{
+				AccessToken: tok.AccessToken,
+				ExpiresIn:   int(diff.Round(time.Second).Seconds()),
+				TokenType:   tok.TokenType,
+			}, nil
+		} else if h.ServerConfig.UseTPM {
+
+			rwc, err := tpm2.OpenTPM(h.ServerConfig.TPMPath)
+			if err != nil {
+				glog.Errorf("can't open TPM %s: %v", h.ServerConfig.TPMPath, err)
+				return nil, err
+			}
+			defer rwc.Close()
+			k, err := client.LoadCachedKey(rwc, tpmutil.Handle(h.ServerConfig.PersistentHandle), nil)
+			if err != nil {
+				glog.Errorf("ERROR:  could not initialize Key: %v", err)
+				return nil, err
+			}
+			defer k.Close()
+			// now we're ready to sign
+
+			iat := time.Now()
+			exp := iat.Add(time.Second * 10)
+
+			type oauthJWT struct {
+				jwt.RegisteredClaims
+				Scope string `json:"scope"`
+			}
+
+			claims := &oauthJWT{
+				jwt.RegisteredClaims{
+					Issuer:    h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
+					Audience:  []string{"https://oauth2.googleapis.com/token"},
+					IssuedAt:  jwt.NewNumericDate(iat),
+					ExpiresAt: jwt.NewNumericDate(exp),
+				},
+				strings.Join(scopes, " "),
+			}
+
+			tpmjwt.SigningMethodTPMRS256.Override()
+			jwt.MarshalSingleStringAsArray = false
+			token := jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
+
+			ctx := context.Background()
+			config := &tpmjwt.TPMConfig{
+				TPMDevice: rwc,
+				Key:       k,
+			}
+
+			keyctx, err := tpmjwt.NewTPMContext(ctx, config)
+			if err != nil {
+				glog.Errorf("Unable to initialize tpmJWT: %v", err)
+				return nil, err
+			}
+
+			tokenString, err := token.SignedString(keyctx)
+			if err != nil {
+				glog.Errorf("Error signing %v", err)
+				return nil, err
+			}
+
+			client := &http.Client{}
+
+			data := url.Values{}
+			data.Set("grant_type", "assertion")
+			data.Add("assertion_type", "http://oauth.net/grant_type/jwt/1.0/bearer")
+			data.Add("assertion", tokenString)
+
+			hreq, err := http.NewRequest("POST", "https://oauth2.googleapis.com/token", bytes.NewBufferString(data.Encode()))
+			if err != nil {
+				glog.Errorf("Error: Unable to generate token Request, %v\n", err)
+				return nil, err
+			}
+			hreq.Header.Set("Content-Type", "application/x-www-form-urlencoded; param=value")
+			resp, err := client.Do(hreq)
+			if err != nil {
+				glog.Errorf("Error: unable to POST token request, %v\n", err)
+				return nil, err
+			}
+
+			if resp.StatusCode != http.StatusOK {
+				f, err := io.ReadAll(resp.Body)
+				if err != nil {
+					glog.Errorf("Error Reading response body, %v\n", err)
+					return nil, err
+				}
+				glog.Errorf("Error: Token Request error:, %s\n", f)
+				return nil, fmt.Errorf("error response from oauth2 %s\n", f)
+			}
+			defer resp.Body.Close()
+			var ret metadataToken
+			err = json.NewDecoder(resp.Body).Decode(&ret)
+			if err != nil {
+				return nil, err
+			}
+			t := oauth2.Token{
+				AccessToken: ret.AccessToken,
+				Expiry:      time.Now().Add(time.Second * time.Duration(ret.ExpiresIn)),
+				TokenType:   ret.TokenType,
+			}
+			creds := &google.Credentials{
+				ProjectID:   h.Claims.ComputeMetadata.V1.Project.ProjectID,
+				TokenSource: oauth2.StaticTokenSource(&t),
+			}
+			tok, err := creds.TokenSource.Token()
+			if err != nil {
+				glog.Errorf("ERROR:  could not get Token: %v", err)
+				return nil, err
+			}
+			now := time.Now().UTC()
+			diff := tok.Expiry.Sub(now)
+			return &metadataToken{
+				AccessToken: tok.AccessToken,
+				ExpiresIn:   int(diff.Round(time.Second).Seconds()),
+				TokenType:   tok.TokenType,
+			}, nil
+		} else {
+			glog.Infoln("Using serviceAccountFile for credentials")
+			var err error
+			ctx := context.Background()
+			data := h.Creds.JSON
+			creds, err := google.CredentialsFromJSON(ctx, data, scopes...)
+			if err != nil {
+				glog.Errorf("Unable to parse serviceAccountFile %v ", err)
+				return nil, err
+			}
+			tok, err := creds.TokenSource.Token()
+			if err != nil {
+				glog.Errorf("ERROR:  could not get Token: %v", err)
+				return nil, err
+			}
+			now := time.Now().UTC()
+			diff := tok.Expiry.Sub(now)
+			return &metadataToken{
+				AccessToken: tok.AccessToken,
+				ExpiresIn:   int(diff.Round(time.Second).Seconds()),
+				TokenType:   tok.TokenType,
+			}, nil
 		}
-		defer resp.Body.Close()
-		var ret metadataToken
-		err = json.NewDecoder(resp.Body).Decode(&ret)
+
+	} else {
+
+		tok, err := h.Creds.TokenSource.Token()
 		if err != nil {
+			glog.Error(err)
 			return nil, err
 		}
-		t := oauth2.Token{
-			AccessToken: ret.AccessToken,
-			Expiry:      time.Now().Add(time.Second * time.Duration(ret.ExpiresIn)),
-			TokenType:   ret.TokenType,
-		}
-		h.Creds = &google.Credentials{
-			ProjectID:   h.Claims.ComputeMetadata.V1.Project.ProjectID,
-			TokenSource: oauth2.StaticTokenSource(&t),
-		}
-		return &ret, nil
-	}
-	tok, err := h.Creds.TokenSource.Token()
-	if err != nil {
-		glog.Error(err)
-		return nil, err
-	}
 
-	now := time.Now().UTC()
-	diff := tok.Expiry.Sub(now)
-	return &metadataToken{
-		AccessToken: tok.AccessToken,
-		ExpiresIn:   int(diff.Round(time.Second).Seconds()),
-		TokenType:   tok.TokenType,
-	}, nil
-
+		now := time.Now().UTC()
+		diff := tok.Expiry.Sub(now)
+		return &metadataToken{
+			AccessToken: tok.AccessToken,
+			ExpiresIn:   int(diff.Round(time.Second).Seconds()),
+			TokenType:   tok.TokenType,
+		}, nil
+	}
 }
 
 func (h *MetadataServer) getIDToken(targetAudience string) (string, error) {

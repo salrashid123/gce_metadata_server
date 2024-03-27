@@ -12,8 +12,11 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/golang/glog"
+	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm/legacy/tpm2"
+	"github.com/google/go-tpm/tpmutil"
 	mds "github.com/salrashid123/gce_metadata_server"
+	saltpm "github.com/salrashid123/oauth2/tpm"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/impersonate"
 )
@@ -26,6 +29,7 @@ var (
 	configFile         = flag.String("configFile", "config.json", "config file")
 	useImpersonate     = flag.Bool("impersonate", false, "Impersonate a service Account instead of using the keyfile")
 	useFederate        = flag.Bool("federate", false, "Use Workload Identity Federation ADC")
+	allowDynamicScopes = flag.Bool("allowDynamicScopes", false, "Allow dynamic scopes for access_token")
 	useTPM             = flag.Bool("tpm", false, "Use TPM to get access and id_token")
 	tpmPath            = flag.String("tpm-path", "/dev/tpm0", "Path to the TPM device (character device or a Unix socket).")
 	persistentHandle   = flag.Int("persistentHandle", 0x81008000, "Handle value")
@@ -102,10 +106,37 @@ func main() {
 			glog.Errorf("can't open TPM %s: %v", *tpmPath, err)
 			os.Exit(1)
 		}
+		k, err := client.LoadCachedKey(rwc, tpmutil.Handle(*persistentHandle), nil)
+		if err != nil {
+			glog.Error(os.Stderr, "error getting cached tpm key %v\n", err)
+			os.Exit(1)
+		}
+		// if managed by library, close now
+		// otherwise defer
+		// defer rwc.Close()
 		err = rwc.Close()
 		if err != nil {
-			glog.Errorf("can't close TPM %s: %v", *tpmPath, err)
+			glog.Error(os.Stderr, "error closing tpm%v\n", err)
 			os.Exit(1)
+		}
+
+		ts, err := saltpm.TpmTokenSource(&saltpm.TpmTokenConfig{
+			//TPMDevice: rwc,  // managed by main
+			TPMPath: *tpmPath, // managed by library
+			Key:     k,
+			Email:   claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
+			Scopes:  claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
+			//KeyId:         *keyId,
+			UseOauthToken: true,
+		})
+		if err != nil {
+			glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
+			os.Exit(1)
+		}
+
+		creds = &google.Credentials{
+			ProjectID:   claims.ComputeMetadata.V1.Project.ProjectID,
+			TokenSource: ts,
 		}
 	} else {
 
@@ -143,14 +174,15 @@ func main() {
 	}
 
 	serverConfig := &mds.ServerConfig{
-		BindInterface:    *bindInterface,
-		Port:             *port,
-		Impersonate:      *useImpersonate,
-		Federate:         *useFederate,
-		DomainSocket:     *useDomainSocket,
-		UseTPM:           *useTPM,
-		TPMPath:          *tpmPath,
-		PersistentHandle: *persistentHandle,
+		BindInterface:      *bindInterface,
+		Port:               *port,
+		Impersonate:        *useImpersonate,
+		Federate:           *useFederate,
+		AllowDynamicScopes: *allowDynamicScopes,
+		DomainSocket:       *useDomainSocket,
+		UseTPM:             *useTPM,
+		TPMPath:            *tpmPath,
+		PersistentHandle:   *persistentHandle,
 	}
 
 	f, err := mds.NewMetadataServer(ctx, serverConfig, creds, claims)

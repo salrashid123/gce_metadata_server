@@ -175,7 +175,6 @@ r.Handle("/")
 - [Extending the sample](#extending-the-sample)
 - [Using link-local address](#using-link-local-address)
 - [Using domain sockets](#using-domain-sockets)
-- [Running GCP ops-agent](#running-gcp-ops-agent)
 - [Building with Bazel](#building-with-bazel)
 - [Building with Kaniko](#building-with-kaniko)
 * [Testing](#testing)
@@ -698,6 +697,7 @@ This metadata server will hash the value for the body to return and use that as 
 
 Note `wait-for-change` value is not supported currently so while you can poll for etag changes, you cannot listen and hold.
 
+Finally, since the etag is just a hash of the node, if you change a value then back again, the same etag will get returned for that node. 
 
 ### Static environment variables
 
@@ -820,81 +820,6 @@ anyway, just for fun, you can pipe a tcp socket to domain using `socat` (or vice
 
 ```bash
 socat TCP-LISTEN:8080,fork,reuseaddr UNIX-CONNECT:/tmp/metadata.sock
-```
-
-#### Running GCP Ops Agent
-
-This emulator can also be configured to get called by the [GCP ops-agent](https://cloud.google.com/monitoring/agent/ops-agent) (see [pr/30](https://github.com/salrashid123/gce_metadata_server/pull/30)) which would otherwise only run on GCP VMs.
-
-Note: running the ops-agent on any other platform is really not supported (by definition) and can return unexpected data.  Use with a lot of caution.
-
-One of the main issues with running the ops-agent off GCP is that it is by default expecting to emit data for [resource.type=gce_instance](https://cloud.google.com/monitoring/api/resources#tag_gce_instance) ([here](https://github.com/GoogleCloudPlatform/ops-agent/blob/master/confgenerator/resourcedetector/detector.go#L54)]).  For true support of on-prem instances, it should emit with support for [resource.type=generic_node](https://cloud.google.com/monitoring/api/resources#tag_generic_node) and [resource.type=generice_task](https://cloud.google.com/monitoring/api/resources#tag_generic_task).  Those two resource types indicate arbitrary computing environments.  For background on those types, see  [Writing Developer logs with Google Cloud Logging](https://blog.salrashid.dev/articles/2019/writing_developer_logs/) (again, that article is dated and probably doens't work anymore but the metrics resource types are valid).  It maybe possible with the ops-agent to configure overrides it to define the `resource.type` and `labels` but i have not looked into it...
-
-Anyway, if you are still interested in testing, the following setup demonstrates its usage.  I used qemu and debian 12 as a setup; you can use vagrant, vmware or anything else to create the vm on your laptop
-
-Running ops agent on local VM will require creating a service account key.  
-
-Assign the service account the project you want to use and the iam permissions listed [here](https://cloud.google.com/logging/docs/agent/ops-agent/authorization#create-service-account).  Copy the service account key into the vm.
-
-```bash
-## i used debian12 image
-wget https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.5.0-amd64-netinst.iso
-
-## create the disk and VM itself
-qemu-img create -f qcow2 boot.img 40G
-qemu-system-x86_64 -hda boot.img -net nic -net user,hostfwd=tcp::10022-:22 \
-   -cpu host -smp `nproc` -cdrom  debian-12.5.0-amd64-netinst.iso  \
-   --enable-kvm -m 2048 --vga vmware
-
-## ssh in; i created a user called 'sal' so i logged in with that:
-ssh -o UserKnownHostsFile=/dev/null     -o CheckHostIP=no -o StrictHostKeyChecking=no sal@127.0.0.1 -p 10022
-
-# once on the VM,
-su -
-apt-get update
-apt-get install curl git
-
-vi /etc/hosts
-## set 169.254.169.254       metadata metadata.google.internal
-
-# create the link-local interface (note that this should not be necessary but i could not get it to work without this)
-ifconfig lo:0 169.254.169.254 up
-
-## download the metadata server
-git clone https://github.com/salrashid123/gce_metadata_server.git
-cd gce_metadata_server
-
-# edit config.json and set service account, projectID,number
-
-## copy the service account key created earlier and save to /path/to/svcaccount.json
-
-## then start the emulator
-/path/to/gce_metadata_server   -logtostderr   -alsologtostderr -v 40  \
-   -port :80 --interface=169.254.169.254 --configFile=`pwd`/config.json \
-   --serviceAccountFile=/path/to/svcaccount.json
-
-### now install the ops agent
-# https://cloud.google.com/stackdriver/docs/solutions/agents/ops-agent/installation
-
-# install ops-agent
-curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
-sudo bash add-google-cloud-ops-agent-repo.sh --also-install
-
-## restart
-systemctl restart google-cloud-ops-agent"*"
-
-systemctl status google-cloud-ops-agent"*"
-```
-
-note,  you should be able to run the emulator on default `127.0.0.1:8080`  if each service  has the following env-var in its config set but i could not get it to work:
-
-```bash
-#export SYSTEMD_EDITOR=/bin/vi
-#systemctl edit google-cloud-ops-agent"*"
-
-# set
-[Service]
-Environment="GCE_METADATA_HOST=localhost:8080"
 ```
 
 #### Building with Bazel

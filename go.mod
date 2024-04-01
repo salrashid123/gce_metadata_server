@@ -11,7 +11,8 @@ require (
 	github.com/google/go-tpm v0.9.0
 	github.com/google/go-tpm-tools v0.4.3
 	github.com/gorilla/mux v1.8.1
-	github.com/salrashid123/golang-jwt-tpm v1.1.2
+	github.com/salrashid123/golang-jwt-tpm v1.2.0
+	github.com/salrashid123/oauth2/tpm v0.0.0-20240401112313-82162ccb793e
 	golang.org/x/net v0.20.0
 	golang.org/x/oauth2 v0.16.0
 	google.golang.org/api v0.157.0
@@ -35,7 +36,6 @@ require (
 	github.com/googleapis/gax-go/v2 v2.12.0 // indirect
 	github.com/pborman/uuid v1.2.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/salrashid123/oauth2/tpm v0.0.0-20240327144837-141d9054501b // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.47.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.47.0 // indirect

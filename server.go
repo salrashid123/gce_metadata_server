@@ -44,7 +44,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/golang/glog"
 	tpmjwt "github.com/salrashid123/golang-jwt-tpm"
-
+	saltpm "github.com/salrashid123/oauth2/tpm"
 	"golang.org/x/net/http2"
 	"golang.org/x/oauth2"
 
@@ -568,90 +568,23 @@ func (h *MetadataServer) getAccessToken(scopes []string) (*metadataToken, error)
 				return nil, err
 			}
 			defer k.Close()
-			// now we're ready to sign
 
-			iat := time.Now()
-			exp := iat.Add(time.Second * 10)
-
-			type oauthJWT struct {
-				jwt.RegisteredClaims
-				Scope string `json:"scope"`
-			}
-
-			claims := &oauthJWT{
-				jwt.RegisteredClaims{
-					Issuer:    h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
-					Audience:  []string{"https://oauth2.googleapis.com/token"},
-					IssuedAt:  jwt.NewNumericDate(iat),
-					ExpiresAt: jwt.NewNumericDate(exp),
-				},
-				strings.Join(scopes, " "),
-			}
-
-			tpmjwt.SigningMethodTPMRS256.Override()
-			jwt.MarshalSingleStringAsArray = false
-			token := jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
-
-			ctx := context.Background()
-			config := &tpmjwt.TPMConfig{
+			ts, err := saltpm.TpmTokenSource(&saltpm.TpmTokenConfig{
 				TPMDevice: rwc,
-				Key:       k,
-			}
-
-			keyctx, err := tpmjwt.NewTPMContext(ctx, config)
+				//TPMPath:       h.ServerConfig.TPMPath, // if managed by library
+				Key:           k,
+				Email:         h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
+				Scopes:        scopes,
+				UseOauthToken: true,
+			})
 			if err != nil {
-				glog.Errorf("Unable to initialize tpmJWT: %v", err)
+				glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
 				return nil, err
 			}
 
-			tokenString, err := token.SignedString(keyctx)
-			if err != nil {
-				glog.Errorf("Error signing %v", err)
-				return nil, err
-			}
-
-			client := &http.Client{}
-
-			data := url.Values{}
-			data.Set("grant_type", "assertion")
-			data.Add("assertion_type", "http://oauth.net/grant_type/jwt/1.0/bearer")
-			data.Add("assertion", tokenString)
-
-			hreq, err := http.NewRequest("POST", "https://oauth2.googleapis.com/token", bytes.NewBufferString(data.Encode()))
-			if err != nil {
-				glog.Errorf("Error: Unable to generate token Request, %v\n", err)
-				return nil, err
-			}
-			hreq.Header.Set("Content-Type", "application/x-www-form-urlencoded; param=value")
-			resp, err := client.Do(hreq)
-			if err != nil {
-				glog.Errorf("Error: unable to POST token request, %v\n", err)
-				return nil, err
-			}
-
-			if resp.StatusCode != http.StatusOK {
-				f, err := io.ReadAll(resp.Body)
-				if err != nil {
-					glog.Errorf("Error Reading response body, %v\n", err)
-					return nil, err
-				}
-				glog.Errorf("Error: Token Request error:, %s\n", f)
-				return nil, fmt.Errorf("error response from oauth2 %s\n", f)
-			}
-			defer resp.Body.Close()
-			var ret metadataToken
-			err = json.NewDecoder(resp.Body).Decode(&ret)
-			if err != nil {
-				return nil, err
-			}
-			t := oauth2.Token{
-				AccessToken: ret.AccessToken,
-				Expiry:      time.Now().Add(time.Second * time.Duration(ret.ExpiresIn)),
-				TokenType:   ret.TokenType,
-			}
 			creds := &google.Credentials{
 				ProjectID:   h.Claims.ComputeMetadata.V1.Project.ProjectID,
-				TokenSource: oauth2.StaticTokenSource(&t),
+				TokenSource: ts,
 			}
 			tok, err := creds.TokenSource.Token()
 			if err != nil {

@@ -25,6 +25,7 @@ go_library(
         "@com_google_cloud_go_iam//credentials/apiv1/credentialspb:go_default_library",
         "@com_github_google_go_tpm//legacy/tpm2:go_default_library", 
         "@com_github_salrashid123_golang_jwt_tpm//:go_default_library",
+        "@com_github_salrashid123_oauth2_tpm//:go_default_library",        
         "@com_github_golang_jwt_jwt_v4//:go_default_library",
         "@com_github_golang_glog//:go_default_library",
         "@com_github_gorilla_mux//:go_default_library",

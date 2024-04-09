@@ -73,7 +73,7 @@ def go_repositories():
         sum = "h1:8JEhPFa5W2WU7YfeZzPNqzMP6Lwt7L2715Ggo0nosvA=",
         version = "v1.7.0",
     )
-    
+
     go_repository(
         name = "com_github_go_logr_logr",
         importpath = "github.com/go-logr/logr",
@@ -99,16 +99,10 @@ def go_repositories():
         version = "v0.0.0-20210331224755-41bb18bfe9da",
     )
     go_repository(
-        name = "com_github_golang_jwt_jwt",
-        importpath = "github.com/golang-jwt/jwt",
-        sum = "h1:IfV12K8xAKAnZqdXVzCZ+TOjboZ2keLg81eXfW3O+oY=",
-        version = "v3.2.2+incompatible",
-    )
-    go_repository(
-        name = "com_github_golang_jwt_jwt_v4",
-        importpath = "github.com/golang-jwt/jwt/v4",
-        sum = "h1:7cYmW1XlMY7h7ii7UhUyChSgS5wUJEnm9uZVTGqOWzg=",
-        version = "v4.5.0",
+        name = "com_github_golang_jwt_jwt_v5",
+        importpath = "github.com/golang-jwt/jwt/v5",
+        sum = "h1:OuVbFODueb089Lh128TAcimifWaLhJwVflnrgM17wHk=",
+        version = "v5.2.1",
     )
     go_repository(
         name = "com_github_golang_mock",
@@ -246,14 +240,14 @@ def go_repositories():
     go_repository(
         name = "com_github_salrashid123_golang_jwt_tpm",
         importpath = "github.com/salrashid123/golang-jwt-tpm",
-        sum = "h1:TpcApZXT8ntHid9ty0wyZjkBkih+yymzSpCTDwniKB0=",
-        version = "v1.2.0",
+        sum = "h1:N9TIfe+TNVyGHi7xfJq4mOtr6pkZqVshc3zQuXh/wCQ=",
+        version = "v1.3.0",
     )
     go_repository(
         name = "com_github_salrashid123_oauth2_tpm",
         importpath = "github.com/salrashid123/oauth2/tpm",
-        sum = "h1:4jYltQnxQQ5cNSnnU6sVsTriCkBB44zFg2uHpWnpCDw=",
-        version = "v0.0.0-20240401112313-82162ccb793e",
+        sum = "h1:Uwc3OjaFskdSY+EkJoBGOY9MeetqUppSncmXQkAYCmk=",
+        version = "v0.0.0-20240408164709-978c43c94850",
     )
     go_repository(
         name = "com_github_stretchr_objx",

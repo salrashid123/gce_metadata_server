@@ -7,16 +7,18 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/golang/glog"
-	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
 	mds "github.com/salrashid123/gce_metadata_server"
 	saltpm "github.com/salrashid123/oauth2/tpm"
+
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/impersonate"
 )
@@ -33,6 +35,8 @@ var (
 	useTPM             = flag.Bool("tpm", false, "Use TPM to get access and id_token")
 	tpmPath            = flag.String("tpm-path", "/dev/tpm0", "Path to the TPM device (character device or a Unix socket).")
 	persistentHandle   = flag.Int("persistentHandle", 0x81008000, "Handle value")
+
+	pcrs = flag.String("pcrs", "", "PCR Bound value (increasing order, comma separated)")
 )
 
 func main() {
@@ -57,6 +61,21 @@ func main() {
 	}
 
 	var creds *google.Credentials
+
+	// parse TPM PCR values (if set)
+	var pcrList = []int{}
+	if *pcrs != "" && *useTPM {
+		strpcrs := strings.Split(*pcrs, ",")
+		for _, i := range strpcrs {
+			j, err := strconv.Atoi(i)
+			if err != nil {
+				glog.Error("ERROR:  could convert pcr value: %v", err)
+				os.Exit(1)
+			}
+			pcrList = append(pcrList, j)
+		}
+	}
+
 	_, ok := claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"]
 	if !ok {
 		glog.Errorf("default service account must be set")
@@ -106,34 +125,24 @@ func main() {
 			glog.Errorf("can't open TPM %s: %v", *tpmPath, err)
 			os.Exit(1)
 		}
-		k, err := client.LoadCachedKey(rwc, tpmutil.Handle(*persistentHandle), nil)
-		if err != nil {
-			glog.Error(os.Stderr, "error getting cached tpm key %v\n", err)
-			os.Exit(1)
-		}
-		// if managed by library, close now
-		// otherwise defer
-		// defer rwc.Close()
+
 		err = rwc.Close()
 		if err != nil {
 			glog.Error(os.Stderr, "error closing tpm%v\n", err)
 			os.Exit(1)
 		}
-
 		ts, err := saltpm.TpmTokenSource(&saltpm.TpmTokenConfig{
-			//TPMDevice: rwc,  // managed by main
-			TPMPath: *tpmPath, // managed by library
-			Key:     k,
-			Email:   claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
-			Scopes:  claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
-			//KeyId:         *keyId,
+			TPMPath:       *tpmPath, // managed by library
+			KeyHandle:     tpmutil.Handle(*persistentHandle).HandleValue(),
+			PCRs:          pcrList,
+			Email:         claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
+			Scopes:        claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
 			UseOauthToken: true,
 		})
 		if err != nil {
 			glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
 			os.Exit(1)
 		}
-
 		creds = &google.Credentials{
 			ProjectID:   claims.ComputeMetadata.V1.Project.ProjectID,
 			TokenSource: ts,
@@ -183,6 +192,7 @@ func main() {
 		UseTPM:             *useTPM,
 		TPMPath:            *tpmPath,
 		PersistentHandle:   *persistentHandle,
+		PCRs:               pcrList,
 	}
 
 	f, err := mds.NewMetadataServer(ctx, serverConfig, creds, claims)

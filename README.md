@@ -262,6 +262,7 @@ You can set the following options on usage:
 | **`-federate`** | use workload identity federation |
 | **`-tpm`** | use TPM |
 | **`-persistentHandle`** | TPM persistentHandle |
+| **`-pcrs`** | TPM PCR values the key is bound to (comma separated pcrs in ascending order) |
 | **`-domainsocket`** | listen on unix socket |
 | **`-allowDynamicScopes`** | Allow access_token scopes to be set dynamically |
 | **`GOOGLE_PROJECT_ID`** | static environment variable for PROJECT_ID to return |
@@ -407,6 +408,9 @@ we're using a `persistentHandle` to save/load the key but a TODO is to load from
 The TPM based credentials imports a JWT generator library to perform the oauth and id_token exchanges: 
 
 * [salrashid123/golang-jwt-tpm](https://github.com/salrashid123/golang-jwt-tpm)
+* [salrashid123/oauth2](https://github.com/salrashid123/oauth2)
+
+If the TPM based key is restricted through a PCR policy, you will need to supply the list of PCRs its bound to using the `--pcrs` flag: (eg `--pcrs=2,3,23`)
 
 A TODO enhancement could be to add on support for `PKCS-11` systems:  eg [salrashid123/golang-jwt-pkcs11](https://github.com/salrashid123/golang-jwt-pkcs11)
 
@@ -443,7 +447,9 @@ curl -s -H 'Metadata-Flavor: Google' --connect-to metadata.google.internal:80:12
 }
 ```
 
-Please note the scopes used for this token is read in from the declared values in the config file
+Please note the scopes used for this token is read in from the declared values in the config file.
+
+Unlike the GCE metadata server, Cloud Run allows you to request a scope dynamically by using the `?scopes=` query parameter.  If you want this mode enabled, use the `--allowDynamicScopes` parameter
 
 ### IDToken
 

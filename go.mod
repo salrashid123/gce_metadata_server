@@ -6,24 +6,24 @@ require (
 	cloud.google.com/go/compute/metadata v0.2.3
 	cloud.google.com/go/iam v1.1.5
 	github.com/fsnotify/fsnotify v1.7.0
-	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/golang/glog v1.2.0
 	github.com/google/go-tpm v0.9.0
 	github.com/google/go-tpm-tools v0.4.3
 	github.com/gorilla/mux v1.8.1
-	github.com/salrashid123/golang-jwt-tpm v1.2.0
-	github.com/salrashid123/oauth2/tpm v0.0.0-20240401112313-82162ccb793e
+	github.com/salrashid123/golang-jwt-tpm v1.3.0
+	github.com/salrashid123/oauth2/tpm v0.0.0-20240408164709-978c43c94850
 	golang.org/x/net v0.20.0
 	golang.org/x/oauth2 v0.16.0
 	google.golang.org/api v0.157.0
 )
+
+require github.com/golang-jwt/jwt/v5 v5.2.1
 
 require (
 	cloud.google.com/go/compute v1.23.3 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/go-configfs-tsm v0.2.2 // indirect

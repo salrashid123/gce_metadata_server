@@ -6,7 +6,7 @@ It returns a live `access_token` that can be used directly by [Application Defau
 
 For example, you can call `ADC` using default credentials or specifically with `ComputeCredentials` and also recall any GCE project or instance attribute.
 
-First run the emulator:
+To use, first run the emulator:
 
 ```bash
 ./gce_metadata_server -logtostderr --configFile=config.json \
@@ -15,7 +15,7 @@ First run the emulator:
   --serviceAccountFile certs/metadata-sa.json 
 ```
 
-(the credentials for the server can be sourced from a service account key, workload federation, Trusted Platform Module (TPM) or statically provided as environment variable)
+Note the credentials for the server can be sourced from a service account key, workload federation, `Trusted Platform Module (TPM)` or statically provided as environment variable.  The example above uses a key.
 
 Then in a new window, export some env vars google SDK's under
 
@@ -559,6 +559,7 @@ see [examples/pyapp](examples/pyapp/)
   python3 main.py
 ```
 
+Unlike the other language SDK's, for python we need to set `GCE_METADATA_IP` (see [google-auth-library-python #1505](https://github.com/googleapis/google-auth-library-python/issues/1505)).
 
 ##### [java](https://github.com/googleapis/google-auth-library-java/blob/main/oauth2_http/java/com/google/auth/oauth2/DefaultCredentialsProvider.java#L71)
 

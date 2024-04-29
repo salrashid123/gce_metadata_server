@@ -107,7 +107,7 @@
         "ssh-keys": "srashid:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCdVeH9zvBfNc7x9mVxo6SMvtz6yRlXtvoiUyEBnSaQg4NIGFeyoRKkAdW2Ubp7ZSHn1kudHR1d9uiFqGtBJ/u6uS/07/mOFNKf4JRzb2dj7IpCZOntV4yQUu+TEcnS8TV9DW5aTQ3YMJgZEV+5FQr/1dTY3t+92gzIr5nGJqArRtJgiLACq34wgcU71cMiNpEhUHk07doIxoOC1AJaHyPVlAdNt1FKQoo7cfJPoKjYBPvUlnAmf1s6in90g7HqBMS5xo1cPhHY42JZpH0kySLpZKEwDtjXjoIT+felVOCq8HTOph1N9VmoW3IrtyB+sBod2kJGlOSmV0dypzW9Vrozd2J0c+D78tNooeHFgNKmu8/YP57TKgLKfZsg5aDCtrv0= srashid@srashid12"
       },
       "numericProjectId": 708288290784,
-      "projectId": "core-eso"
+      "projectId": "$PROJECT"
     }
   }
 }

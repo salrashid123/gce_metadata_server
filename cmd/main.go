@@ -36,6 +36,11 @@ var (
 	tpmPath            = flag.String("tpm-path", "/dev/tpm0", "Path to the TPM device (character device or a Unix socket).")
 	persistentHandle   = flag.Int("persistentHandle", 0x81008000, "Handle value")
 
+	metricsEnabled   = flag.Bool("metricsEnabled", false, "Enable prometheus metrics endpoint")
+	metricsInterface = flag.String("metricsInterface", "127.0.0.1", "metrics interface address to bind to")
+	metricsPort      = flag.String("metricsPort", "9000", "metrics port to bind to")
+	metricsPath      = flag.String("metricsPath", "/metrics", "metrics path to use")
+
 	pcrs = flag.String("pcrs", "", "PCR Bound value (increasing order, comma separated)")
 )
 
@@ -193,6 +198,11 @@ func main() {
 		TPMPath:            *tpmPath,
 		PersistentHandle:   *persistentHandle,
 		PCRs:               pcrList,
+
+		MetricsEnabled:   *metricsEnabled,
+		MetricsInterface: *metricsInterface,
+		MetricsPort:      *metricsPort,
+		MetricsPath:      *metricsPath,
 	}
 
 	f, err := mds.NewMetadataServer(ctx, serverConfig, creds, claims)

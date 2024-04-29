@@ -179,6 +179,7 @@ r.Handle("/")
 - [Using domain sockets](#using-domain-sockets)
 - [Building with Bazel](#building-with-bazel)
 - [Building with Kaniko](#building-with-kaniko)
+* [Metrics](#metrics)
 * [Testing](#testing)
 
 ---
@@ -271,6 +272,10 @@ You can set the following options on usage:
 | **`GOOGLE_NUMERIC_PROJECT_ID`** | static environment variable for the numeric project id to return |
 | **`GOOGLE_ACCESS_TOKEN`** | static environment variable for access_token to return |
 | **`GOOGLE_ID_TOKEN`** | static environment variable for id_token to return |
+| **`-metricsEnabled`** | Enable prometheus metrics endpoint (default: false) |
+| **`-metricsInterface`** | Prometheus metrics interface (default: 127.0.0.1) |
+| **`-metricsPort`** | Prometheus metrics port (default: 9000) |
+| **`-metricsPath`** | Prometheus metrics path (default: /metrics) |
 
 ### With JSON ServiceAccount file
 
@@ -936,6 +941,14 @@ $ cosign verify --certificate-identity=salrashid123@gmail.com  --certificate-oid
 # $ rekor-cli search --rekor_server https://rekor.sigstore.dev  --email salrashid123@gmail.com
 # $ rekor-cli get --rekor_server https://rekor.sigstore.dev  --log-index $LogIndex  --format=json | jq '.'
 ```
+
+## Metrics
+
+Basic latency and counter Prometheus metrics are enabled using the `--metrisEnabled` flag.
+
+Once enabled, path latency is recoreded at the default prometheus endpoint at `http://localhost:9000/metrics`.
+
+Apart from latency, any dynamic field for access or identity tokens also has a counter and status metric surfaced.
 
 ## Testing
 

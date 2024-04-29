@@ -60,6 +60,10 @@ import (
 
 	iamcredentials "cloud.google.com/go/iam/credentials/apiv1"
 	iamcredentialspb "cloud.google.com/go/iam/credentials/apiv1/credentialspb"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // Configures and manages the server and is used as a receiver to start and stop the server.
@@ -77,7 +81,20 @@ type MetadataServer struct {
 }
 
 var (
-// hostHeaders = []string{"metadata", "metadata.google.internal", "169.254.169.254"}
+	// hostHeaders = []string{"metadata", "metadata.google.internal", "169.254.169.254"}
+
+	httpDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name: "metadata_endpoint_latency_seconds",
+		Help: "Duration of HTTP requests.",
+	}, []string{"path"})
+
+	pathReqs = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "metadata_endpoint_path_requests",
+			Help: "backend status, partitioned by status code and path.",
+		},
+		[]string{"code", "path"},
+	)
 )
 
 const (
@@ -88,6 +105,10 @@ const (
 	googleProjectID           = "GOOGLE_PROJECT_ID"
 	googleProjectNumber       = "GOOGLE_NUMERIC_PROJECT_ID"
 	googleServiceAccountEmail = "GOOGLE_SERVICE_ACCOUNT"
+
+	defaultMetricsPath      = "/metrics"
+	defaultMetricsInterface = "127.0.0.1"
+	defaultMetricsPort      = "9000"
 
 	metadata404Body = `
 <!DOCTYPE html>
@@ -111,6 +132,11 @@ type ServerConfig struct {
 	Port          string // port to listen on (default :8080)
 	DomainSocket  string // toggle if unix domain sockets should be used.
 
+	MetricsEnabled   bool   // flag if prometheus metrics are enabled (default false)
+	MetricsInterface string // interface to bind for metrics (default 127.0.0.1)
+	MetricsPort      string // port for the metrics prometheus endpoint (default :9000)
+	MetricsPath      string // path for metrics endpoint (default /metrics)
+
 	Impersonate        bool // toggle if provided default credentials should be impersonated (default: false)
 	Federate           bool // toggle if workload federation should be used (default: false)
 	AllowDynamicScopes bool // toggle if dynamic scopes are enabled for access_tokens (default: false)
@@ -119,6 +145,16 @@ type ServerConfig struct {
 	TPMPath          string // path to the TPM (default /dev/tpm0)
 	PCRs             []int  // list of TPM PCR banks the key is bound to.  If set, the library will attempt to apply PCRSessionPolicy (default: nil)
 	PersistentHandle int    // persistent handle for the TPM pointing to the credentials (default: 0)
+}
+
+func prometheusMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		route := mux.CurrentRoute(r)
+		path, _ := route.GetPathTemplate()
+		timer := prometheus.NewTimer(httpDuration.WithLabelValues(path))
+		next.ServeHTTP(w, r)
+		timer.ObserveDuration()
+	})
 }
 
 func httpError(w http.ResponseWriter, error string, code int, contentType string) {
@@ -436,14 +472,23 @@ func (h *MetadataServer) getServiceAccountHandler(w http.ResponseWriter, r *http
 	case "identity":
 		k, ok := r.URL.Query()["audience"]
 		if !ok {
+			if h.ServerConfig.MetricsEnabled {
+				defer pathReqs.WithLabelValues(http.StatusText(http.StatusBadRequest), r.URL.Path).Inc()
+			}
 			httpError(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest, "text/html")
 			fmt.Fprint(w, "non-empty audience parameter required")
 			return
 		}
 		idtok, err := h.getIDToken(k[0])
 		if err != nil {
+			if h.ServerConfig.MetricsEnabled {
+				defer pathReqs.WithLabelValues(http.StatusText(http.StatusInternalServerError), r.URL.Path).Inc()
+			}
 			httpError(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError, "text/html")
 			return
+		}
+		if h.ServerConfig.MetricsEnabled {
+			defer pathReqs.WithLabelValues(http.StatusText(http.StatusOK), r.URL.Path).Inc()
 		}
 		w.Header().Set("Content-Type", "text/html")
 		fmt.Fprint(w, idtok)
@@ -456,24 +501,33 @@ func (h *MetadataServer) getServiceAccountHandler(w http.ResponseWriter, r *http
 		w.Header().Set("Content-Type", "application/text")
 		resp = []byte(scopes)
 	case "token":
+
 		var scopes []string
 		k, ok := r.URL.Query()["scopes"]
 		if ok {
 			glog.V(10).Infof("access_token requested with scopes: [%s]", scopes)
 			scopes = strings.Split(k[0], ",")
-
 		}
 		tok, err := h.getAccessToken(scopes)
 		if err != nil {
+			if h.ServerConfig.MetricsEnabled {
+				defer pathReqs.WithLabelValues(http.StatusText(http.StatusInternalServerError), r.URL.Path).Inc()
+			}
 			glog.Errorf("Error getting Token %v\n", err)
 			httpError(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError, "application/text")
 			return
 		}
 		js, err := json.Marshal(tok)
 		if err != nil {
+			if h.ServerConfig.MetricsEnabled {
+				defer pathReqs.WithLabelValues(http.StatusText(http.StatusInternalServerError), r.URL.Path).Inc()
+			}
 			glog.Errorf("Error unmarshalling Token %v\n", err)
 			httpError(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError, "application/text")
 			return
+		}
+		if h.ServerConfig.MetricsEnabled {
+			defer pathReqs.WithLabelValues(http.StatusText(http.StatusOK), r.URL.Path).Inc()
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(js)
@@ -1108,6 +1162,7 @@ func (h *MetadataServer) Start() error {
 	r.NotFoundHandler = http.HandlerFunc(h.notFound)
 
 	m := http.NewServeMux()
+	r.Use(prometheusMiddleware)
 	m.Handle("/", h.checkMetadataHeaders(r))
 
 	var l net.Listener
@@ -1130,6 +1185,22 @@ func (h *MetadataServer) Start() error {
 			glog.Errorf("Error listening to tcp socket: %v\n", err)
 			return err
 		}
+	}
+
+	if h.ServerConfig.MetricsEnabled {
+		if h.ServerConfig.MetricsPath == "" {
+			h.ServerConfig.MetricsPath = defaultMetricsPath
+		}
+		if h.ServerConfig.MetricsInterface == "" {
+			h.ServerConfig.MetricsInterface = defaultMetricsInterface
+		}
+		if h.ServerConfig.MetricsPort == "" {
+			h.ServerConfig.MetricsPort = defaultMetricsPort
+		}
+		go func() {
+			http.Handle(h.ServerConfig.MetricsPath, promhttp.Handler())
+			glog.Error(http.ListenAndServe(fmt.Sprintf("%s:%s", h.ServerConfig.MetricsInterface, h.ServerConfig.MetricsPort), nil))
+		}()
 	}
 
 	go func() {

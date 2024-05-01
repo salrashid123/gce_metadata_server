@@ -853,7 +853,7 @@ If you want to build the server using bazel (eg, [deterministic](https://github.
 
 ```bash
 ## generate dependencies
-bazel run :gazelle -- update-repos -from_file=go.mod -prune=true -to_macro=repositories.bzl%go_repositories
+# bazel run :gazelle -- update-repos -from_file=go.mod -prune=true -to_macro=repositories.bzl%go_repositories
 
 ## run
 bazel run cmd:main -- --configFile=`pwd`/config.json   -alsologtostderr -v 5 -port :8080 --serviceAccountFile=`pwd`/certs/metadata-sa.json 
@@ -874,8 +874,8 @@ make the following edits to `repositories.bzl`
 ### add build_file_proto_mode directive here
     go_repository(
         name = "com_github_googleapis_gax_go_v2",
-        importpath = "github.com/googleapis/gax-go/v2",
         build_file_proto_mode = "disable_global",
+        importpath = "github.com/googleapis/gax-go/v2",
         sum = "h1:A+gCJKdRfqXkr+BIRGtZLibNXf0m1f9E4HG56etFpas=",
         version = "v2.12.0",
     )

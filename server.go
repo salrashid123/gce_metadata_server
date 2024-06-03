@@ -861,6 +861,8 @@ func (h *MetadataServer) computeMetadatav1InstanceKeyHandler(w http.ResponseWrit
 		res = []byte(h.Claims.ComputeMetadata.V1.Instance.Zone)
 	case "machine-type":
 		res = []byte(h.Claims.ComputeMetadata.V1.Instance.MachineType)
+	case "maintenance-event":
+		res = []byte(h.Claims.ComputeMetadata.V1.Instance.MaintenanceEvent)
 	case "tags":
 		res, err = json.Marshal(h.Claims.ComputeMetadata.V1.Instance.Tags)
 		if err != nil {

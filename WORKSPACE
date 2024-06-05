@@ -36,7 +36,7 @@ load("//:repositories.bzl", "go_repositories")
 go_repositories()
 go_rules_dependencies()
 
-go_register_toolchains(version = "1.20")
+go_register_toolchains(version = "1.22.2")
 
 gazelle_dependencies()
 

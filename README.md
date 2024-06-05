@@ -264,10 +264,14 @@ You can set the following options on usage:
 | **`-impersonate`** | use impersonation |
 | **`-federate`** | use workload identity federation |
 | **`-tpm`** | use TPM |
-| **`-persistentHandle`** | TPM persistentHandle |
+| **`-persistentHandle`** | TPM persistentHandle (default: none) |
+| **`-tpmKeyFile`** | TPM Encrypted private key (default: none) |
+| **`-tpmPath`** |"Path to the TPM device (character device or a Unix socket). (default: `/dev/tpmrm0`)" |
+| **`-parentPass`** | TPM Parent key password (default: "") |
+| **`-keyPass`** | TPM key password (default: "") |
 | **`-pcrs`** | TPM PCR values the key is bound to (comma separated pcrs in ascending order) |
+| **`-sessionEncryptionName`** | hex encoded TPM object 'name' to use with an encrypted session |
 | **`-domainsocket`** | listen on unix socket |
-| **`-allowDynamicScopes`** | Allow access_token scopes to be set dynamically |
 | **`GOOGLE_PROJECT_ID`** | static environment variable for PROJECT_ID to return |
 | **`GOOGLE_NUMERIC_PROJECT_ID`** | static environment variable for the numeric project id to return |
 | **`GOOGLE_ACCESS_TOKEN`** | static environment variable for access_token to return |
@@ -395,11 +399,63 @@ Basically, you can either
 - `B` Generate a Key _on the TPM_ and then import the public part to GCP. [example](https://github.com/salrashid123/oauth2/blob/master/README.md#b-generate-key-on-tpm-and-export-public-x509-certificate-to-gcp)
 - `C` remote seal the service accounts RSA Private key, encrypt it with TPM's Endorsement Key and load it securely inside the TPM. [example](https://gist.github.com/salrashid123/9e4a0328fd8c84374ace78c76a1e34cb)
 
-`B` is the most secure but `C` allows for multiple TPMs to use the same key 
+`A` is the easiest for a demo
+
+`B` is the most secure
+
+`C` allows for multiple TPMs to use the same key 
 
 Anyway, once the RSA key is present as a handle, start the metadata server using the `--tpm` flag and set the `--persistentHandle=` value.
 
 TPM based tokens derives the serivceAccount email from the configuration file.   You must first edit `config.json` and set the value of `Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email`.
+
+For a full example with `A`, you'll need a serviceAccount key file first which you'll embed into the TPM.
+
+Using `tpm2_tools`:
+
+```bash
+## prepare they key
+## extract just the private key from the json keyfile
+
+cat tpm-svc-account.json | jq -r '.private_key' > /tmp/f.json
+openssl rsa -in /tmp/f.json -out /tmp/key_rsa.pem 
+
+## create the primary
+### the specific primary here happens to be the h2 template described later on but you are free to define any template and policy
+
+printf '\x00\x00' > unique.dat
+tpm2_createprimary -C o -G ecc  -g sha256 \
+    -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+
+# import
+
+tpm2_import -C primary.ctx -G rsa2048:rsassa:null -g sha256 -i /tmp/key_rsa.pem -u key.pub -r key.prv
+tpm2_load -C primary.ctx -u key.pub -r key.prv -c key.ctx 
+
+## save to a persistent handle
+
+tpm2_evictcontrol -C o -c key.ctx 0x81010002
+
+# if you have tpm2-tss-engine installed, you can save as encrypted PEM
+tpm2tss-genkey -u key.pub -r key.prv private.pem
+
+## which formats it as TPM-encrypted PEM:
+cat private.pem 
+-----BEGIN TSS2 PRIVATE KEY-----
+MIICNQYGZ4EFCgEDoAMBAf8CBEAAAAEEggEaARgAAQALAAQAQAAAABAAFAALCAAA
+AQABAQDqKVruwZ6amTB9OFXwOqNkl7Zaxh0jD1AXbnD9uvnk0z18tGOHxzsP6lsm
+LJ8ywnMkomdbDP78dZlHEC3sn/7ustRUTwHb9UV/gc875gMJ0qsrbRajsH1J7tQB
+S4ezEf8MKoBi9ogUx7g21z7cytiK46nr08J3yyZHvXVuCklncXBD8TM9ZlHVdDeM
+ICMOzXg6d0fL0UvujGPSIEYnqbmY4DlpI0RudMAsOtActbo7Dq7xuiSBcW9slxxS
+e18mO6/3IJANKVlHkynpjTEkzzchKR5brCoteukcLhSPTlSNmkvzBOXbDTyRhrrs
+8HEyufQGc4MGLjStpTFNsOHy1xqnBIIBAAD+ACDtgAG7hcbIVsgW1JHzyZcWQRdv
+TntWp4sacW0ltVvMLwAQvxAAj4Y0E9FyZesU/urN7896vACshaTw5lNuV7hr9ZKr
+oWjGMcFo9r+H4OvshONF/GTc3ggp7UlbBo5+V5UlcQrUbk3dSGEstVgA+Wf4upoM
+Q9jCmwuljqFRG7afs6js5CWfXn+z6bKIewa9mTIkjXa7GhDCHBTRO5LVn68L5dFS
+0ddxx3FNZ7W4S+Md8jG19TU2oagKyrH4cXObRL1dlWSiDB0U62LHIzQcdKUENv4Y
+2GDcvBxUtXWp/kBhZ5EaNOoH31njN1Pi8bZQE86j/JDNuC3i4TKdGCA=
+-----END TSS2 PRIVATE KEY-----
+```
 
 After that, run
 
@@ -407,17 +463,45 @@ After that, run
 ./gce_metadata_server -logtostderr --configFile=config.json \
   -alsologtostderr -v 5 \
   -port :8080 \
-  --tpm --persistentHandle=0x81008000 
+  --tpm --persistentHandle=0x81010002 
 ```
 
-we're using a `persistentHandle` to save/load the key but a TODO is to load from the [context tree from files](https://github.com/salrashid123/tpm2/tree/master/context_chain)
+or with files
+
+```bash
+./gce_metadata_server -logtostderr --configFile=config.json \
+  -alsologtostderr -v 5 \
+  -port :8080 \
+  --tpm --keyfile=/path/to/private.pem 
+```
 
 The TPM based credentials imports a JWT generator library to perform the oauth and id_token exchanges: 
 
 * [salrashid123/golang-jwt-tpm](https://github.com/salrashid123/golang-jwt-tpm)
 * [salrashid123/oauth2](https://github.com/salrashid123/oauth2)
 
-If the TPM based key is restricted through a PCR policy, you will need to supply the list of PCRs its bound to using the `--pcrs` flag: (eg `--pcrs=2,3,23`)
+If the TPM based key is restricted through a PCR policy, you will need to supply the list of PCRs its bound to using the `--pcrs` flag: (eg `--pcrs=2,3,23`).  See examples [here](https://github.com/salrashid123/gcp-adc-tpm?tab=readme-ov-file#pcr-policy)
+
+Note that if you are using PCR policy, the metadata server cache's the credential values until it expires (which is typically an hour). If you enable a PCR policy and then change it to invalidate the TPM-based key's usage, the server will return the same token until it needs to referesh it.
+
+If you want to enable [TPM Encrypted sessions](https://github.com/salrashid123/tpm2/tree/master/tpm_encrypted_session), you should provide the "name" of a trusted key on the TPM for each call.
+
+A trusted key can be the EK Key. You can get the name using `tpm2_tools`:
+
+```bash
+tpm2_createek -c primary.ctx -G rsa -u ek.pub -Q
+tpm2_readpublic -c primary.ctx -o ek.pem -n name.bin -f pem -Q
+xxd -p -c 100 name.bin 
+  000bb50d34f6377bb3c2f41a1b4b6094ed6efcd7032d28054566db0766879dad1ee0
+```
+
+Then use the hex value returned in the `--tpm-session-encrypt-with-name=` argument.
+
+For example:
+
+```bash
+   --tpm-session-encrypt-with-name=000bb50d34f6377bb3c2f41a1b4b6094ed6efcd7032d28054566db0766879dad1ee0
+```
 
 A TODO enhancement could be to add on support for `PKCS-11` systems:  eg [salrashid123/golang-jwt-pkcs11](https://github.com/salrashid123/golang-jwt-pkcs11)
 
@@ -455,8 +539,6 @@ curl -s -H 'Metadata-Flavor: Google' --connect-to metadata.google.internal:80:12
 ```
 
 Please note the scopes used for this token is read in from the declared values in the config file.
-
-Unlike the GCE metadata server, Cloud Run allows you to request a scope dynamically by using the `?scopes=` query parameter.  If you want this mode enabled, use the `--allowDynamicScopes` parameter
 
 To mention, if the only use for this is to acquire credentials for use with a GCP SDK, consider any of the "process credential sources":
 
@@ -874,18 +956,18 @@ make the following edits to `repositories.bzl`
 ### add build_file_proto_mode directive here
     go_repository(
         name = "com_github_googleapis_gax_go_v2",
-        build_file_proto_mode = "disable_global",
+        build_file_proto_mode = "disable_global",        
         importpath = "github.com/googleapis/gax-go/v2",
-        sum = "h1:A+gCJKdRfqXkr+BIRGtZLibNXf0m1f9E4HG56etFpas=",
-        version = "v2.12.0",
-    )
+        sum = "h1:9gWcmF85Wvq4ryPFvGFaOgPIs1AQX0d0bcbGw4Z96qg=",
+        version = "v2.12.4",
+    )    
 
 ### after upgrading google.golang.org/protobuf-->v1.33.0, i had to comment out 
     #go_repository(
     #    name = "org_golang_google_protobuf",
     #    importpath = "google.golang.org/protobuf",
-    #    sum = "h1:uNO2rsAINq/JlFpSdYEKIZ0uKD/R9cpdv0T+yoGwGmI=",
-    #    version = "v1.33.0",
+    #    sum = "h1:9ddQBjfCyZPOHPUiPxpYESBLc+T8P3E+Vo4IbKZgFWg=",
+    #    version = "v1.34.1",
     #)
 ```
 

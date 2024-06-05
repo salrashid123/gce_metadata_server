@@ -44,7 +44,6 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/golang/glog"
 	tpmjwt "github.com/salrashid123/golang-jwt-tpm"
-	saltpm "github.com/salrashid123/oauth2/tpm"
 	"golang.org/x/net/http2"
 	"golang.org/x/oauth2"
 
@@ -54,9 +53,8 @@ import (
 	"github.com/gorilla/mux"
 	"golang.org/x/oauth2/google"
 
-	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm/legacy/tpm2"
-	"github.com/google/go-tpm/tpmutil"
+	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/tpm2/transport"
 
 	iamcredentials "cloud.google.com/go/iam/credentials/apiv1"
 	iamcredentialspb "cloud.google.com/go/iam/credentials/apiv1/credentialspb"
@@ -95,6 +93,56 @@ var (
 		},
 		[]string{"code", "path"},
 	)
+
+	/*
+		Template for the H2 h-2 is described in pg 43 [TCG EK Credential Profile](https://trustedcomputinggroup.org/wp-content/uploads/TCG_IWG_EKCredentialProfile_v2p4_r2_10feb2021.pdf)
+
+		for use with KeyFiles described in 	[ASN.1 Specification for TPM 2.0 Key Files](https://www.hansenpartnership.com/draft-bottomley-tpm2-keys.html#name-parent)
+
+		printf '\x00\x00' > unique.dat
+		tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+	*/
+	ECCSRK_H_Template = tpm2.TPMTPublic{
+		Type:    tpm2.TPMAlgECC,
+		NameAlg: tpm2.TPMAlgSHA256,
+		ObjectAttributes: tpm2.TPMAObject{
+			FixedTPM:            true,
+			FixedParent:         true,
+			SensitiveDataOrigin: true,
+			UserWithAuth:        true,
+			NoDA:                true,
+			Restricted:          true,
+			Decrypt:             true,
+		},
+		Parameters: tpm2.NewTPMUPublicParms(
+			tpm2.TPMAlgECC,
+			&tpm2.TPMSECCParms{
+				Symmetric: tpm2.TPMTSymDefObject{
+					Algorithm: tpm2.TPMAlgAES,
+					KeyBits: tpm2.NewTPMUSymKeyBits(
+						tpm2.TPMAlgAES,
+						tpm2.TPMKeyBits(128),
+					),
+					Mode: tpm2.NewTPMUSymMode(
+						tpm2.TPMAlgAES,
+						tpm2.TPMAlgCFB,
+					),
+				},
+				CurveID: tpm2.TPMECCNistP256,
+			},
+		),
+		Unique: tpm2.NewTPMUPublicID(
+			tpm2.TPMAlgECC,
+			&tpm2.TPMSECCPoint{
+				X: tpm2.TPM2BECCParameter{
+					Buffer: make([]byte, 0),
+				},
+				Y: tpm2.TPM2BECCParameter{
+					Buffer: make([]byte, 0),
+				},
+			},
+		),
+	}
 )
 
 const (
@@ -137,14 +185,14 @@ type ServerConfig struct {
 	MetricsPort      string // port for the metrics prometheus endpoint (default :9000)
 	MetricsPath      string // path for metrics endpoint (default /metrics)
 
-	Impersonate        bool // toggle if provided default credentials should be impersonated (default: false)
-	Federate           bool // toggle if workload federation should be used (default: false)
-	AllowDynamicScopes bool // toggle if dynamic scopes are enabled for access_tokens (default: false)
+	Impersonate bool // toggle if provided default credentials should be impersonated (default: false)
+	Federate    bool // toggle if workload federation should be used (default: false)
 
-	UseTPM           bool   // toggle if TPM should be used for credentials (default: false)
-	TPMPath          string // path to the TPM (default /dev/tpm0)
-	PCRs             []int  // list of TPM PCR banks the key is bound to.  If set, the library will attempt to apply PCRSessionPolicy (default: nil)
-	PersistentHandle int    // persistent handle for the TPM pointing to the credentials (default: 0)
+	UseTPM           bool               // toggle if TPM should be used for credentials (default: false)
+	TPMDevice        io.ReadWriteCloser // initialized transport for the TPM
+	AuthHandle       *tpm2.AuthHandle   // initialized authorization handle to the key
+	EncryptionHandle tpm2.TPMHandle     // (optional) handle to use for transit encryption
+	EncryptionPub    *tpm2.TPMTPublic   // (optional) public key to use for transit encryption
 }
 
 func prometheusMiddleware(next http.Handler) http.Handler {
@@ -555,69 +603,6 @@ func (h *MetadataServer) getAccessToken(scopes []string) (*metadataToken, error)
 			TokenType:   "Bearer",
 		})
 
-	} else if h.ServerConfig.AllowDynamicScopes && len(scopes) != 0 {
-
-		var err error
-		ctx := context.Background()
-		if h.ServerConfig.Impersonate {
-			glog.Infoln("Using Service Account Impersonation")
-
-			ts, err = impersonate.CredentialsTokenSource(ctx, impersonate.CredentialsConfig{
-				TargetPrincipal: h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
-				Scopes:          scopes,
-			})
-			if err != nil {
-				glog.Errorf("Unable to create Impersonated TokenSource %v ", err)
-				return nil, err
-			}
-		} else if h.ServerConfig.Federate {
-			glog.Infoln("Using Workload Identity Federation")
-
-			if os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") == "" {
-				glog.Error("GOOGLE_APPLICATION_CREDENTIAL must be set with --federate")
-				return nil, err
-			}
-
-			glog.Infof("Federation path: %s", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
-			var err error
-			creds, err := google.FindDefaultCredentials(ctx, scopes...)
-			if err != nil {
-				glog.Errorf("Unable load federated credentials %v", err)
-				return nil, err
-			}
-			ts = creds.TokenSource
-		} else if h.ServerConfig.UseTPM {
-
-			ts, err = saltpm.TpmTokenSource(&saltpm.TpmTokenConfig{
-				TPMPath:       h.ServerConfig.TPMPath, // if managed by library
-				KeyHandle:     uint32(h.ServerConfig.PersistentHandle),
-				PCRs:          h.ServerConfig.PCRs,
-				Email:         h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
-				Scopes:        scopes,
-				UseOauthToken: true,
-			})
-
-			if err != nil {
-				glog.Errorf("ERROR:  could not initialize Key: %v", err)
-				return nil, err
-			}
-
-			if err != nil {
-				glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
-				return nil, err
-			}
-		} else {
-			glog.Infoln("Using serviceAccountFile for credentials")
-			var err error
-			ctx := context.Background()
-			data := h.Creds.JSON
-			creds, err := google.CredentialsFromJSON(ctx, data, scopes...)
-			if err != nil {
-				glog.Errorf("Unable to parse serviceAccountFile %v ", err)
-				return nil, err
-			}
-			ts = creds.TokenSource
-		}
 	} else {
 		ts = h.Creds.TokenSource
 	}
@@ -684,32 +669,6 @@ func (h *MetadataServer) getIDToken(targetAudience string) (string, error) {
 			AccessToken: resp.Token,
 		})
 	} else if h.ServerConfig.UseTPM {
-		rwc, err := tpm2.OpenTPM(h.ServerConfig.TPMPath)
-		if err != nil {
-			glog.Errorf("can't open TPM %s: %v", h.ServerConfig.TPMPath, err)
-			return "", err
-		}
-		defer rwc.Close()
-
-		var k *client.Key
-		if len(h.ServerConfig.PCRs) > 0 {
-			s, err := client.NewPCRSession(rwc, tpm2.PCRSelection{tpm2.AlgSHA256, h.ServerConfig.PCRs})
-			if err != nil {
-				glog.Errorf("Unable to initialize PCRSession: %v", err)
-				return "", err
-			}
-			k, err = client.LoadCachedKey(rwc, tpmutil.Handle(h.ServerConfig.PersistentHandle), s)
-
-		} else {
-			k, err = client.LoadCachedKey(rwc, tpmutil.Handle(h.ServerConfig.PersistentHandle), client.NullSession{})
-		}
-		if err != nil {
-			glog.Errorf("ERROR:  could not initialize Key: %v", err)
-			return "", err
-		}
-		defer k.Close()
-		// now we're ready to sign
-
 		iat := time.Now()
 		exp := iat.Add(time.Second * 10)
 
@@ -734,8 +693,10 @@ func (h *MetadataServer) getIDToken(targetAudience string) (string, error) {
 
 		ctx := context.Background()
 		config := &tpmjwt.TPMConfig{
-			TPMDevice: rwc,
-			Key:       k,
+			TPMDevice:        h.ServerConfig.TPMDevice,
+			AuthHandle:       h.ServerConfig.AuthHandle,
+			EncryptionHandle: h.ServerConfig.EncryptionHandle,
+			EncryptionPub:    h.ServerConfig.EncryptionPub,
 		}
 
 		keyctx, err := tpmjwt.NewTPMContext(ctx, config)
@@ -1241,6 +1202,10 @@ func NewMetadataServer(ctx context.Context, serverConfig *ServerConfig, creds *g
 		return nil, errors.New("serverConfig, credential and claims cannot be nil")
 	}
 
+	if serverConfig.UseTPM && serverConfig.AuthHandle == nil {
+		return nil, errors.New("AuthHandle must be set if useTPM is enabled")
+	}
+
 	h := &MetadataServer{
 		Creds:        creds,
 		Claims:       *claims,
@@ -1248,4 +1213,39 @@ func NewMetadataServer(ctx context.Context, serverConfig *ServerConfig, creds *g
 		initNew:      true, // confirms the MetadataServer was started with NewMetadataServer()
 	}
 	return h, nil
+}
+
+func GetEnv(key, fallback string, fromArg string) string {
+	if fromArg != "" {
+		return fromArg
+	}
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return fallback
+}
+
+func GetExpectedPCRDigest(thetpm transport.TPM, selection tpm2.TPMLPCRSelection, hashAlg tpm2.TPMAlgID) ([]byte, error) {
+	pcrRead := tpm2.PCRRead{
+		PCRSelectionIn: selection,
+	}
+
+	pcrReadRsp, err := pcrRead.Execute(thetpm)
+	if err != nil {
+		return nil, err
+	}
+
+	var expectedVal []byte
+	for _, digest := range pcrReadRsp.PCRValues.Digests {
+		expectedVal = append(expectedVal, digest.Buffer...)
+	}
+
+	cryptoHashAlg, err := hashAlg.Hash()
+	if err != nil {
+		return nil, err
+	}
+
+	hash := cryptoHashAlg.New()
+	hash.Write(expectedVal)
+	return hash.Sum(nil), nil
 }

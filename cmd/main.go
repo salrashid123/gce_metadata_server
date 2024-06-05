@@ -2,23 +2,31 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
+	"io"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	keyfile "github.com/foxboron/go-tpm-keyfiles"
 	"github.com/fsnotify/fsnotify"
 	"github.com/golang/glog"
-	"github.com/google/go-tpm/legacy/tpm2"
+	"github.com/google/go-tpm-tools/simulator"
+	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/tpm2/transport"
 	"github.com/google/go-tpm/tpmutil"
 	mds "github.com/salrashid123/gce_metadata_server"
 	saltpm "github.com/salrashid123/oauth2/tpm"
 
+	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/impersonate"
 )
@@ -31,18 +39,33 @@ var (
 	configFile         = flag.String("configFile", "config.json", "config file")
 	useImpersonate     = flag.Bool("impersonate", false, "Impersonate a service Account instead of using the keyfile")
 	useFederate        = flag.Bool("federate", false, "Use Workload Identity Federation ADC")
-	allowDynamicScopes = flag.Bool("allowDynamicScopes", false, "Allow dynamic scopes for access_token")
-	useTPM             = flag.Bool("tpm", false, "Use TPM to get access and id_token")
-	tpmPath            = flag.String("tpm-path", "/dev/tpm0", "Path to the TPM device (character device or a Unix socket).")
-	persistentHandle   = flag.Int("persistentHandle", 0x81008000, "Handle value")
 
 	metricsEnabled   = flag.Bool("metricsEnabled", false, "Enable prometheus metrics endpoint")
 	metricsInterface = flag.String("metricsInterface", "127.0.0.1", "metrics interface address to bind to")
 	metricsPort      = flag.String("metricsPort", "9000", "metrics port to bind to")
 	metricsPath      = flag.String("metricsPath", "/metrics", "metrics path to use")
 
-	pcrs = flag.String("pcrs", "", "PCR Bound value (increasing order, comma separated)")
+	useTPM                = flag.Bool("tpm", false, "Use TPM to get access and id_token")
+	persistentHandle      = flag.Int("persistentHandle", 0, "Handle value")
+	tpmKeyFile            = flag.String("keyfile", "", "TPM Encrypted private key")
+	tpmPath               = flag.String("tpm-path", "/dev/tpmrm0", "Path to the TPM device (character device or a Unix socket).")
+	parentPass            = flag.String("parentPass", "", "TPM Parent Key password")
+	keyPass               = flag.String("keyPass", "", "TPM Key password")
+	pcrs                  = flag.String("pcrs", "", "PCR Bound value (increasing order, comma separated)")
+	sessionEncryptionName = flag.String("tpm-session-encrypt-with-name", "", "hex encoded TPM object 'name' to use with an encrypted session")
 )
+
+var TPMDEVICES = []string{"/dev/tpm0", "/dev/tpmrm0"}
+
+func OpenTPM(path string) (io.ReadWriteCloser, error) {
+	if slices.Contains(TPMDEVICES, path) {
+		return tpmutil.OpenTPM(path)
+	} else if path == "simulator" {
+		return simulator.GetWithFixedSeedInsecure(1073741825)
+	} else {
+		return net.Dial("tcp", path)
+	}
+}
 
 func main() {
 
@@ -65,8 +88,10 @@ func main() {
 		os.Exit(-1)
 	}
 
+	// if using TPMs
 	var creds *google.Credentials
-
+	var rwc io.ReadWriteCloser
+	var authHandle tpm2.AuthHandle
 	// parse TPM PCR values (if set)
 	var pcrList = []int{}
 	if *pcrs != "" && *useTPM {
@@ -120,30 +145,205 @@ func main() {
 	} else if *useTPM {
 		glog.Infoln("Using TPM based token handle")
 
-		if *persistentHandle == 0 {
-			glog.Error("persistent handle must be specified")
+		// verify we actually have access to the TPM
+		rwc, err = OpenTPM(*tpmPath)
+		if err != nil {
+			glog.Error("can't open TPM %q: %v", *tpmPath, err)
 			os.Exit(1)
 		}
-		// verify we actually have access to the TPM
-		rwc, err := tpm2.OpenTPM(*tpmPath)
-		if err != nil {
-			glog.Errorf("can't open TPM %s: %v", *tpmPath, err)
+		defer func() {
+			if err := rwc.Close(); err != nil {
+				glog.Error("can't close TPM %q: %v", *tpmPath, err)
+				os.Exit(1)
+			}
+		}()
+		rwr := transport.FromReadWriter(rwc)
+
+		// setup the EK for use with encrypted sessions to the TPM
+		var encryptionSessionHandle tpm2.TPMHandle
+		var encryptionPub *tpm2.TPMTPublic
+
+		if *sessionEncryptionName != "" {
+			createEKCmd := tpm2.CreatePrimary{
+				PrimaryHandle: tpm2.TPMRHEndorsement,
+				InPublic:      tpm2.New2B(tpm2.RSAEKTemplate),
+			}
+			createEKRsp, err := createEKCmd.Execute(rwr)
+			if err != nil {
+				glog.Error(os.Stderr, "can't acquire acquire ek %v", err)
+				os.Exit(1)
+			}
+
+			defer func() {
+				flushContextCmd := tpm2.FlushContext{
+					FlushHandle: createEKRsp.ObjectHandle,
+				}
+				_, _ = flushContextCmd.Execute(rwr)
+			}()
+
+			encryptionSessionHandle = createEKRsp.ObjectHandle
+			encryptionPub, err = createEKRsp.OutPublic.Contents()
+			if err != nil {
+				glog.Error(os.Stderr, "can't create ekpub blob %v", err)
+				os.Exit(1)
+			}
+			if *sessionEncryptionName != hex.EncodeToString(createEKRsp.Name.Buffer) {
+				glog.Error(os.Stderr, "session encryption names do not match expected [%s] got [%s]", *sessionEncryptionName, hex.EncodeToString(createEKRsp.Name.Buffer))
+				os.Exit(1)
+			}
+		}
+
+		// configure a session
+
+		var sess tpm2.Session
+
+		if *pcrs != "" {
+			strpcrs := strings.Split(*pcrs, ",")
+			var pcrList = []uint{}
+
+			for _, i := range strpcrs {
+				j, err := strconv.Atoi(i)
+				if err != nil {
+					glog.Error(os.Stderr, "ERROR:  could convert pcr value: %v", err)
+					os.Exit(1)
+				}
+				pcrList = append(pcrList, uint(j))
+			}
+
+			var cleanup func() error
+			sess, cleanup, err = tpm2.PolicySession(rwr, tpm2.TPMAlgSHA256, 16)
+			if err != nil {
+				glog.Error(os.Stderr, "ERROR:  could not get PolicySession: %v", err)
+				os.Exit(1)
+			}
+			defer cleanup()
+
+			selection := tpm2.TPMLPCRSelection{
+				PCRSelections: []tpm2.TPMSPCRSelection{
+					{
+						Hash:      tpm2.TPMAlgSHA256,
+						PCRSelect: tpm2.PCClientCompatible.PCRs(pcrList...),
+					},
+				},
+			}
+
+			expectedDigest, err := mds.GetExpectedPCRDigest(rwr, selection, tpm2.TPMAlgSHA256)
+			if err != nil {
+				glog.Error(os.Stderr, "ERROR:  could not get PolicySession: %v", err)
+				os.Exit(1)
+			}
+			_, err = tpm2.PolicyPCR{
+				PolicySession: sess.Handle(),
+				Pcrs:          selection,
+				PcrDigest: tpm2.TPM2BDigest{
+					Buffer: expectedDigest,
+				},
+			}.Execute(rwr)
+			if err != nil {
+				glog.Error(os.Stderr, "Unable to create policyPCR: %v", err)
+				os.Exit(1)
+			}
+		} else {
+			sess = tpm2.PasswordAuth([]byte(*keyPass))
+		}
+
+		var ts oauth2.TokenSource
+		// either load the tpm key from disk or persistent handle
+		if *tpmKeyFile != "" {
+
+			c, err := os.ReadFile(*tpmKeyFile)
+			if err != nil {
+				glog.Error("can't load tpmkeyfile: %v", err)
+				os.Exit(1)
+			}
+			key, err := keyfile.Decode(c)
+			if err != nil {
+				glog.Error("can't decode tpmkeyfile: %v", err)
+				os.Exit(1)
+			}
+
+			// specify its parent directly
+			primaryKey, err := tpm2.CreatePrimary{
+				PrimaryHandle: key.Parent,
+				InPublic:      tpm2.New2B(mds.ECCSRK_H_Template),
+			}.Execute(rwr)
+			if err != nil {
+				glog.Error("can't create primary: %v", err)
+				os.Exit(1)
+			}
+
+			defer func() {
+				flushContextCmd := tpm2.FlushContext{
+					FlushHandle: primaryKey.ObjectHandle,
+				}
+				_, _ = flushContextCmd.Execute(rwr)
+			}()
+
+			rsaKey, err := tpm2.Load{
+				ParentHandle: tpm2.AuthHandle{
+					Handle: primaryKey.ObjectHandle,
+					Name:   tpm2.TPM2BName(primaryKey.Name),
+					Auth:   sess,
+				},
+				InPublic:  key.Pubkey,
+				InPrivate: key.Privkey,
+			}.Execute(rwr)
+
+			if err != nil {
+				glog.Error("can't loading key: %v", err)
+				os.Exit(1)
+			}
+
+			defer func() {
+				flushContextCmd := tpm2.FlushContext{
+					FlushHandle: rsaKey.ObjectHandle,
+				}
+				_, _ = flushContextCmd.Execute(rwr)
+			}()
+
+			authHandle = tpm2.AuthHandle{
+				Handle: rsaKey.ObjectHandle,
+				Name:   rsaKey.Name,
+				Auth:   tpm2.PasswordAuth([]byte(*keyPass)),
+			}
+			ts, err = saltpm.TpmTokenSource(&saltpm.TpmTokenConfig{
+				TPMDevice:        rwc,
+				AuthHandle:       &authHandle,
+				Email:            claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
+				Scopes:           claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
+				UseOauthToken:    true,
+				EncryptionHandle: encryptionSessionHandle,
+				EncryptionPub:    encryptionPub,
+			})
+
+		} else if *persistentHandle > 0 {
+			glog.V(20).Infof("TPM credentials using using persistent handle")
+			pub, err := tpm2.ReadPublic{
+				ObjectHandle: tpm2.TPMHandle(*persistentHandle), //persistent handle
+			}.Execute(rwr)
+			if err != nil {
+				glog.Error(os.Stderr, "error executing tpm2.ReadPublic %v", err)
+				os.Exit(1)
+			}
+			authHandle = tpm2.AuthHandle{
+				Handle: tpm2.TPMHandle(*persistentHandle), // persistent handle
+				Name:   pub.Name,
+				Auth:   sess,
+			}
+			ts, err = saltpm.TpmTokenSource(&saltpm.TpmTokenConfig{
+				TPMDevice:        rwc,
+				AuthHandle:       &authHandle,
+				Email:            claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
+				Scopes:           claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
+				UseOauthToken:    true,
+				EncryptionHandle: encryptionSessionHandle,
+				EncryptionPub:    encryptionPub,
+			})
+		} else {
+			glog.Error("Must specify either a persistent handle or a keyfile for use with at TPM")
 			os.Exit(1)
 		}
 
-		err = rwc.Close()
-		if err != nil {
-			glog.Error(os.Stderr, "error closing tpm%v\n", err)
-			os.Exit(1)
-		}
-		ts, err := saltpm.TpmTokenSource(&saltpm.TpmTokenConfig{
-			TPMPath:       *tpmPath, // managed by library
-			KeyHandle:     tpmutil.Handle(*persistentHandle).HandleValue(),
-			PCRs:          pcrList,
-			Email:         claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
-			Scopes:        claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
-			UseOauthToken: true,
-		})
 		if err != nil {
 			glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
 			os.Exit(1)
@@ -188,17 +388,14 @@ func main() {
 	}
 
 	serverConfig := &mds.ServerConfig{
-		BindInterface:      *bindInterface,
-		Port:               *port,
-		Impersonate:        *useImpersonate,
-		Federate:           *useFederate,
-		AllowDynamicScopes: *allowDynamicScopes,
-		DomainSocket:       *useDomainSocket,
-		UseTPM:             *useTPM,
-		TPMPath:            *tpmPath,
-		PersistentHandle:   *persistentHandle,
-		PCRs:               pcrList,
-
+		BindInterface:    *bindInterface,
+		Port:             *port,
+		Impersonate:      *useImpersonate,
+		Federate:         *useFederate,
+		DomainSocket:     *useDomainSocket,
+		UseTPM:           *useTPM,
+		TPMDevice:        rwc,
+		AuthHandle:       &authHandle,
 		MetricsEnabled:   *metricsEnabled,
 		MetricsInterface: *metricsInterface,
 		MetricsPort:      *metricsPort,

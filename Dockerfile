@@ -1,5 +1,5 @@
-# go1.20 linux/amd64
-FROM docker.io/golang@sha256:8f9af7094d0cb27cc783c697ac5ba25efdc4da35f8526db21f7aebb0b0b4f18a as build
+# go1.22.2 linux/amd64
+FROM docker.io/golang@sha256:d5302d40dc5fbbf38ec472d1848a9d2391a13f93293a6a5b0b87c99dc0eaa6ae as build
 
 WORKDIR /go/src/app
 COPY . .

@@ -24,6 +24,7 @@ import (
 	"github.com/google/go-tpm/tpm2/transport"
 	"github.com/google/go-tpm/tpmutil"
 	mds "github.com/salrashid123/gce_metadata_server"
+	tpmjwt "github.com/salrashid123/golang-jwt-tpm"
 	saltpm "github.com/salrashid123/oauth2/tpm"
 
 	"golang.org/x/oauth2"
@@ -91,7 +92,8 @@ func main() {
 	// if using TPMs
 	var creds *google.Credentials
 	var rwc io.ReadWriteCloser
-	var authHandle tpm2.AuthHandle
+	var namedHandle tpm2.NamedHandle
+	var authSession tpmjwt.Session
 	// parse TPM PCR values (if set)
 	var pcrList = []int{}
 	if *pcrs != "" && *useTPM {
@@ -194,9 +196,6 @@ func main() {
 		}
 
 		// configure a session
-
-		var sess tpm2.Session
-
 		if *pcrs != "" {
 			strpcrs := strings.Split(*pcrs, ",")
 			var pcrList = []uint{}
@@ -210,41 +209,23 @@ func main() {
 				pcrList = append(pcrList, uint(j))
 			}
 
-			var cleanup func() error
-			sess, cleanup, err = tpm2.PolicySession(rwr, tpm2.TPMAlgSHA256, 16)
-			if err != nil {
-				glog.Error(os.Stderr, "ERROR:  could not get PolicySession: %v", err)
-				os.Exit(1)
-			}
-			defer cleanup()
-
-			selection := tpm2.TPMLPCRSelection{
-				PCRSelections: []tpm2.TPMSPCRSelection{
-					{
-						Hash:      tpm2.TPMAlgSHA256,
-						PCRSelect: tpm2.PCClientCompatible.PCRs(pcrList...),
-					},
+			authSession, err = tpmjwt.NewPCRSession(rwr, []tpm2.TPMSPCRSelection{
+				{
+					Hash:      tpm2.TPMAlgSHA256,
+					PCRSelect: tpm2.PCClientCompatible.PCRs(pcrList...),
 				},
+			})
+			if err != nil {
+				glog.Error(os.Stderr, "error creating tpm pcrsession %v\n", err)
+				os.Exit(1)
 			}
 
-			expectedDigest, err := mds.GetExpectedPCRDigest(rwr, selection, tpm2.TPMAlgSHA256)
+		} else if *keyPass != "" {
+			authSession, err = tpmjwt.NewPasswordSession(rwr, []byte(*keyPass))
 			if err != nil {
-				glog.Error(os.Stderr, "ERROR:  could not get PolicySession: %v", err)
+				glog.Error(os.Stderr, "error creating tpm passwordsession%v\n", err)
 				os.Exit(1)
 			}
-			_, err = tpm2.PolicyPCR{
-				PolicySession: sess.Handle(),
-				Pcrs:          selection,
-				PcrDigest: tpm2.TPM2BDigest{
-					Buffer: expectedDigest,
-				},
-			}.Execute(rwr)
-			if err != nil {
-				glog.Error(os.Stderr, "Unable to create policyPCR: %v", err)
-				os.Exit(1)
-			}
-		} else {
-			sess = tpm2.PasswordAuth([]byte(*keyPass))
 		}
 
 		var ts oauth2.TokenSource
@@ -283,7 +264,7 @@ func main() {
 				ParentHandle: tpm2.AuthHandle{
 					Handle: primaryKey.ObjectHandle,
 					Name:   tpm2.TPM2BName(primaryKey.Name),
-					Auth:   sess,
+					Auth:   tpm2.PasswordAuth([]byte(*parentPass)),
 				},
 				InPublic:  key.Pubkey,
 				InPrivate: key.Privkey,
@@ -301,20 +282,24 @@ func main() {
 				_, _ = flushContextCmd.Execute(rwr)
 			}()
 
-			authHandle = tpm2.AuthHandle{
+			namedHandle = tpm2.NamedHandle{
 				Handle: rsaKey.ObjectHandle,
 				Name:   rsaKey.Name,
-				Auth:   tpm2.PasswordAuth([]byte(*keyPass)),
 			}
 			ts, err = saltpm.TpmTokenSource(&saltpm.TpmTokenConfig{
 				TPMDevice:        rwc,
-				AuthHandle:       &authHandle,
+				NamedHandle:      namedHandle,
+				AuthSession:      authSession,
 				Email:            claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
 				Scopes:           claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
 				UseOauthToken:    true,
 				EncryptionHandle: encryptionSessionHandle,
 				EncryptionPub:    encryptionPub,
 			})
+			if err != nil {
+				glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
+				os.Exit(1)
+			}
 
 		} else if *persistentHandle > 0 {
 			glog.V(20).Infof("TPM credentials using using persistent handle")
@@ -325,29 +310,29 @@ func main() {
 				glog.Error(os.Stderr, "error executing tpm2.ReadPublic %v", err)
 				os.Exit(1)
 			}
-			authHandle = tpm2.AuthHandle{
+			namedHandle = tpm2.NamedHandle{
 				Handle: tpm2.TPMHandle(*persistentHandle), // persistent handle
 				Name:   pub.Name,
-				Auth:   sess,
 			}
 			ts, err = saltpm.TpmTokenSource(&saltpm.TpmTokenConfig{
 				TPMDevice:        rwc,
-				AuthHandle:       &authHandle,
+				NamedHandle:      namedHandle,
+				AuthSession:      authSession,
 				Email:            claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
 				Scopes:           claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
 				UseOauthToken:    true,
 				EncryptionHandle: encryptionSessionHandle,
 				EncryptionPub:    encryptionPub,
 			})
+			if err != nil {
+				glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
+				os.Exit(1)
+			}
 		} else {
 			glog.Error("Must specify either a persistent handle or a keyfile for use with at TPM")
 			os.Exit(1)
 		}
 
-		if err != nil {
-			glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
-			os.Exit(1)
-		}
 		creds = &google.Credentials{
 			ProjectID:   claims.ComputeMetadata.V1.Project.ProjectID,
 			TokenSource: ts,
@@ -395,7 +380,8 @@ func main() {
 		DomainSocket:     *useDomainSocket,
 		UseTPM:           *useTPM,
 		TPMDevice:        rwc,
-		AuthHandle:       &authHandle,
+		NamedHandle:      namedHandle,
+		AuthSession:      authSession,
 		MetricsEnabled:   *metricsEnabled,
 		MetricsInterface: *metricsInterface,
 		MetricsPort:      *metricsPort,

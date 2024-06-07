@@ -10,8 +10,8 @@ require (
 	github.com/google/go-tpm v0.9.1-0.20240514145214-58e3e47cd434
 	github.com/google/go-tpm-tools v0.4.4
 	github.com/gorilla/mux v1.8.1
-	github.com/salrashid123/golang-jwt-tpm v1.7.1-0.20240604211341-f01b73a33d43
-	github.com/salrashid123/oauth2/tpm v0.0.0-20240605124728-abefe62a0bc5
+	github.com/salrashid123/golang-jwt-tpm v1.8.1-0.20240606202535-4a9cc73e10e7
+	github.com/salrashid123/oauth2/tpm v0.0.0-20240607190353-7c8d56da8695
 	golang.org/x/net v0.26.0
 	golang.org/x/oauth2 v0.21.0
 	google.golang.org/api v0.183.0

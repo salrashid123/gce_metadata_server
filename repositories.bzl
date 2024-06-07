@@ -341,20 +341,20 @@ def go_repositories():
     go_repository(
         name = "com_github_salrashid123_golang_jwt_tpm",
         importpath = "github.com/salrashid123/golang-jwt-tpm",
-        sum = "h1:4/sE+pplrAGwFJSUdyABaFD9nwoGw150wgppiVh12Y0=",
-        version = "v1.7.1-0.20240604211341-f01b73a33d43",
+        sum = "h1:Pf1R4jEDRNICUvVh3dILCNpJMAXSOTbJf+gsXzNl4kw=",
+        version = "v1.8.1-0.20240606202535-4a9cc73e10e7",
     )
     go_repository(
         name = "com_github_salrashid123_oauth2_tpm",
         importpath = "github.com/salrashid123/oauth2/tpm",
-        sum = "h1:Z9e9fWwtXr6XW99qEV5fVU8IiLXqkcLGh52M+hE9MqI=",
-        version = "v0.0.0-20240605124728-abefe62a0bc5",
+        sum = "h1:+XNYNHaB/S+7+1FoP1/IVDAKspp52l93G+h6CqhmcBc=",
+        version = "v0.0.0-20240607190353-7c8d56da8695",
     )
     go_repository(
         name = "com_github_salrashid123_signer_tpm",
         importpath = "github.com/salrashid123/signer/tpm",
-        sum = "h1:ADJfp739VgQe3iI6/abqk2R4c8r+QXJZ/3xNIXPUa1Y=",
-        version = "v0.0.0-20240604023456-fad3918e0a31",
+        sum = "h1:w+/chwzi8SuGwuMRin5iJGYHbPO8B+gS0edqMxkylvU=",
+        version = "v0.0.0-20240607132035-0e96f7d4c37c",
     )
     go_repository(
         name = "com_github_stretchr_objx",

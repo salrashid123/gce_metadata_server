@@ -424,20 +424,17 @@ openssl rsa -in /tmp/f.json -out /tmp/key_rsa.pem
 ### the specific primary here happens to be the h2 template described later on but you are free to define any template and policy
 
 printf '\x00\x00' > unique.dat
-tpm2_createprimary -C o -G ecc  -g sha256 \
-    -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
-
-# import
-
+tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+# tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" 
 tpm2_import -C primary.ctx -G rsa2048:rsassa:null -g sha256 -i /tmp/key_rsa.pem -u key.pub -r key.prv
-tpm2_load -C primary.ctx -u key.pub -r key.prv -c key.ctx 
-
-## save to a persistent handle
+tpm2_flushcontext -t
+tpm2_load -C primary.ctx -u key.pub -r key.prv -c key.ctx
+tpm2_flushcontext -t
 
 tpm2_evictcontrol -C o -c key.ctx 0x81010002
 
 # if you have tpm2-tss-engine installed, you can save as encrypted PEM
-tpm2tss-genkey -u key.pub -r key.prv private.pem
+# tpm2tss-genkey -u key.pub -r key.prv private.pem
 
 ## which formats it as TPM-encrypted PEM:
 cat private.pem 

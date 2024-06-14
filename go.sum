@@ -101,10 +101,14 @@ github.com/prometheus/procfs v0.15.1 h1:YagwOFzUgYfKKHX6Dr+sHT7km/hxC76UB0leargg
 github.com/prometheus/procfs v0.15.1/go.mod h1:fB45yRUv8NstnjriLhBQLuOUt+WW4BsoGhij/e3PBqk=
 github.com/salrashid123/golang-jwt-tpm v1.8.1-0.20240606202535-4a9cc73e10e7 h1:Pf1R4jEDRNICUvVh3dILCNpJMAXSOTbJf+gsXzNl4kw=
 github.com/salrashid123/golang-jwt-tpm v1.8.1-0.20240606202535-4a9cc73e10e7/go.mod h1:j09G3lbE4f1xA8b/iJylp+vjM9zjbXU56+OS70eifTg=
+github.com/salrashid123/golang-jwt-tpm v1.8.1 h1:wLCVGh3NE6nXkbtJCC4FqDMd1T4O9blkqhLrki/dEM0=
+github.com/salrashid123/golang-jwt-tpm v1.8.1/go.mod h1:j09G3lbE4f1xA8b/iJylp+vjM9zjbXU56+OS70eifTg=
 github.com/salrashid123/oauth2/tpm v0.0.0-20240607173538-b627228b5c65 h1:o9SQjmccJAGmktGpPFEARcsqD6rNXYlawDX/Q/oPzAY=
 github.com/salrashid123/oauth2/tpm v0.0.0-20240607173538-b627228b5c65/go.mod h1:r/i6uqpS4UEttsF1cfMFA6d36E7hK9AewpEXjTq0/SA=
 github.com/salrashid123/oauth2/tpm v0.0.0-20240607190353-7c8d56da8695 h1:+XNYNHaB/S+7+1FoP1/IVDAKspp52l93G+h6CqhmcBc=
 github.com/salrashid123/oauth2/tpm v0.0.0-20240607190353-7c8d56da8695/go.mod h1:r/i6uqpS4UEttsF1cfMFA6d36E7hK9AewpEXjTq0/SA=
+github.com/salrashid123/signer v0.8.4 h1:4D8xtYnxVF8+kqWXouHtEZDPc3Frio/974MatOUF5w0=
+github.com/salrashid123/signer v0.8.4/go.mod h1:nnPEj0R9nLlUITJROI2vl6s1WtwArLwQJx3UFs6GGB8=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.4.0/go.mod h1:YvHI0jy2hoMjB+UWwv71VJQ9isScKT/TqJzVSSt89Yw=
 github.com/stretchr/objx v0.5.0/go.mod h1:Yh+to48EsGEfYuaHDzXPcE3xhTkx73EhmCGUpEOglKo=

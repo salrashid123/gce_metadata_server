@@ -14,9 +14,11 @@ import (
 func main() {
 
 	projectID := ""
+	ctx := context.Background()
+
 	if metadata.OnGCE() {
 		var err error
-		projectID, err = metadata.ProjectID()
+		projectID, err = metadata.ProjectIDWithContext(ctx)
 		if err != nil {
 			panic(err)
 		}
@@ -25,7 +27,6 @@ func main() {
 		return
 	}
 
-	ctx := context.Background()
 	client, err := storage.NewClient(ctx)
 	if err != nil {
 		panic(err)
@@ -50,7 +51,7 @@ func main() {
 	}
 
 	// get arbitrary metadata values directly
-	instanceID, err := metadata.InstanceID()
+	instanceID, err := metadata.InstanceIDWithContext(ctx)
 	if err != nil {
 		panic(err)
 	}

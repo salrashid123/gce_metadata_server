@@ -1057,6 +1057,8 @@ curl -s -H 'Metadata-Flavor: Google' --connect-to metadata.google.internal:443:1
 
 For an example on how the [GCE guest agent](https://github.com/GoogleCloudPlatform/guest-agent/blob/main/google_guest_agent/agentcrypto/mtls_mds.go#L136) extracts the root ca from UEFI and decrypts the client cert/key from metadata server, see [certextract.go](https://gist.github.com/salrashid123/c1de41bf380c1f9a3602675276977e48)
 
+For an example of how to invoke the mTLS endpoint and use it with a client library, see [examples/goapp_mtls/main.go](examples/goapp_mtls/main.go)
+
 Note that GCE issues client certificates that are rotated periodically.  Infact, the client certificate is set to expire in a week:
 
 For example, the client certificate from a real GCE instance with metadata TLS shows a validity for about a week.

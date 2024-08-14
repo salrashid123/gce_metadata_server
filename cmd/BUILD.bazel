@@ -39,6 +39,16 @@ go_library(
 )
 
 pkg_tar(
+    name = "certs_bundle",
+    srcs = [
+        "//certs:root.crt",
+        "//certs:server.crt",
+        "//certs:server.key",
+    ],
+    package_dir = "/certs",
+)
+
+pkg_tar(
     name = "config_bundle",
     srcs = [
         "//:config.json",
@@ -55,7 +65,7 @@ pkg_tar(
 oci_image(
     name = "server-image",
     base = "@distroless_base",
-    tars = [":config_bundle", ":app-tar"],   
+    tars = [":config_bundle", ":certs_bundle", ":app-tar"],   
     entrypoint = ["/gce_metadata_server"],
     cmd = [],
     env = {},

@@ -1,0 +1,5 @@
+exports_files([
+    "root.crt",
+    "server.crt",
+    "server.key",
+    ])

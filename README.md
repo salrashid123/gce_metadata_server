@@ -31,26 +31,30 @@ and run any application using ADC:
 
 from google.cloud import storage
 import google.auth
-
 import google.auth.compute_engine
 import google.auth.transport.requests
-
 from google.auth.compute_engine import _metadata
 
+
 ## with ADC metadata server
+
 credentials, project = google.auth.default()    
 client = storage.Client(credentials=credentials)
 buckets = client.list_buckets()
 for bkt in buckets:
   print(bkt)
 
+
 ## as compute credential
+
 creds = google.auth.compute_engine.Credentials()
 session = google.auth.transport.requests.AuthorizedSession(creds)
 r = session.get('https://www.googleapis.com/userinfo/v2/me').json()
 print(str(r))
 
+
 ## get arbitrary metadata values directly 
+
 request = google.auth.transport.requests.Request()
 print(_metadata.get_project_id(request))
 print(_metadata.get(request,"instance/id"))
@@ -280,6 +284,10 @@ You can set the following options on usage:
 | **`-metricsInterface`** | Prometheus metrics interface (default: 127.0.0.1) |
 | **`-metricsPort`** | Prometheus metrics port (default: 9000) |
 | **`-metricsPath`** | Prometheus metrics path (default: /metrics) |
+| **`-usemTLS`** | Start server with mtls (default: false) |
+| **`-rootCAmTLS`** | Root CA for mtls client validation (default: `certs/root.crt`) |
+| **`-serverCert`** | Server certificate for mtls (default: `certs/server.crt`) |
+| **`-serverKey`** | Server key for mtls (default: `certs/server.key`) |
 
 ### With JSON ServiceAccount file
 
@@ -425,7 +433,7 @@ openssl rsa -in /tmp/f.json -out /tmp/key_rsa.pem
 
 printf '\x00\x00' > unique.dat
 tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
-# tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" 
+ 
 tpm2_import -C primary.ctx -G rsa2048:rsassa:null -g sha256 -i /tmp/key_rsa.pem -u key.pub -r key.prv
 tpm2_flushcontext -t
 tpm2_load -C primary.ctx -u key.pub -r key.prv -c key.ctx
@@ -434,6 +442,7 @@ tpm2_flushcontext -t
 tpm2_evictcontrol -C o -c key.ctx 0x81010002
 
 # if you have tpm2-tss-engine installed, you can save as encrypted PEM
+## or use https://github.com/salrashid123/tpm2genkey
 # tpm2tss-genkey -u key.pub -r key.prv private.pem
 
 ## which formats it as TPM-encrypted PEM:
@@ -933,6 +942,9 @@ socat TCP-LISTEN:8080,fork,reuseaddr UNIX-CONNECT:/tmp/metadata.sock
 If you want to build the server using bazel (eg, [deterministic](https://github.com/salrashid123/go-grpc-bazel-docker)),
 
 ```bash
+# $ bazel version
+#   Build label: 6.2.1
+
 ## generate dependencies
 # bazel run :gazelle -- update-repos -from_file=go.mod -prune=true -to_macro=repositories.bzl%go_repositories
 
@@ -1021,6 +1033,60 @@ $ cosign verify --certificate-identity=salrashid123@gmail.com  --certificate-oid
 ## search and get 
 # $ rekor-cli search --rekor_server https://rekor.sigstore.dev  --email salrashid123@gmail.com
 # $ rekor-cli get --rekor_server https://rekor.sigstore.dev  --log-index $LogIndex  --format=json | jq '.'
+```
+
+## GCE mTLS
+
+GCE metadata server also supports a mode where [mTLS is used](https://cloud.google.com/compute/docs/metadata/overview#https-mds)
+
+You can enable this mode with the following flags but be aware, no client library supports it afaik. 
+
+```bash
+./gce_metadata_server -logtostderr --configFile=config.json \
+  -alsologtostderr -v 5 \
+  -port :8080 --usemTLS \
+  --serverCert certs/server.crt \
+  --serverKey certs/server.key --rootCAmTLS certs/root.crt  \
+  --serviceAccountFile certs/metadata-sa.json 
+
+curl -s -H 'Metadata-Flavor: Google' --connect-to metadata.google.internal:443:127.0.0.1:8080 \
+   --cert certs/client.crt --key certs/client.key     --cacert certs/root.crt \
+   https://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token
+```
+
+For an example on how the [GCE guest agent](https://github.com/GoogleCloudPlatform/guest-agent/blob/main/google_guest_agent/agentcrypto/mtls_mds.go#L136) extracts the root ca from UEFI and decrypts the client cert/key from metadata server, see [certextract.go](https://gist.github.com/salrashid123/c1de41bf380c1f9a3602675276977e48)
+
+Note that GCE issues client certificates that are rotated periodically.  Infact, the client certificate is set to expire in a week:
+
+For example, the client certificate from a real GCE instance with metadata TLS shows a validity for about a week.
+
+```bash
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            82:f6:44:68:9e:b5:b2:cc:81:35:ff:29:61:1d:bf:9e
+        Signature Algorithm: ecdsa-with-SHA256
+        Issuer: C=US, O=Google Compute Internal, CN=google.internal
+        Validity
+            Not Before: Aug 13 23:05:26 2024 GMT
+            Not After : Aug 20 23:10:26 2024 GMT
+        Subject: C=US, O=Google Compute Engine, CN=instance-1
+        Subject Public Key Info:
+            Public Key Algorithm: id-ecPublicKey
+                Public-Key: (256 bit)
+                ASN1 OID: prime256v1
+                NIST CURVE: P-256
+        X509v3 extensions:
+            X509v3 Basic Constraints: critical
+                CA:FALSE
+            X509v3 Key Usage: critical
+                Digital Signature
+            X509v3 Subject Alternative Name: 
+                DNS:instance-1.c.srashid-test2.internal
+            X509v3 Extended Key Usage: critical
+                TLS Web Client Authentication
+    Signature Algorithm: ecdsa-with-SHA256
 ```
 
 ## Metrics

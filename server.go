@@ -24,7 +24,10 @@ package mds
 import (
 	"bytes"
 	"crypto/md5"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
 	"net"
@@ -44,7 +47,6 @@ import (
 	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/golang/glog"
 	tpmjwt "github.com/salrashid123/golang-jwt-tpm"
-	"golang.org/x/net/http2"
 	"golang.org/x/oauth2"
 
 	"google.golang.org/api/idtoken"
@@ -194,6 +196,11 @@ type ServerConfig struct {
 	AuthSession      tpmjwt.Session     // auth session to use
 	EncryptionHandle tpm2.TPMHandle     // (optional) handle to use for transit encryption
 	EncryptionPub    *tpm2.TPMTPublic   // (optional) public key to use for transit encryption
+
+	UsemTLS    bool   // toggle if mtls is used (default: false)
+	RootCAmTLS string // ca to validate client certs (default "")
+	ServerCert string // server certificate for mtls (default: "")
+	ServerKey  string // server key for mtls (default: "")
 }
 
 func prometheusMiddleware(next http.Handler) http.Handler {
@@ -1134,13 +1141,67 @@ func (h *MetadataServer) Start() error {
 	var err error
 
 	h.srv = &http.Server{Handler: m}
-	http2.ConfigureServer(h.srv, &http2.Server{})
 
 	if h.ServerConfig.DomainSocket != "" {
 		glog.Infof("domain socket specified, ignoring TCP listers, %s", h.ServerConfig.DomainSocket)
 		l, err = net.Listen("unix", h.ServerConfig.DomainSocket)
 		if err != nil {
 			glog.Errorf("Error listening to domain socket: %v\n", err)
+			return err
+		}
+	} else if h.ServerConfig.UsemTLS {
+		clientCaCert, err := os.ReadFile(h.ServerConfig.RootCAmTLS)
+		if err != nil {
+			glog.Errorf("Error reading mtls ca: %v\n", err)
+			return err
+		}
+		clientCaCertPool := x509.NewCertPool()
+		clientCaCertPool.AppendCertsFromPEM(clientCaCert)
+
+		serverCertBytes, err := os.ReadFile(h.ServerConfig.ServerCert)
+		if err != nil {
+			glog.Errorf("ERROR:  Failed to  parse server certificate: %s", err)
+			return err
+		}
+
+		blockpulic, _ := pem.Decode(serverCertBytes)
+
+		clientCertificate, err := x509.ParseCertificate(blockpulic.Bytes)
+		if err != nil {
+			glog.Errorf("ERROR:  Failed to  parse certificate: %s", err)
+			return err
+		}
+
+		serverKeyBytes, err := os.ReadFile(h.ServerConfig.ServerKey)
+		if err != nil {
+			glog.Errorf("ERROR:  Failed to  parse server key: %s", err)
+			return err
+		}
+
+		blockKey, _ := pem.Decode(serverKeyBytes)
+
+		clientKey, err := x509.ParsePKCS8PrivateKey(blockKey.Bytes)
+		if err != nil {
+			glog.Errorf("ERROR:  Failed to  parse ec key: %s", err)
+			return err
+		}
+
+		tlsCrt := tls.Certificate{
+			Certificate: [][]byte{clientCertificate.Raw},
+			Leaf:        clientCertificate,
+			PrivateKey:  clientKey,
+		}
+
+		tc := &tls.Config{
+			ClientAuth:   tls.RequireAndVerifyClientCert,
+			ClientCAs:    clientCaCertPool,
+			Certificates: []tls.Certificate{tlsCrt},
+		}
+
+		glog.Infof("tcp TLS socket specified %s", fmt.Sprintf("%s%s", h.ServerConfig.BindInterface, h.ServerConfig.Port))
+		l, err = tls.Listen("tcp", fmt.Sprintf("%s%s", h.ServerConfig.BindInterface, h.ServerConfig.Port), tc)
+		if err != nil {
+			glog.Errorf("Error listening to tcp socket: %v\n", err)
 			return err
 		}
 	} else {
@@ -1170,7 +1231,9 @@ func (h *MetadataServer) Start() error {
 
 	go func() {
 		if err := h.srv.Serve(l); err != nil && err != http.ErrServerClosed {
-			glog.Error("listen: %s\n", err)
+			// probably should use glog.Fatal() or propagate this err back to the main function
+			glog.Errorf("Critical error during Serve: : %s\n", err)
+			return
 		}
 	}()
 

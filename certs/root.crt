@@ -1,0 +1,49 @@
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 1 (0x1)
+        Signature Algorithm: ecdsa-with-SHA256
+        Issuer: C=US, O=Google Compute Internal, CN=google.internal
+        Validity
+            Not Before: Aug 14 00:38:35 2024 GMT
+            Not After : Aug 14 00:38:35 2034 GMT
+        Subject: C=US, O=Google Compute Internal, CN=google.internal
+        Subject Public Key Info:
+            Public Key Algorithm: id-ecPublicKey
+                Public-Key: (256 bit)
+                pub:
+                    04:61:27:e7:d9:8d:e5:b1:a4:a9:0d:94:54:67:ce:
+                    d2:08:8a:42:fc:7b:14:bd:5e:de:33:f0:42:0f:10:
+                    4d:f7:58:8f:95:32:5e:d9:71:61:0a:47:b9:84:0f:
+                    24:b8:28:d9:c0:03:dc:f0:0b:ed:37:16:d7:87:69:
+                    40:77:f3:41:e6
+                ASN1 OID: prime256v1
+                NIST CURVE: P-256
+        X509v3 extensions:
+            X509v3 Key Usage: critical
+                Certificate Sign, CRL Sign
+            X509v3 Basic Constraints: critical
+                CA:TRUE, pathlen:0
+            X509v3 Subject Key Identifier: 
+                45:C6:27:32:EA:35:73:21:78:23:25:99:49:5E:6A:68:1F:0B:2F:ED
+            X509v3 Subject Alternative Name: 
+                DNS:google.internal
+    Signature Algorithm: ecdsa-with-SHA256
+    Signature Value:
+        30:45:02:21:00:c3:71:43:51:27:3a:71:82:1d:85:76:91:10:
+        55:9f:e2:80:2d:12:16:2b:01:ea:d9:33:dd:68:28:f4:8f:5e:
+        fd:02:20:0b:96:d8:8d:6b:0a:cf:a9:35:48:aa:0f:7f:17:4d:
+        d5:b4:6e:f8:a3:32:cb:da:cc:76:85:91:e0:cd:52:6a:b1
+-----BEGIN CERTIFICATE-----
+MIIB4jCCAYigAwIBAgIBATAKBggqhkjOPQQDAjBJMQswCQYDVQQGEwJVUzEgMB4G
+A1UECgwXR29vZ2xlIENvbXB1dGUgSW50ZXJuYWwxGDAWBgNVBAMMD2dvb2dsZS5p
+bnRlcm5hbDAeFw0yNDA4MTQwMDM4MzVaFw0zNDA4MTQwMDM4MzVaMEkxCzAJBgNV
+BAYTAlVTMSAwHgYDVQQKDBdHb29nbGUgQ29tcHV0ZSBJbnRlcm5hbDEYMBYGA1UE
+AwwPZ29vZ2xlLmludGVybmFsMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEYSfn
+2Y3lsaSpDZRUZ87SCIpC/HsUvV7eM/BCDxBN91iPlTJe2XFhCke5hA8kuCjZwAPc
+8AvtNxbXh2lAd/NB5qNhMF8wDgYDVR0PAQH/BAQDAgEGMBIGA1UdEwEB/wQIMAYB
+Af8CAQAwHQYDVR0OBBYEFEXGJzLqNXMheCMlmUleamgfCy/tMBoGA1UdEQQTMBGC
+D2dvb2dsZS5pbnRlcm5hbDAKBggqhkjOPQQDAgNIADBFAiEAw3FDUSc6cYIdhXaR
+EFWf4oAtEhYrAerZM91oKPSPXv0CIAuW2I1rCs+pNUiqD38XTdW0bvijMsvazHaF
+keDNUmqx
+-----END CERTIFICATE-----

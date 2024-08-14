@@ -54,6 +54,11 @@ var (
 	keyPass               = flag.String("keyPass", "", "TPM Key password")
 	pcrs                  = flag.String("pcrs", "", "PCR Bound value (increasing order, comma separated)")
 	sessionEncryptionName = flag.String("tpm-session-encrypt-with-name", "", "hex encoded TPM object 'name' to use with an encrypted session")
+
+	usemTLS    = flag.Bool("usemTLS", false, "Use mTLS")
+	rootCAmTLS = flag.String("rootCAmTLS", "certs/root.crt", "rootCA to validate client certs ")
+	serverCert = flag.String("serverCert", "certs/server.crt", "Server mtls certificate")
+	serverKey  = flag.String("serverKey", "certs/server.key", "Server mtls key")
 )
 
 var TPMDEVICES = []string{"/dev/tpm0", "/dev/tpmrm0"}
@@ -372,6 +377,13 @@ func main() {
 
 	}
 
+	if *usemTLS && (*rootCAmTLS == "" || *serverCert == "" || *serverKey == "") {
+		if err != nil {
+			glog.Errorf("Must specify rootCAmTLS, serverCert and serverKey if useMTLS is set")
+			os.Exit(1)
+		}
+	}
+
 	serverConfig := &mds.ServerConfig{
 		BindInterface:    *bindInterface,
 		Port:             *port,
@@ -386,6 +398,10 @@ func main() {
 		MetricsInterface: *metricsInterface,
 		MetricsPort:      *metricsPort,
 		MetricsPath:      *metricsPath,
+		UsemTLS:          *usemTLS,
+		RootCAmTLS:       *rootCAmTLS,
+		ServerCert:       *serverCert,
+		ServerKey:        *serverKey,
 	}
 
 	f, err := mds.NewMetadataServer(ctx, serverConfig, creds, claims)

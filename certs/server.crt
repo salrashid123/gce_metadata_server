@@ -1,0 +1,54 @@
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 2 (0x2)
+        Signature Algorithm: ecdsa-with-SHA256
+        Issuer: C=US, O=Google Compute Internal, CN=google.internal
+        Validity
+            Not Before: Aug 14 00:43:09 2024 GMT
+            Not After : Aug 14 00:43:09 2034 GMT
+        Subject: C=US, O=Google Compute Internal, CN=localhost
+        Subject Public Key Info:
+            Public Key Algorithm: id-ecPublicKey
+                Public-Key: (256 bit)
+                pub:
+                    04:35:3e:3a:36:07:a1:af:20:3c:0a:63:a3:e7:a8:
+                    46:d8:ea:a5:43:59:77:95:99:5f:a8:46:13:dc:35:
+                    a0:ea:07:fc:03:00:8e:48:b9:58:35:b7:74:97:56:
+                    bc:66:bb:10:32:53:8c:ed:f0:31:89:90:88:04:cf:
+                    3a:f5:b0:35:fc
+                ASN1 OID: prime256v1
+                NIST CURVE: P-256
+        X509v3 extensions:
+            X509v3 Key Usage: critical
+                Digital Signature
+            X509v3 Basic Constraints: 
+                CA:FALSE
+            X509v3 Extended Key Usage: 
+                TLS Web Server Authentication
+            X509v3 Subject Key Identifier: 
+                24:39:51:99:2E:66:31:BA:0E:28:11:8B:5D:0B:BD:C6:62:80:8E:4F
+            X509v3 Subject Alternative Name: 
+                DNS:metadata.google.internal, IP Address:169.254.169.254
+            X509v3 Authority Key Identifier: 
+                45:C6:27:32:EA:35:73:21:78:23:25:99:49:5E:6A:68:1F:0B:2F:ED
+    Signature Algorithm: ecdsa-with-SHA256
+    Signature Value:
+        30:45:02:21:00:a8:32:81:90:4a:fe:92:51:b8:5d:0a:77:4c:
+        2d:39:3c:4e:91:ec:1a:d2:81:6c:aa:3a:75:a1:ec:06:84:89:
+        b8:02:20:46:c0:15:f5:12:0c:d0:d5:fe:45:e5:b0:e2:f0:93:
+        a8:c0:71:03:ce:48:52:5a:46:58:b4:9f:a3:cc:1d:d8:51
+-----BEGIN CERTIFICATE-----
+MIICGjCCAcCgAwIBAgIBAjAKBggqhkjOPQQDAjBJMQswCQYDVQQGEwJVUzEgMB4G
+A1UECgwXR29vZ2xlIENvbXB1dGUgSW50ZXJuYWwxGDAWBgNVBAMMD2dvb2dsZS5p
+bnRlcm5hbDAeFw0yNDA4MTQwMDQzMDlaFw0zNDA4MTQwMDQzMDlaMEMxCzAJBgNV
+BAYTAlVTMSAwHgYDVQQKDBdHb29nbGUgQ29tcHV0ZSBJbnRlcm5hbDESMBAGA1UE
+AwwJbG9jYWxob3N0MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAENT46NgehryA8
+CmOj56hG2OqlQ1l3lZlfqEYT3DWg6gf8AwCOSLlYNbd0l1a8ZrsQMlOM7fAxiZCI
+BM869bA1/KOBnjCBmzAOBgNVHQ8BAf8EBAMCB4AwCQYDVR0TBAIwADATBgNVHSUE
+DDAKBggrBgEFBQcDATAdBgNVHQ4EFgQUJDlRmS5mMboOKBGLXQu9xmKAjk8wKQYD
+VR0RBCIwIIIYbWV0YWRhdGEuZ29vZ2xlLmludGVybmFshwSp/qn+MB8GA1UdIwQY
+MBaAFEXGJzLqNXMheCMlmUleamgfCy/tMAoGCCqGSM49BAMCA0gAMEUCIQCoMoGQ
+Sv6SUbhdCndMLTk8TpHsGtKBbKo6daHsBoSJuAIgRsAV9RIM0NX+ReWw4vCTqMBx
+A85IUlpGWLSfo8wd2FE=
+-----END CERTIFICATE-----

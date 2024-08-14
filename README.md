@@ -183,6 +183,7 @@ r.Handle("/")
 - [Using domain sockets](#using-domain-sockets)
 - [Building with Bazel](#building-with-bazel)
 - [Building with Kaniko](#building-with-kaniko)
+* [GCE mTLS](#gce-mtls)
 * [Metrics](#metrics)
 * [Testing](#testing)
 

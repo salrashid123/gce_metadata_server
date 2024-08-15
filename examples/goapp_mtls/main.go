@@ -4,17 +4,17 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"time"
 
 	//"cloud.google.com/go/compute/metadata"
+	"mtlstokensource"
+
+	"cloud.google.com/go/compute/metadata"
 	"cloud.google.com/go/storage"
-	"golang.org/x/oauth2"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
@@ -30,39 +30,6 @@ go run cmd/main.go   -logtostderr   -alsologtostderr -v 40   -port :8080 --confi
 export GCE_METADATA_HOST=localhost:8080
 go run main.go
 */
-
-type gceMetadataTransport struct {
-	rtp       http.RoundTripper
-	tlsConfig *tls.Config
-}
-
-func GCEMetadataTLSTransport(tlsconfig *tls.Config) *gceMetadataTransport {
-	tr := &gceMetadataTransport{
-		tlsConfig: tlsconfig,
-	}
-	myDialer := &net.Dialer{
-		Timeout: 500 * time.Millisecond,
-	}
-	dc := func(ctx context.Context, network, address string) (net.Conn, error) {
-		overrideAddress := os.Getenv("GCE_METADATA_HOST")
-		if overrideAddress == "" {
-			overrideAddress = "metadata.google.internal:443"
-		}
-		return myDialer.DialContext(ctx, network, overrideAddress)
-	}
-	tr.rtp = &http.Transport{
-		Proxy:               http.ProxyFromEnvironment,
-		DialContext:         dc,
-		TLSHandshakeTimeout: 400 * time.Millisecond,
-		TLSClientConfig:     tr.tlsConfig,
-	}
-	return tr
-}
-
-func (tr *gceMetadataTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	r.Header.Add("Metadata-Flavor", "Google")
-	return tr.rtp.RoundTrip(r)
-}
 
 const (
 	bucketName = "core-eso-bucket"
@@ -92,9 +59,10 @@ func main() {
 	}
 
 	client := &http.Client{
-		Transport: GCEMetadataTLSTransport(tlsconfig),
+		Transport: mtlstokensource.GCEMetadataTLSTransport(tlsconfig),
 	}
 
+	// get arbitrary metadata using custom http client
 	projectIDResp, err := client.Get("https://metadata.google.internal/computeMetadata/v1/project/project-id")
 	if err != nil {
 		fmt.Printf("error reading projectIDResp %v", err)
@@ -109,37 +77,30 @@ func main() {
 	defer projectIDResp.Body.Close()
 	fmt.Printf("ProjectID: %s\n", string(projectIDBytes))
 
-	accessTokenResp, err := client.Get("https://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token")
+	/// get arbitrary data from metadata server using metadata library
+	c := metadata.NewClient(client)
+	instanceID, err := c.InstanceIDWithContext(ctx)
 	if err != nil {
-		fmt.Printf("error reading accessTokenResp %v", err)
+		panic(err)
+	}
+	fmt.Printf("InstanceID %s\n", instanceID)
+
+	mts, err := mtlstokensource.MtlsTokenSource(&mtlstokensource.MtlsTokenConfig{
+		RootCA:         *caCertPool,
+		TLSCertificate: certs,
+	})
+	if err != nil {
+		fmt.Printf("error reading tokensource %v", err)
 		os.Exit(1)
 	}
-
-	accessTokenBytes, err := io.ReadAll(accessTokenResp.Body)
+	tok, err := mts.Token()
 	if err != nil {
-		fmt.Printf("error reading accessTokenBytes %v", err)
+		fmt.Printf("error reading token %v", err)
 		os.Exit(1)
 	}
-	defer accessTokenResp.Body.Close()
+	fmt.Printf("AccessToken: %s\n", tok.AccessToken)
 
-	tok := &oauth2.Token{}
-	err = json.Unmarshal(accessTokenBytes, tok)
-	if err != nil {
-		fmt.Println("Error in JSON oauth2Token", err)
-
-	}
-
-	fmt.Printf("AccessToken: %s\n", string(accessTokenBytes))
-
-	// note, i'm using a staticTokeSource here.
-	//  a really easy TODO is to write custom token source which'll allow automatic acquisitions refresh of these tokens
-	//   eg  https://github.com/salrashid123/gcp_process_credentials_go/blob/main/external.go#L36
-	//  for example, create a
-	//    sts, err := ComputeTokenSourceMTLS(&ComputeTokenSourceMTLSConfig{ CACert: *ca, Cert: *pub, Key: *key })
-	//
-	sts := oauth2.StaticTokenSource(tok)
-
-	storageClient, err := storage.NewClient(ctx, option.WithTokenSource(sts))
+	storageClient, err := storage.NewClient(ctx, option.WithTokenSource(mts))
 	if err != nil {
 		panic(err)
 	}
@@ -159,13 +120,5 @@ func main() {
 		}
 		fmt.Printf("Bucket: %v\n", oattrs.Name)
 	}
-
-	// c := metadata.NewClient(client)
-	// // get arbitrary metadata values directly;  this won't work because the metadata package does not support client certs
-	// instanceID, err := c.InstanceIDWithContext(ctx)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// fmt.Printf("InstanceID %s\n", instanceID)
 
 }

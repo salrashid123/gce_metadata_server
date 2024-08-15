@@ -1,16 +1,18 @@
 module main
 
-go 1.19
+go 1.22.4
 
 require (
 	cloud.google.com/go/storage v1.37.0
-	golang.org/x/oauth2 v0.22.0
+	golang.org/x/oauth2 v0.22.0 // indirect
 	google.golang.org/api v0.157.0
+	mtlstokensource v0.0.0
 )
+
+require cloud.google.com/go/compute/metadata v0.5.0
 
 require (
 	cloud.google.com/go v0.112.0 // indirect
-	cloud.google.com/go/compute/metadata v0.5.0 // indirect
 	cloud.google.com/go/iam v1.1.5 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
@@ -39,3 +41,5 @@ require (
 	google.golang.org/grpc v1.61.0 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect
 )
+
+replace mtlstokensource => ./mtlstokensource

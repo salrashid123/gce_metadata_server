@@ -297,7 +297,6 @@ func main() {
 				AuthSession:      authSession,
 				Email:            claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
 				Scopes:           claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
-				UseOauthToken:    true,
 				EncryptionHandle: encryptionSessionHandle,
 				EncryptionPub:    encryptionPub,
 			})
@@ -325,7 +324,6 @@ func main() {
 				AuthSession:      authSession,
 				Email:            claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
 				Scopes:           claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
-				UseOauthToken:    true,
 				EncryptionHandle: encryptionSessionHandle,
 				EncryptionPub:    encryptionPub,
 			})

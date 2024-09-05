@@ -241,7 +241,7 @@ def go_repositories():
         importpath = "github.com/googleapis/gax-go/v2",
         sum = "h1:9gWcmF85Wvq4ryPFvGFaOgPIs1AQX0d0bcbGw4Z96qg=",
         version = "v2.12.4",
-    )
+    )    
     go_repository(
         name = "com_github_gorilla_mux",
         importpath = "github.com/gorilla/mux",
@@ -341,14 +341,20 @@ def go_repositories():
     go_repository(
         name = "com_github_salrashid123_golang_jwt_tpm",
         importpath = "github.com/salrashid123/golang-jwt-tpm",
-        sum = "h1:Pf1R4jEDRNICUvVh3dILCNpJMAXSOTbJf+gsXzNl4kw=",
-        version = "v1.8.1-0.20240606202535-4a9cc73e10e7",
+        sum = "h1:wLCVGh3NE6nXkbtJCC4FqDMd1T4O9blkqhLrki/dEM0=",
+        version = "v1.8.1",
     )
     go_repository(
         name = "com_github_salrashid123_oauth2_tpm",
         importpath = "github.com/salrashid123/oauth2/tpm",
-        sum = "h1:+XNYNHaB/S+7+1FoP1/IVDAKspp52l93G+h6CqhmcBc=",
-        version = "v0.0.0-20240607190353-7c8d56da8695",
+        sum = "h1:zBbsZQe2wxGHIJBZ2kdsj/pQT6wH9HDMNAOzYtxLW60=",
+        version = "v0.0.0-20240905132258-ae22aa4dc55d",
+    )
+    go_repository(
+        name = "com_github_salrashid123_signer",
+        importpath = "github.com/salrashid123/signer",
+        sum = "h1:4D8xtYnxVF8+kqWXouHtEZDPc3Frio/974MatOUF5w0=",
+        version = "v0.8.4",
     )
     go_repository(
         name = "com_github_salrashid123_signer_tpm",

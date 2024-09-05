@@ -107,6 +107,8 @@ github.com/salrashid123/oauth2/tpm v0.0.0-20240607173538-b627228b5c65 h1:o9SQjmc
 github.com/salrashid123/oauth2/tpm v0.0.0-20240607173538-b627228b5c65/go.mod h1:r/i6uqpS4UEttsF1cfMFA6d36E7hK9AewpEXjTq0/SA=
 github.com/salrashid123/oauth2/tpm v0.0.0-20240607190353-7c8d56da8695 h1:+XNYNHaB/S+7+1FoP1/IVDAKspp52l93G+h6CqhmcBc=
 github.com/salrashid123/oauth2/tpm v0.0.0-20240607190353-7c8d56da8695/go.mod h1:r/i6uqpS4UEttsF1cfMFA6d36E7hK9AewpEXjTq0/SA=
+github.com/salrashid123/oauth2/tpm v0.0.0-20240905132258-ae22aa4dc55d h1:zBbsZQe2wxGHIJBZ2kdsj/pQT6wH9HDMNAOzYtxLW60=
+github.com/salrashid123/oauth2/tpm v0.0.0-20240905132258-ae22aa4dc55d/go.mod h1:r/i6uqpS4UEttsF1cfMFA6d36E7hK9AewpEXjTq0/SA=
 github.com/salrashid123/signer v0.8.4 h1:4D8xtYnxVF8+kqWXouHtEZDPc3Frio/974MatOUF5w0=
 github.com/salrashid123/signer v0.8.4/go.mod h1:nnPEj0R9nLlUITJROI2vl6s1WtwArLwQJx3UFs6GGB8=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=

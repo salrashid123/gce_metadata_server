@@ -184,7 +184,7 @@ r.Handle("/")
 - [Building with Bazel](#building-with-bazel)
 - [Building with Kaniko](#building-with-kaniko)
 * [GCE mTLS](#gce-mtls)
-* [Envoy Authentication Filter](#envoy-gcp-authentication-filter)  
+* [Envoy Authentication Filter](#envoy-authentication-filter)  
 * [Metrics](#metrics)
 * [Testing](#testing)
 

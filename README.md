@@ -170,7 +170,7 @@ r.Handle("/")
   - [golang](#golang)
   - [nodejs](#nodejs) 
   - [dotnet](#dotnet)  
-  - [gcloud](#gcloud)        
+  - [gcloud](#gcloud)      
 * [Other Runtimes](#other-runtimes)
     - [Run emulator as container](#run-emulator-as-container)    
     - [Run with containers](#run-with-containers)
@@ -184,6 +184,7 @@ r.Handle("/")
 - [Building with Bazel](#building-with-bazel)
 - [Building with Kaniko](#building-with-kaniko)
 * [GCE mTLS](#gce-mtls)
+* [Envoy Authentication Filter](#envoy-gcp-authentication-filter)  
 * [Metrics](#metrics)
 * [Testing](#testing)
 
@@ -1090,6 +1091,58 @@ Certificate:
             X509v3 Extended Key Usage: critical
                 TLS Web Client Authentication
     Signature Algorithm: ecdsa-with-SHA256
+```
+
+## Envoy Authentication Filter
+
+[GCP Authentication Filter](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/gcp_authn_filter) provides a way to for envoy to automatically inject an `id_token` into the upstream request.
+
+It does this as an http filter that first acquires the token from a metadata service.  If you want to use this repos' metadata service to test with, 
+
+
+run enovy 
+
+```bash
+cd example/envoy_gcp_authentication/
+
+docker cp `docker create  envoyproxy/envoy-dev:latest`:/usr/local/bin/envoy /tmp/
+
+/tmp/envoy -c sidecar.yaml -l debug
+```
+
+then when you invoke envoy, the request has the id_token added on by envoy.  The echo response in this example shows the headers upstream:
+
+
+```bash
+$ curl -v  http://localhost:18080/get
+{
+  "args": {}, 
+  "headers": {
+    "Accept": "*/*", 
+    "Authorization": "Bearer eyJhbGciOiJSU...", 
+    "Host": "localhost", 
+    "User-Agent": "curl/8.8.0", 
+    "X-Amzn-Trace-Id": "Root=1-672a30f1-74e63bf55e1f189f3eedac33", 
+    "X-Envoy-Expected-Rq-Timeout-Ms": "15000"
+  }, 
+  "origin": "71.127.34.114", 
+  "url": "https://localhost/get"
+}
+```
+
+the token has the audience set to the envoy configuration file
+
+```json
+{
+  "aud": "http://test.com",
+  "azp": "metadata-sa@$PROJECT.iam.gserviceaccount.com",
+  "email": "metadata-sa@$PROJECT.iam.gserviceaccount.com",
+  "email_verified": true,
+  "exp": 1730821889,
+  "iat": 1730818289,
+  "iss": "https://accounts.google.com",
+  "sub": "100890260483227123111"
+}
 ```
 
 ## Metrics

@@ -1,0 +1,93 @@
+admin:
+node:
+  cluster: service_greeter
+  id: test-id
+
+static_resources:
+  listeners:
+  - name: listener_0
+    address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 18080      
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: ingress_http
+          codec_type: AUTO
+          http2_protocol_options: {}          
+          route_config:
+            name: local_route
+            virtual_hosts:
+            - name: local_service
+              domains:
+              - "*"
+              routes:
+              - match:
+                  prefix: "/"
+                route:
+                  cluster: service_httpbin
+          http_filters:
+          - name: envoy.filters.http.gcp_authn
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.gcp_authn.v3.GcpAuthnFilterConfig
+              http_uri:
+                uri: "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=[AUDIENCE]"
+                cluster: "gcp_authn"
+                timeout: 10s       
+                
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router    
+
+  secrets:
+  - name: credential-bearer
+    generic_secret:
+      secret:
+        filename: "/tmp/token"
+
+  clusters:
+  - name: service_httpbin
+    connect_timeout: 0.25s
+    type: strict_dns
+    lb_policy: round_robin
+    load_assignment:
+      cluster_name: service_httpbin
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: httpbin.org
+                port_value: 443
+    typed_extension_protocol_options:
+      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config:
+          http2_protocol_options:
+            {}
+    metadata:
+      typed_filter_metadata:
+        envoy.filters.http.gcp_authn:
+          "@type": type.googleapis.com/envoy.extensions.filters.http.gcp_authn.v3.Audience
+          url: http://test.com
+    transport_socket:
+      name: envoy.transport_sockets.tls
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+
+  - name: gcp_authn
+    type: STRICT_DNS
+    connect_timeout: 5s
+    dns_lookup_family: V4_ONLY
+    load_assignment:
+      cluster_name: "gcp_authn"
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: 127.0.0.1
+                port_value: 8080

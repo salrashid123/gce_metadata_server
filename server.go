@@ -331,6 +331,10 @@ func (h *MetadataServer) checkMetadataHeaders(next http.Handler) http.Handler {
 
 		glog.V(10).Infof("Got Request: path[%s] query[%s]", r.URL.Path, r.URL.RawQuery)
 
+		for k, v := range r.Header {
+			glog.V(20).Infof("%s: %s", k, v)
+		}
+
 		if r.URL.Query().Has("recursive") {
 			if strings.ToLower(r.URL.Query().Get("recursive")) == "true" {
 				glog.Warning("WARNING: ?recursive=true has limited depth support; check handler implementation")

@@ -441,13 +441,16 @@ tpm2_flushcontext -t
 tpm2_load -C primary.ctx -u key.pub -r key.prv -c key.ctx
 tpm2_flushcontext -t
 
+## either persist the key to a handle
 tpm2_evictcontrol -C o -c key.ctx 0x81010002
 
-# if you have tpm2-tss-engine installed, you can save as encrypted PEM
-## or use https://github.com/salrashid123/tpm2genkey
-# tpm2tss-genkey -u key.pub -r key.prv private.pem
+### or as PEM format file
+## to create a TPM PEM formatted file,
+## either use https://github.com/salrashid123/tpm2genkey
+## or just
+tpm2_encodeobject -C primary.ctx -u key.pub -r key.prv -o private.pem
 
-## which formats it as TPM-encrypted PEM:
+## this formats it as TPM-encrypted PEM:
 cat private.pem 
 -----BEGIN TSS2 PRIVATE KEY-----
 MIICNQYGZ4EFCgEDoAMBAf8CBEAAAAEEggEaARgAAQALAAQAQAAAABAAFAALCAAA

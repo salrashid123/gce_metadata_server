@@ -5,7 +5,7 @@
     "start": "node app.js"
   },
   "dependencies": {
-    "log4js": "^0.6.27",
+    "log4js": "^6.4.0",
     "@google-cloud/storage": "6.10.1",
     "gcp-metadata": "5.2.0"
   }

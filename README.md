@@ -17,7 +17,7 @@ To use, first run the emulator:
 
 Note the credentials for the server can be sourced from a service account key, workload federation, `Trusted Platform Module (TPM)` or statically provided as environment variable.  The example above uses a key.
 
-Then in a new window, export some env vars google SDK's under
+Then in a new window, export some env vars google SDK's understands
 
 ```bash
 export GCE_METADATA_HOST=localhost:8080
@@ -401,12 +401,12 @@ If the service account private key is bound inside a `Trusted Platform Module (T
 
 >> Note: not all platforms supports this mode.  The underlying go-tpm library is only supported on a few of the targets (`linux/darwin + amd64,arm64`).  If you need support for other platforms, one option is to comment the sections for the TPM, remove the library bindings and compile.
 
-Before using this mode, the key _must be_ sealed into the TPM and surfaced as a `persistentHandle`.  This can be done in a number of ways described [here](https://github.com/salrashid123/oauth2/blob/master/README.md#usage-tpmtokensource): 
+Before using this mode, the key _must be_ sealed into the TPM and surfaced as a `persistentHandle` or as a [PEM encoded TPM Keyfile](https://github.com/salrashid123/tpm2/tree/master/tpm-key).  This can be done in a number of ways described [here](https://github.com/salrashid123/oauth2/blob/master/README.md#usage-tpmtokensource): 
 
 Basically, you can either
 
 - `A` download a Google ServiceAccount's json file and embed the private part to the TPM. [example](https://github.com/salrashid123/oauth2/blob/master/README.md#a-import-service-account-json-to-tpm)
-- `B` Generate a Key _on the TPM_ and then import the public part to GCP. [example](https://github.com/salrashid123/oauth2/blob/master/README.md#b-generate-key-on-tpm-and-export-public-x509-certificate-to-gcp)
+- `B` Generate a Key _on the TPM_ and then [import the public part to GCP](https://cloud.google.com/iam/docs/keys-upload). [example](https://github.com/salrashid123/oauth2/blob/master/README.md#b-generate-key-on-tpm-and-export-public-x509-certificate-to-gcp).  Note that you can [upload atmost 10 keys per service account](https://cloud.google.com/iam/quotas#limits)
 - `C` remote seal the service accounts RSA Private key, encrypt it with TPM's Endorsement Key and load it securely inside the TPM. [example](https://gist.github.com/salrashid123/9e4a0328fd8c84374ace78c76a1e34cb)
 
 `A` is the easiest for a demo
@@ -447,7 +447,8 @@ tpm2_evictcontrol -C o -c key.ctx 0x81010002
 ### or as PEM format file
 ## to create a TPM PEM formatted file,
 ## either use https://github.com/salrashid123/tpm2genkey
-## or just
+### ref https://github.com/salrashid123/tpm2/tree/master/tpm-key
+## or just use tpm2_encodeobject
 tpm2_encodeobject -C primary.ctx -u key.pub -r key.prv -o private.pem
 
 ## this formats it as TPM-encrypted PEM:

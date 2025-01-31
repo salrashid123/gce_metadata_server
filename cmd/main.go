@@ -248,10 +248,17 @@ func main() {
 				os.Exit(1)
 			}
 
-			// specify its parent directly
+			/*
+				Template for the H2 h-2 is described in pg 43 [TCG EK Credential Profile](https://trustedcomputinggroup.org/wp-content/uploads/TCG_IWG_EKCredentialProfile_v2p4_r2_10feb2021.pdf)
+
+				for use with KeyFiles described in 	[ASN.1 Specification for TPM 2.0 Key Files](https://www.hansenpartnership.com/draft-bottomley-tpm2-keys.html#name-parent)
+
+				printf '\x00\x00' > unique.dat
+				tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+			*/
 			primaryKey, err := tpm2.CreatePrimary{
 				PrimaryHandle: key.Parent,
-				InPublic:      tpm2.New2B(mds.ECCSRK_H_Template),
+				InPublic:      tpm2.New2B(keyfile.ECCSRK_H2_Template),
 			}.Execute(rwr)
 			if err != nil {
 				glog.Error("can't create primary: %v", err)

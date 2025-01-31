@@ -176,13 +176,15 @@ r.Handle("/")
     - [Run with containers](#run-with-containers)
     - [Running as Kubernetes Service](#running-as-kubernetes-service)
     - [Static environment variables](#static-environment-variables)
-- [Dynamic Configuration File Updates](#dynamic-configuration-file-updates)
-- [ETag](#etag)    
-- [Extending the sample](#extending-the-sample)
-- [Using link-local address](#using-link-local-address)
-- [Using domain sockets](#using-domain-sockets)
-- [Building with Bazel](#building-with-bazel)
-- [Building with Kaniko](#building-with-kaniko)
+* [Dynamic Configuration File Updates](#dynamic-configuration-file-updates)
+* [ETag](#etag)    
+* [Extending the sample](#extending-the-sample)
+* [Using link-local address](#using-link-local-address)
+* [Using domain sockets](#using-domain-sockets)
+* [Building with Bazel](#building-with-bazel)
+* [Building with Kaniko](#building-with-kaniko)
+* [Verify Release Binary](#verify-release-binary)
+* [Verify Container Image Signature](#verify-container-image-signature)
 * [GCE mTLS](#gce-mtls)
 * [Envoy Authentication Filter](#envoy-authentication-filter)  
 * [Metrics](#metrics)
@@ -1041,7 +1043,7 @@ $ cosign verify --certificate-identity=salrashid123@gmail.com  --certificate-oid
 # $ rekor-cli get --rekor_server https://rekor.sigstore.dev  --log-index $LogIndex  --format=json | jq '.'
 ```
 
-## GCE mTLS
+#### GCE mTLS
 
 GCE metadata server also supports a mode where [mTLS is used](https://cloud.google.com/compute/docs/metadata/overview#https-mds)
 
@@ -1099,7 +1101,7 @@ Certificate:
 
 ## Envoy Authentication Filter
 
-[GCP Authentication Filter](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/gcp_authn_filter) provides a way to for envoy to automatically inject an `id_token` into the upstream request.
+[GCP Authentication Filter](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/gcp_authn_filter) provides a way to for envoy to automatically inject an `id_token` into the upstream request.
 
 It does this as an http filter that first acquires the token from a metadata service.  If you want to use this repos' metadata service to test with, 
 
@@ -1115,7 +1117,6 @@ docker cp `docker create  envoyproxy/envoy-dev:latest`:/usr/local/bin/envoy /tmp
 ```
 
 then when you invoke envoy, the request has the id_token added on by envoy.  The echo response in this example shows the headers upstream:
-
 
 ```bash
 $ curl -v  http://localhost:18080/get

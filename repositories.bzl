@@ -88,8 +88,14 @@ def go_repositories():
     go_repository(
         name = "com_github_foxboron_go_tpm_keyfiles",
         importpath = "github.com/foxboron/go-tpm-keyfiles",
-        sum = "h1:xjkw6mnSWU9pi9QLQFRTvguUXwlxqgYPDI9O5xMHfTc=",
-        version = "v0.0.0-20240602112003-cb560bbb13d0",
+        sum = "h1:kwNzot0LHHST1wdN8zP5hSWITzPubfEZlwyRspMAzFg=",
+        version = "v0.0.0-20241207144721-04534a2f2feb",
+    )
+    go_repository(
+        name = "com_github_foxboron_swtpm_test",
+        importpath = "github.com/foxboron/swtpm_test",
+        sum = "h1:50sW4r0PcvlpG4PV8tYh2RVCapszJgaOLRCS2subvV4=",
+        version = "v0.0.0-20230726224112-46aaafdf7006",
     )
     go_repository(
         name = "com_github_fsnotify_fsnotify",
@@ -241,7 +247,7 @@ def go_repositories():
         importpath = "github.com/googleapis/gax-go/v2",
         sum = "h1:9gWcmF85Wvq4ryPFvGFaOgPIs1AQX0d0bcbGw4Z96qg=",
         version = "v2.12.4",
-    )    
+    )
     go_repository(
         name = "com_github_gorilla_mux",
         importpath = "github.com/gorilla/mux",

@@ -12,13 +12,13 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/salrashid123/golang-jwt-tpm v1.8.1
 	github.com/salrashid123/oauth2/tpm v0.0.0-20240905132258-ae22aa4dc55d
-	golang.org/x/net v0.26.0
+	golang.org/x/net v0.26.0 // indirect
 	golang.org/x/oauth2 v0.21.0
 	google.golang.org/api v0.183.0
 )
 
 require (
-	github.com/foxboron/go-tpm-keyfiles v0.0.0-20240602112003-cb560bbb13d0
+	github.com/foxboron/go-tpm-keyfiles v0.0.0-20241207144721-04534a2f2feb
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/prometheus/client_golang v1.19.1
 )
@@ -40,7 +40,6 @@ require (
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.54.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
-	github.com/salrashid123/signer v0.8.4 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.52.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.52.0 // indirect

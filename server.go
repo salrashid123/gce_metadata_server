@@ -95,56 +95,6 @@ var (
 		},
 		[]string{"code", "path"},
 	)
-
-	/*
-		Template for the H2 h-2 is described in pg 43 [TCG EK Credential Profile](https://trustedcomputinggroup.org/wp-content/uploads/TCG_IWG_EKCredentialProfile_v2p4_r2_10feb2021.pdf)
-
-		for use with KeyFiles described in 	[ASN.1 Specification for TPM 2.0 Key Files](https://www.hansenpartnership.com/draft-bottomley-tpm2-keys.html#name-parent)
-
-		printf '\x00\x00' > unique.dat
-		tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
-	*/
-	ECCSRK_H_Template = tpm2.TPMTPublic{
-		Type:    tpm2.TPMAlgECC,
-		NameAlg: tpm2.TPMAlgSHA256,
-		ObjectAttributes: tpm2.TPMAObject{
-			FixedTPM:            true,
-			FixedParent:         true,
-			SensitiveDataOrigin: true,
-			UserWithAuth:        true,
-			NoDA:                true,
-			Restricted:          true,
-			Decrypt:             true,
-		},
-		Parameters: tpm2.NewTPMUPublicParms(
-			tpm2.TPMAlgECC,
-			&tpm2.TPMSECCParms{
-				Symmetric: tpm2.TPMTSymDefObject{
-					Algorithm: tpm2.TPMAlgAES,
-					KeyBits: tpm2.NewTPMUSymKeyBits(
-						tpm2.TPMAlgAES,
-						tpm2.TPMKeyBits(128),
-					),
-					Mode: tpm2.NewTPMUSymMode(
-						tpm2.TPMAlgAES,
-						tpm2.TPMAlgCFB,
-					),
-				},
-				CurveID: tpm2.TPMECCNistP256,
-			},
-		),
-		Unique: tpm2.NewTPMUPublicID(
-			tpm2.TPMAlgECC,
-			&tpm2.TPMSECCPoint{
-				X: tpm2.TPM2BECCParameter{
-					Buffer: make([]byte, 0),
-				},
-				Y: tpm2.TPM2BECCParameter{
-					Buffer: make([]byte, 0),
-				},
-			},
-		),
-	}
 )
 
 const (
@@ -159,20 +109,6 @@ const (
 	defaultMetricsPath      = "/metrics"
 	defaultMetricsInterface = "127.0.0.1"
 	defaultMetricsPort      = "9000"
-
-	metadata404Body = `
-<!DOCTYPE html>
-<html lang=en>
-	<meta charset=utf-8>
-	<meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
-	<title>Error 404 (Not Found)!!1</title>
-	<style>
-		*{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0% 0%/100% 100%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100% 100%}}#logo{display:inline-block;height:54px;width:150px}
-	</style>
-	<a href=//www.google.com/><span id=logo aria-label=Google></span></a>
-	<p><b>404.</b> <ins>That’s an error.</ins>
-	<p>The requested URL <code>/computeMetadata/v1/project/attributes/ssh-keysd</code> was not found on this server.  <ins>That’s all we know.</ins>
-`
 )
 
 // Configures the base runtime for the metadata server.
@@ -201,6 +137,20 @@ type ServerConfig struct {
 	RootCAmTLS string // ca to validate client certs (default "")
 	ServerCert string // server certificate for mtls (default: "")
 	ServerKey  string // server key for mtls (default: "")
+}
+
+func notFoundErrorHandler(path string) string {
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html lang=en>
+  <meta charset=utf-8>
+  <meta name=viewport content="initial-scale=1, minimum-scale=1, width=device-width">
+  <title>Error 404 (Not Found)!!1</title>
+  <style>
+     *{margin:0;padding:0}html,code{font:15px/22px arial,sans-serif}html{background:#fff;color:#222;padding:15px}body{margin:7%% auto 0;max-width:390px;min-height:180px;padding:30px 0 15px}* > body{background:url(//www.google.com/images/errors/robot.png) 100%% 5px no-repeat;padding-right:205px}p{margin:11px 0 22px;overflow:hidden}ins{color:#777;text-decoration:none}a img{border:0}@media screen and (max-width:772px){body{background:none;margin-top:0;max-width:none;padding-right:0}}#logo{background:url(//www.google.com/images/branding/googlelogo/1x/googlelogo_color_150x54dp.png) no-repeat;margin-left:-5px}@media only screen and (min-resolution:192dpi){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat 0%% 0%%/100%% 100%%;-moz-border-image:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) 0}}@media only screen and (-webkit-min-device-pixel-ratio:2){#logo{background:url(//www.google.com/images/branding/googlelogo/2x/googlelogo_color_150x54dp.png) no-repeat;-webkit-background-size:100%% 100%%}}#logo{display:inline-block;height:54px;width:150px}
+  </style>
+  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+  <p><b>404.</b> <ins>That’s an error.</ins>
+  <p>The requested URL <code>%s<code> was not found on this server.  <ins>That’s all we know.</ins>`, path)
 }
 
 func prometheusMiddleware(next http.Handler) http.Handler {
@@ -398,7 +348,7 @@ func (h *MetadataServer) rootHandler(w http.ResponseWriter, r *http.Request) {
 
 func (h *MetadataServer) notFound(w http.ResponseWriter, r *http.Request) {
 	glog.Infof("%s called but is not implemented", r.URL.Path)
-	httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+	httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 }
 
 func (h *MetadataServer) computeMetadataHandler(w http.ResponseWriter, r *http.Request) {
@@ -510,7 +460,7 @@ func (h *MetadataServer) computeMetadatav1ProjectAttributesKeyHandler(w http.Res
 	} else {
 		w.WriteHeader(http.StatusNotFound)
 		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
-		fmt.Fprint(w, metadata404Body)
+		fmt.Fprintf(w, notFoundErrorHandler(r.URL.Path))
 	}
 }
 
@@ -594,7 +544,7 @@ func (h *MetadataServer) getServiceAccountHandler(w http.ResponseWriter, r *http
 		return
 
 	default:
-		httpError(w, http.StatusText(http.StatusNotFound), http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 
@@ -846,7 +796,7 @@ func (h *MetadataServer) computeMetadatav1InstanceKeyHandler(w http.ResponseWrit
 		}
 		w.Header().Set("Content-Type", "application/json")
 	default:
-		httpError(w, http.StatusText(http.StatusNotFound), http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	e := getETag(res)
@@ -882,7 +832,7 @@ func (h *MetadataServer) computeMetadatav1InstanceAttributesKeyHandler(w http.Re
 	} else {
 		w.WriteHeader(http.StatusNotFound)
 		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
-		fmt.Fprint(w, metadata404Body)
+		fmt.Fprintf(w, notFoundErrorHandler(r.URL.Path))
 	}
 }
 
@@ -904,11 +854,11 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceHandler(w http
 	vars := mux.Vars(r)
 	i, err := strconv.Atoi(vars["index"])
 	if err != nil {
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	if len(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces) < i+1 {
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	if h.handleRecursion(w, r, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i]) {
@@ -926,11 +876,11 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceKeyHandler(w h
 	vars := mux.Vars(r)
 	i, err := strconv.Atoi(vars["index"])
 	if err != nil {
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	if len(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces) < i+1 {
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	switch vars["key"] {
@@ -959,7 +909,7 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceKeyHandler(w h
 	case "subnet-mask":
 		resp = []byte(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].Subnetmask)
 	default:
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	w.Header().Set("Content-Type", "application/text")
@@ -972,11 +922,11 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsH
 	vars := mux.Vars(r)
 	i, err := strconv.Atoi(vars["index"])
 	if err != nil {
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	if len(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces) < i+1 {
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	if h.handleRecursion(w, r, h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs) {
@@ -996,20 +946,20 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsI
 	vars := mux.Vars(r)
 	i, err := strconv.Atoi(vars["index"])
 	if err != nil {
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	if len(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces) < i+1 {
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	k, err := strconv.Atoi(vars["index2"])
 	if err != nil {
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	if len(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs) < k+1 {
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 
@@ -1028,20 +978,20 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsI
 	vars := mux.Vars(r)
 	i, err := strconv.Atoi(vars["index"])
 	if err != nil {
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	if len(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces) < i+1 {
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	k, err := strconv.Atoi(vars["index2"])
 	if err != nil {
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	if len(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs) < k+1 {
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	h.handleBasePathRedirect(w, r)
@@ -1052,21 +1002,21 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsK
 	vars := mux.Vars(r)
 	i, err := strconv.Atoi(vars["index"])
 	if err != nil {
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	if len(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces) < i+1 {
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	k, err := strconv.Atoi(vars["index2"])
 	if err != nil {
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 
 	if len(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs) < k+1 {
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 
@@ -1076,7 +1026,7 @@ func (h *MetadataServer) computeMetadatav1InstanceNetworkInterfaceAccessConfigsK
 	case "type":
 		resp = []byte(h.Claims.ComputeMetadata.V1.Instance.NetworkInterfaces[i].AccessConfigs[k].Type)
 	default:
-		httpError(w, metadata404Body, http.StatusNotFound, "text/html; charset=UTF-8")
+		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
 	w.Header().Set("Content-Type", "application/text")

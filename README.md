@@ -999,11 +999,10 @@ If you download a binary from the "Releases" page, you can verify the signature 
 gpg --keyserver keys.openpgp.org --recv-keys 3FCD7ECFB7345F2A98F9F346285AEDB3D5B5EF74
 
 ## to verify the checksum file for a given release:
-export VERSION=3.93.0
-wget https://github.com/salrashid123/gce_metadata_server/releases/download/v$VERSION/gce_metadata_server_$VERSION_checksums.txt
-wget https://github.com/salrashid123/gce_metadata_server/releases/download/v$VERSION/gce_metadata_server_$VERSION_checksums.txt.sig
+wget https://github.com/salrashid123/gce_metadata_server/releases/download/v3.93.0/gce_metadata_server_3.93.0_checksums.txt
+wget https://github.com/salrashid123/gce_metadata_server/releases/download/v3.93.0/gce_metadata_server_3.93.0_checksums.txt.sig
 
-gpg --verify gce_metadata_server_$VERSION_checksums.txt.sig gce_metadata_server_$VERSION_checksums.txt
+gpg --verify gce_metadata_server_3.93.0_checksums.txt.sig gce_metadata_server_3.93.0_checksums.txt
 ```
 
 #### Verify Container Image Signature

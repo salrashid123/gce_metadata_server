@@ -1,4 +1,4 @@
-load("@bazel_gazelle//:deps.bzl", "go_repository")
+load("@gazelle//:deps.bzl", "go_repository")
 
 def go_repositories():
     go_repository(
@@ -243,7 +243,6 @@ def go_repositories():
     )
     go_repository(
         name = "com_github_googleapis_gax_go_v2",
-        build_file_proto_mode = "disable_global",        
         importpath = "github.com/googleapis/gax-go/v2",
         sum = "h1:9gWcmF85Wvq4ryPFvGFaOgPIs1AQX0d0bcbGw4Z96qg=",
         version = "v2.12.4",
@@ -355,12 +354,6 @@ def go_repositories():
         importpath = "github.com/salrashid123/oauth2/tpm",
         sum = "h1:zBbsZQe2wxGHIJBZ2kdsj/pQT6wH9HDMNAOzYtxLW60=",
         version = "v0.0.0-20240905132258-ae22aa4dc55d",
-    )
-    go_repository(
-        name = "com_github_salrashid123_signer",
-        importpath = "github.com/salrashid123/signer",
-        sum = "h1:4D8xtYnxVF8+kqWXouHtEZDPc3Frio/974MatOUF5w0=",
-        version = "v0.8.4",
     )
     go_repository(
         name = "com_github_salrashid123_signer_tpm",
@@ -530,12 +523,12 @@ def go_repositories():
         sum = "h1:KH3VH9y/MgNQg1dE7b3XfVK0GsPSIzJwdF617gUSbvY=",
         version = "v1.64.0",
     )
-    #go_repository(
-    #    name = "org_golang_google_protobuf",
-    #    importpath = "google.golang.org/protobuf",
-    #    sum = "h1:9ddQBjfCyZPOHPUiPxpYESBLc+T8P3E+Vo4IbKZgFWg=",
-    #    version = "v1.34.1",
-    #)
+    go_repository(
+        name = "org_golang_google_protobuf",
+        importpath = "google.golang.org/protobuf",
+        sum = "h1:9ddQBjfCyZPOHPUiPxpYESBLc+T8P3E+Vo4IbKZgFWg=",
+        version = "v1.34.1",
+    )
     go_repository(
         name = "org_golang_x_crypto",
         importpath = "golang.org/x/crypto",

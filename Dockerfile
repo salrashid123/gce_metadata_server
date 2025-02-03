@@ -1,5 +1,5 @@
-# go1.22.2 linux/amd64
-FROM --platform=$BUILDPLATFORM docker.io/golang@sha256:d5302d40dc5fbbf38ec472d1848a9d2391a13f93293a6a5b0b87c99dc0eaa6ae as build
+# go1.23.4 linux/amd64
+FROM --platform=$BUILDPLATFORM docker.io/golang@sha256:9820aca42262f58451f006de3213055974b36f24b31508c1baa73c967fcecb99 as build
 
 WORKDIR /go/src/app
 COPY . .

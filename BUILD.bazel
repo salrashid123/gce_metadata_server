@@ -1,37 +1,47 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@gazelle//:def.bzl", "gazelle")
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_image_index", "oci_push", "oci_tarball")
 load("@rules_pkg//:pkg.bzl", "pkg_tar")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push", "oci_tarball", "oci_image_index")
-load("@bazel_gazelle//:def.bzl", "gazelle")
 
 gazelle(name = "gazelle")
+# gazelle:exclude examples
 
 exports_files(["config.json"])
 
 go_library(
     name = "go_default_library",
-    srcs = [
-        "server.go",
-    ],
+    srcs = ["server.go"],
     importpath = "github.com/salrashid123/gce_metadata_server",
     visibility = ["//visibility:public"],
     deps = [
-        "@org_golang_x_oauth2//:go_default_library",
-        "@org_golang_x_oauth2//google:go_default_library", 
-        "@org_golang_google_api//idtoken:go_default_library",
-        "@org_golang_google_api//impersonate:go_default_library",
+        "@com_github_golang_glog//:go_default_library",
+        "@com_github_golang_jwt_jwt_v5//:go_default_library",
         "@com_github_google_go_tpm//tpm2:go_default_library",
         "@com_github_google_go_tpm//tpm2/transport:go_default_library",
+        "@com_github_gorilla_mux//:go_default_library",
+        "@com_github_prometheus_client_golang//prometheus:go_default_library",
+        "@com_github_prometheus_client_golang//prometheus/promauto:go_default_library",
+        "@com_github_prometheus_client_golang//prometheus/promhttp:go_default_library",
+        "@com_github_salrashid123_golang_jwt_tpm//:go_default_library",
         "@com_google_cloud_go_iam//credentials/apiv1:go_default_library",
         "@com_google_cloud_go_iam//credentials/apiv1/credentialspb:go_default_library",
-        "@com_github_salrashid123_golang_jwt_tpm//:go_default_library",
-        "@com_github_salrashid123_oauth2_tpm//:go_default_library",        
-        "@com_github_golang_jwt_jwt_v5//:go_default_library",
-        "@com_github_golang_glog//:go_default_library",
-        "@com_github_gorilla_mux//:go_default_library",
-        "@org_golang_x_net//http2:go_default_library",
-        "@org_golang_google_api//option:go_default_library",
-        "@com_github_prometheus_client_golang//prometheus:go_default_library",
-        "@com_github_prometheus_client_golang//prometheus/promauto:go_default_library",     
-        "@com_github_prometheus_client_golang//prometheus/promhttp:go_default_library",        
+        "@org_golang_google_api//idtoken:go_default_library",
+        "@org_golang_google_api//impersonate:go_default_library",
+        "@org_golang_x_oauth2//:go_default_library",
+        "@org_golang_x_oauth2//google:go_default_library",
     ],
 )
+
+go_test(
+    name = "go_default_test",
+    srcs = ["server_test.go"],
+    timeout = "short",    
+    embed = [":go_default_library"],
+    deps = [
+        "@com_github_gorilla_mux//:go_default_library",
+        "@com_google_cloud_go_compute_metadata//:go_default_library",
+        "@org_golang_x_oauth2//:go_default_library",
+        "@org_golang_x_oauth2//google:go_default_library",
+    ],
+)
+

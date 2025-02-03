@@ -950,8 +950,12 @@ socat TCP-LISTEN:8080,fork,reuseaddr UNIX-CONNECT:/tmp/metadata.sock
 If you want to build the server using bazel (eg, [deterministic](https://github.com/salrashid123/go-grpc-bazel-docker)),
 
 ```bash
-# $ bazel version
-#   Build label: 6.2.1
+$ bazel version
+    Build label: 8.0.1
+    Build target: @@//src/main/java/com/google/devtools/build/lib/bazel:BazelServer
+    Build time: Fri Jan 17 19:16:16 2025 (1737141376)
+    Build timestamp: 1737141376
+    Build timestamp as int: 1737141376
 
 ## generate dependencies
 # bazel run :gazelle -- update-repos -from_file=go.mod -prune=true -to_macro=repositories.bzl%go_repositories
@@ -965,29 +969,6 @@ bazel build cmd:tar-oci-index
 
 ## to push the image a repo, edit cmd/BUILD.bazel and set the push-image target repository
 bazel run cmd:push-image  
-```
-
-side note:  getting bazel to work with google apis is a bit brittle.  
-
-make the following edits to `repositories.bzl`
-
-```bash
-### add build_file_proto_mode directive here
-    go_repository(
-        name = "com_github_googleapis_gax_go_v2",
-        build_file_proto_mode = "disable_global",        
-        importpath = "github.com/googleapis/gax-go/v2",
-        sum = "h1:9gWcmF85Wvq4ryPFvGFaOgPIs1AQX0d0bcbGw4Z96qg=",
-        version = "v2.12.4",
-    )    
-
-### after upgrading google.golang.org/protobuf-->v1.33.0, i had to comment out 
-    #go_repository(
-    #    name = "org_golang_google_protobuf",
-    #    importpath = "google.golang.org/protobuf",
-    #    sum = "h1:9ddQBjfCyZPOHPUiPxpYESBLc+T8P3E+Vo4IbKZgFWg=",
-    #    version = "v1.34.1",
-    #)
 ```
 
 #### Building with Kaniko
@@ -1015,13 +996,14 @@ This is useful for unit tests and fakes.  For additional examples, please see th
 If you download a binary from the "Releases" page, you can verify the signature with GPG:
 
 ```bash
-gpg --keyserver keyserver.ubuntu.com --recv-keys 5D8EA7261718FE5728BA937C97341836616BF511
+gpg --keyserver keys.openpgp.org --recv-keys 3FCD7ECFB7345F2A98F9F346285AEDB3D5B5EF74
 
 ## to verify the checksum file for a given release:
-wget https://github.com/salrashid123/gce_metadata_server/releases/download/v3.4.1/gce_metadata_server_3.4.1_checksums.txt
-wget https://github.com/salrashid123/gce_metadata_server/releases/download/v3.4.1/gce_metadata_server_3.4.1_checksums.txt.sig
+export VERSION=3.93.0
+wget https://github.com/salrashid123/gce_metadata_server/releases/download/v$VERSION/gce_metadata_server_$VERSION_checksums.txt
+wget https://github.com/salrashid123/gce_metadata_server/releases/download/v$VERSION/gce_metadata_server_$VERSION_checksums.txt.sig
 
-gpg --verify gce_metadata_server_3.4.1_checksums.txt.sig gce_metadata_server_3.4.1_checksums.txt
+gpg --verify gce_metadata_server_$VERSION_checksums.txt.sig gce_metadata_server_$VERSION_checksums.txt
 ```
 
 #### Verify Container Image Signature
@@ -1185,4 +1167,21 @@ $ go test -v
 --- PASS: TestInstanceIDHandler (0.00s)
 PASS
 ok  	github.com/salrashid123/gce_metadata_server	0.053s
+```
+
+as bazel
+
+```bash
+$ bazel test :go_default_test 
+
+  INFO: Analyzed target //:go_default_test (0 packages loaded, 0 targets configured).
+  INFO: Found 1 test target...
+  Target //:go_default_test up-to-date:
+    bazel-bin/go_default_test_/go_default_test
+  INFO: Elapsed time: 0.364s, Critical Path: 0.00s
+  INFO: 1 process: 1 action cache hit, 1 internal.
+  INFO: Build completed successfully, 1 total action
+  //:go_default_test                                              (cached) PASSED in 0.1s
+
+  Executed 0 out of 1 test: 1 test passes.
 ```

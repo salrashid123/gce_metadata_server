@@ -19,7 +19,6 @@ import (
 	keyfile "github.com/foxboron/go-tpm-keyfiles"
 	"github.com/fsnotify/fsnotify"
 	"github.com/golang/glog"
-	"github.com/google/go-tpm-tools/simulator"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpm2/transport"
 	"github.com/google/go-tpm/tpmutil"
@@ -66,8 +65,8 @@ var TPMDEVICES = []string{"/dev/tpm0", "/dev/tpmrm0"}
 func OpenTPM(path string) (io.ReadWriteCloser, error) {
 	if slices.Contains(TPMDEVICES, path) {
 		return tpmutil.OpenTPM(path)
-	} else if path == "simulator" {
-		return simulator.GetWithFixedSeedInsecure(1073741825)
+		// } else if path == "simulator" {
+		// 	return simulator.Get()
 	} else {
 		return net.Dial("tcp", path)
 	}
@@ -100,7 +99,7 @@ func main() {
 	var namedHandle tpm2.NamedHandle
 	var authSession tpmjwt.Session
 	// parse TPM PCR values (if set)
-	var pcrList = []int{}
+	var pcrList = []uint{}
 	if *pcrs != "" && *useTPM {
 		strpcrs := strings.Split(*pcrs, ",")
 		for _, i := range strpcrs {
@@ -109,7 +108,7 @@ func main() {
 				glog.Error("ERROR:  could convert pcr value: %v", err)
 				os.Exit(1)
 			}
-			pcrList = append(pcrList, j)
+			pcrList = append(pcrList, uint(j))
 		}
 	}
 
@@ -202,18 +201,6 @@ func main() {
 
 		// configure a session
 		if *pcrs != "" {
-			strpcrs := strings.Split(*pcrs, ",")
-			var pcrList = []uint{}
-
-			for _, i := range strpcrs {
-				j, err := strconv.Atoi(i)
-				if err != nil {
-					glog.Error(os.Stderr, "ERROR:  could convert pcr value: %v", err)
-					os.Exit(1)
-				}
-				pcrList = append(pcrList, uint(j))
-			}
-
 			authSession, err = tpmjwt.NewPCRSession(rwr, []tpm2.TPMSPCRSelection{
 				{
 					Hash:      tpm2.TPMAlgSHA256,

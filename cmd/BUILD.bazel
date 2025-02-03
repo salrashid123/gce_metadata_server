@@ -1,40 +1,38 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@gazelle//:def.bzl", "gazelle")
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_image_index", "oci_push", "oci_tarball")
 load("@rules_pkg//:pkg.bzl", "pkg_tar")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push", "oci_tarball", "oci_image_index")
-load("@bazel_gazelle//:def.bzl", "gazelle")
 
 gazelle(name = "gazelle")
 
 go_binary(
     name = "main",
     out = "gce_metadata_server",
-    embed = [":cmd_lib"],
+    embed = [":go_default_library"],
+    goarch = "amd64",
+    goos = "linux",
     visibility = ["//visibility:public"],
-    goos = "linux", 
-    goarch = "amd64",     
 )
 
 go_library(
     name = "cmd_lib",
-    srcs = [
-        "main.go",
-    ],
+    srcs = ["main.go"],
     visibility = ["//visibility:private"],
     deps = [
         "//:go_default_library",
-        "@org_golang_x_oauth2//:go_default_library",
-        "@org_golang_x_oauth2//google:go_default_library", 
-        "@org_golang_google_api//impersonate:go_default_library",
-        "@com_google_cloud_go_iam//credentials/apiv1:go_default_library",
+        "@com_github_foxboron_go_tpm_keyfiles//:go_default_library",
+        "@com_github_fsnotify_fsnotify//:go_default_library",
+        "@com_github_golang_glog//:go_default_library",
         "@com_github_google_go_tpm//tpm2:go_default_library",
         "@com_github_google_go_tpm//tpm2/transport:go_default_library",
-        "@com_github_google_go_tpm_tools//simulator:go_default_library",
-        "@com_github_foxboron_go_tpm_keyfiles//:go_default_library",
-        "@com_github_golang_glog//:go_default_library",
         "@com_github_google_go_tpm//tpmutil:go_default_library",
+        "@com_github_google_go_tpm_tools//simulator:go_default_library",
+        "@com_github_salrashid123_golang_jwt_tpm//:go_default_library",
         "@com_github_salrashid123_oauth2_tpm//:go_default_library",
-        "@com_github_salrashid123_golang_jwt_tpm//:go_default_library",        
-        "@com_github_fsnotify_fsnotify//:go_default_library",
+        "@com_google_cloud_go_iam//credentials/apiv1:go_default_library",
+        "@org_golang_google_api//impersonate:go_default_library",
+        "@org_golang_x_oauth2//:go_default_library",
+        "@org_golang_x_oauth2//google:go_default_library",
     ],
 )
 
@@ -65,19 +63,23 @@ pkg_tar(
 oci_image(
     name = "server-image",
     base = "@distroless_base",
-    tars = [":config_bundle", ":certs_bundle", ":app-tar"],   
-    entrypoint = ["/gce_metadata_server"],
     cmd = [],
+    entrypoint = ["/gce_metadata_server"],
     env = {},
     exposed_ports = [
         "8080/tcp",
-    ],    
+    ],
+    tars = [
+        ":config_bundle",
+        ":certs_bundle",
+        ":app-tar",
+    ],
 )
 
 oci_tarball(
     name = "tar-docker",
-    image = "server-image",
     format = "docker",
+    image = "server-image",
     repo_tags = ["index.docker.io/salrashid123/gcemetadataserver"],
 )
 
@@ -85,19 +87,41 @@ oci_image_index(
     name = "app-index",
     images = [
         ":server-image",
-    ]
+    ],
 )
 
 oci_tarball(
     name = "tar-oci-index",
-    image = ":app-index",
     format = "oci",
+    image = ":app-index",
     repo_tags = ["index.docker.io/salrashid123/gcemetadataserver"],
 )
 
 oci_push(
     name = "push-image",
     image = ":server-image",
+    remote_tags = ["latest"],
     repository = "index.docker.io/salrashid123/gcemetadataserver",
-    remote_tags = ["latest"]
 )
+
+go_library(
+    name = "go_default_library",
+    srcs = ["main.go"],
+    importpath = "github.com/salrashid123/gce_metadata_server/cmd",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//:go_default_library",
+        "@com_github_foxboron_go_tpm_keyfiles//:go_default_library",
+        "@com_github_fsnotify_fsnotify//:go_default_library",
+        "@com_github_golang_glog//:go_default_library",
+        "@com_github_google_go_tpm//tpm2:go_default_library",
+        "@com_github_google_go_tpm//tpm2/transport:go_default_library",
+        "@com_github_google_go_tpm//tpmutil:go_default_library",
+        "@com_github_salrashid123_golang_jwt_tpm//:go_default_library",
+        "@com_github_salrashid123_oauth2_tpm//:go_default_library",
+        "@org_golang_google_api//impersonate:go_default_library",
+        "@org_golang_x_oauth2//:go_default_library",
+        "@org_golang_x_oauth2//google:go_default_library",
+    ],
+)
+

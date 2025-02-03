@@ -1,6 +1,6 @@
 module github.com/salrashid123/gce_metadata_server
 
-go 1.22.2
+go 1.23.4
 
 require (
 	cloud.google.com/go/compute/metadata v0.3.0
@@ -8,7 +8,6 @@ require (
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/golang/glog v1.2.1
 	github.com/google/go-tpm v0.9.1-0.20240514145214-58e3e47cd434
-	github.com/google/go-tpm-tools v0.4.4
 	github.com/gorilla/mux v1.8.1
 	github.com/salrashid123/golang-jwt-tpm v1.8.1
 	github.com/salrashid123/oauth2/tpm v0.0.0-20240905132258-ae22aa4dc55d
@@ -33,7 +32,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/google/go-sev-guest v0.11.1 // indirect
 	github.com/google/s2a-go v0.1.7 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
 	github.com/googleapis/gax-go/v2 v2.12.4 // indirect

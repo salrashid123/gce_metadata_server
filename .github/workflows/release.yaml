@@ -36,8 +36,8 @@ jobs:
           fetch-depth: 0
       - name: Set VERSION variable from tag
         run: | 
-          TAG=${{ github.event.release.tag_name }}
-          echo "VERSION=${TAG#v}" >> $GITHUB_ENV
+          VERSION=${{ github.event.release.tag_name }}
+          echo "VERSION=${VERSION:1}" >> $GITHUB_ENV
       - name: Set up Go
         uses: actions/setup-go@v5
 

@@ -81,4 +81,4 @@ sboms:
       - spdx-json
     documents:
       - ${artifact}.spdx.sbom
-    artifacts: archive
+    artifacts: binary

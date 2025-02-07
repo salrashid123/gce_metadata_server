@@ -37,7 +37,7 @@ archives:
       - README*    
       - dist/*.sig      
 snapshot:
-  version_template: '{{ .Version }}-SNAPSHOT-{{ .ShortCommit }}'
+  version_template: '{{ .Version }}'
 checksum:
   name_template: '{{ .ProjectName }}_{{ .Version }}_checksums.txt'
   algorithm: sha256
@@ -80,5 +80,5 @@ sboms:
       - --output
       - spdx-json
     documents:
-      - ${artifact}.spdx.sbom
+      - '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}.spdx.sbom'
     artifacts: binary

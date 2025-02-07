@@ -60,4 +60,4 @@ jobs:
           GPG_FINGERPRINT: ${{ secrets.GPG_FINGERPRINT }}
       - uses: actions/attest-build-provenance@v2
         with:
-          subject-checksums: ./dist/gce_metadata_server_${VERSION}_checksums.txt
+          subject-checksums: "dist/gce_metadata_server_${VERSION}_checksums.txt"

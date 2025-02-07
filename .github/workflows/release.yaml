@@ -4,6 +4,13 @@ on:
   push:
     tags:
       - '*'
+
+permissions:
+  contents: write # needed to write releases
+  id-token: write # needed for keyless signing
+  packages: write # needed for ghcr access
+  attestations: write # needed for provenance
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -27,7 +34,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
+      - name: Set VERSION variable from tag
+        run: | 
+          TAG=${{ github.event.release.tag_name }}
+          echo "VERSION=${TAG#v}" >> $GITHUB_ENV
       - name: Set up Go
         uses: actions/setup-go@v5
 
@@ -38,7 +48,8 @@ jobs:
           passphrase: ${{ secrets.PASSPHRASE }}
           git_user_signingkey: true
           git_commit_gpgsign: true
-
+      - uses: sigstore/cosign-installer@v3.8.0 # installs cosign
+      - uses: anchore/sbom-action/download-syft@v0.18.0 # installs syft
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
@@ -47,3 +58,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_FINGERPRINT: ${{ secrets.GPG_FINGERPRINT }}
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-checksums: ./dist/gce_metadata_server_${VERSION}_checksums.txt

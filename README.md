@@ -184,6 +184,7 @@ r.Handle("/")
 * [Building with Bazel](#building-with-bazel)
 * [Building with Kaniko](#building-with-kaniko)
 * [Verify Release Binary](#verify-release-binary)
+* [Verify Release Binary with github Attestation](#verify-release-binary-with-github-attestation)
 * [Verify Container Image Signature](#verify-container-image-signature)
 * [GCE mTLS](#gce-mtls)
 * [Envoy Authentication Filter](#envoy-authentication-filter)  
@@ -1004,6 +1005,43 @@ wget https://github.com/salrashid123/gce_metadata_server/releases/download/v3.93
 
 gpg --verify gce_metadata_server_3.93.0_checksums.txt.sig gce_metadata_server_3.93.0_checksums.txt
 ```
+
+#### Verify Release Binary with github Attestation
+
+You can also verify the binary using [github attestation](https://github.blog/news-insights/product-news/introducing-artifact-attestations-now-in-public-beta/)
+
+For example, the attestation for releases `[@refs/tags/v3.93.5]` can be found at
+
+* [https://github.com/salrashid123/gce_metadata_server/attestations](https://github.com/salrashid123/gce_metadata_server/attestations)
+
+Then to verify:
+
+```bash
+$ wget https://github.com/salrashid123/gce_metadata_server/releases/download/v3.93.5/gce_metadata_server_3.93.5_linux_amd64
+$ wget https://github.com/salrashid123/gce_metadata_server/attestations/4853131/download -O salrashid123-gce_metadata_server-attestation-4853131.json
+
+$ gh attestation verify --owner salrashid123 --bundle salrashid123-gce_metadata_server-attestation-4853131.json  gce_metadata_server_3.93.5_linux_amd64 
+
+Loaded digest sha256:1be0046bd047431ae0933e09e95e21e3146bff112099b08a54be1141b1576f92 for file://gce_metadata_server_3.93.5_linux_amd64
+Loaded 1 attestation from salrashid123-gce_metadata_server-attestation-4853131.json
+
+The following policy criteria will be enforced:
+- Predicate type must match:................ https://slsa.dev/provenance/v1
+- Source Repository Owner URI must match:... https://github.com/salrashid123
+- Subject Alternative Name must match regex: (?i)^https://github.com/salrashid123/
+- OIDC Issuer must match:................... https://token.actions.githubusercontent.com
+
+✓ Verification succeeded!
+
+The following 1 attestation matched the policy criteria
+
+- Attestation #1
+  - Build repo:..... salrashid123/gce_metadata_server
+  - Build workflow:. .github/workflows/release.yaml@refs/tags/v3.93.5
+  - Signer repo:.... salrashid123/gce_metadata_server
+  - Signer workflow: .github/workflows/release.yaml@refs/tags/v3.93.5
+```
+
 
 #### Verify Container Image Signature
 

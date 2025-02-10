@@ -45,3 +45,30 @@ go_test(
     ],
 )
 
+platform(
+    name = "linux_arm",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+platform(
+    name = "linux_x86",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+alias(
+    name = "linux_amd64",
+    actual = ":linux_x86",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "linux_arm64",
+    actual = ":linux_arm",
+    visibility = ["//visibility:public"],
+)

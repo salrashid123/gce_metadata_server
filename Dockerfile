@@ -8,7 +8,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -buildvcs=false  -o
 RUN chown root:root /go/bin/gce_metadata_server
 
 # base-debian11-root
-FROM gcr.io/distroless/base@sha256:b31a6e02605827e77b7ebb82a0ac9669ec51091edd62c2c076175e05556f4ab9
+FROM gcr.io/distroless/base@sha256:74ddbf52d93fafbdd21b399271b0b4aac1babf8fa98cab59e5692e01169a1348
 COPY --from=build /go/bin/gce_metadata_server /gce_metadata_server
 EXPOSE 8080
 ENTRYPOINT [ "/gce_metadata_server" ]

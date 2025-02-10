@@ -964,17 +964,16 @@ $ bazel version
 ## run
 bazel run cmd:main -- --configFile=`pwd`/config.json   -alsologtostderr -v 5 -port :8080 --serviceAccountFile=`pwd`/certs/metadata-sa.json 
 
-## to build the image
-bazel build cmd:tar-oci-index
-  ## oci image at bazel-bin/tar-oci-index/tarball.tar
+## to build the oci image tar
+# bazel build cmd:tar-oci-index
 
-## to push the image a repo, edit cmd/BUILD.bazel and set the push-image target repository
+## to push the image a repo
 bazel run cmd:push-image  
 ```
 
 #### Building with Kaniko
 
-The container image is built using kaniko with the `--reproducible` flag enabled:
+The container image can also be built using kaniko with the `--reproducible` flag enabled:
 
 ```bash
 export TAG=...
@@ -988,9 +987,6 @@ docker run    -v `pwd`:/workspace -v $HOME/.docker/config.json:/kaniko/.docker/c
 syft packages docker.io/salrashid123/gcemetadataserver:$TAG
 skopeo copy  --preserve-digests  docker://docker.io/salrashid123/gcemetadataserver:$TAG docker://docker.io/salrashid123/gcemetadataserver:latest
 ```
-
-
-This is useful for unit tests and fakes.  For additional examples, please see the `server_test.go` and `cmd/main.go`
 
 #### Verify Release Binary
 
@@ -1052,6 +1048,7 @@ The images are also signed using my github address (`salrashid123@gmail`).  If y
 IMAGE="index.docker.io/salrashid123/gcemetadataserver@sha256:c3cec9e18adb87a14889f19ab0c3c87d66339284b35ca72135ff9dcd58a59671"
 
 ## i signed it directly, keyless:
+export COSIGN_EXPERIMENTAL=1
 # $ cosign sign $IMAGE
 
 ## which you can verify:

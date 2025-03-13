@@ -555,19 +555,6 @@ curl -s -H 'Metadata-Flavor: Google' --connect-to metadata.google.internal:80:12
 }
 ```
 
-Please note the scopes used for this token is read in from the declared values in the config file.
-
-To mention, if the only use for this is to acquire credentials for use with a GCP SDK, consider any of the "process credential sources":
-
-* `golang`: [https://github.com/salrashid123/gcp_process_credentials_go](https://github.com/salrashid123/gcp_process_credentials_go)
-* `python`: [https://github.com/salrashid123/gcp_process_credentials_py](https://github.com/salrashid123/gcp_process_credentials_py)
-* `java`: [https://github.com/salrashid123/gcp_process_credentials_java](https://github.com/salrashid123/gcp_process_credentials_java)
-* `node`: [https://github.com/salrashid123/gcp_process_credentials_node](https://github.com/salrashid123/gcp_process_credentials_node)
-
-or if using go, oauth2 directly from a Trusted Platform Module:
-
-*[GCP TPM based TokenSource](https://github.com/salrashid123/oauth2#usage-tpmtokensource)
-
 ### IDToken
 
 The following endpoints shows how to acquire an IDToken

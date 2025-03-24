@@ -293,6 +293,7 @@ You can set the following options on usage:
 | **`-rootCAmTLS`** | Root CA for mtls client validation (default: `certs/root.crt`) |
 | **`-serverCert`** | Server certificate for mtls (default: `certs/server.crt`) |
 | **`-serverKey`** | Server key for mtls (default: `certs/server.key`) |
+| **`-version`** | Print version |
 
 ### With JSON ServiceAccount file
 

@@ -27,7 +27,7 @@ builds:
     tool: go
     command: build
     ldflags:
-      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser
+      - -s -w -X main.Tag={{.Version}} -X main.Commit={{.Commit}} -X main.Date={{.Date}} -X main.builtBy=goreleaser
 archives:
   - id: archive
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'

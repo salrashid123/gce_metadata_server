@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -54,10 +55,12 @@ var (
 	pcrs                  = flag.String("pcrs", "", "PCR Bound value (increasing order, comma separated)")
 	sessionEncryptionName = flag.String("tpm-session-encrypt-with-name", "", "hex encoded TPM object 'name' to use with an encrypted session")
 
-	usemTLS    = flag.Bool("usemTLS", false, "Use mTLS")
-	rootCAmTLS = flag.String("rootCAmTLS", "certs/root.crt", "rootCA to validate client certs ")
-	serverCert = flag.String("serverCert", "certs/server.crt", "Server mtls certificate")
-	serverKey  = flag.String("serverKey", "certs/server.key", "Server mtls key")
+	usemTLS           = flag.Bool("usemTLS", false, "Use mTLS")
+	rootCAmTLS        = flag.String("rootCAmTLS", "certs/root.crt", "rootCA to validate client certs ")
+	serverCert        = flag.String("serverCert", "certs/server.crt", "Server mtls certificate")
+	serverKey         = flag.String("serverKey", "certs/server.key", "Server mtls key")
+	version           = flag.Bool("version", false, "print version")
+	Commit, Tag, Date string
 )
 
 var TPMDEVICES = []string{"/dev/tpm0", "/dev/tpmrm0"}
@@ -75,6 +78,14 @@ func OpenTPM(path string) (io.ReadWriteCloser, error) {
 func main() {
 
 	flag.Parse()
+
+	if *version {
+		// go build  -ldflags="-s -w -X main.Tag=$(git describe --tags --abbrev=0) -X main.Commit=$(git rev-parse HEAD)" cmd/main.go
+		fmt.Printf("Version: %s\n", Tag)
+		fmt.Printf("Date: %s\n", Date)
+		fmt.Printf("Commit: %s\n", Commit)
+		os.Exit(0)
+	}
 
 	ctx := context.Background()
 

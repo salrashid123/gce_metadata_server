@@ -1,10 +1,16 @@
-# go1.23.4 linux/amd64
-FROM --platform=$BUILDPLATFORM docker.io/golang@sha256:9820aca42262f58451f006de3213055974b36f24b31508c1baa73c967fcecb99 as build
+# go1.24.0 linux/amd64
+FROM --platform=$BUILDPLATFORM docker.io/golang@sha256:3f7444391c51a11a039bf0359ee81cc64e663c17d787ad0e637a4de1a3f62a71 as build
+
+# export TAG=v3.93.0
+# docker buildx create --use --platform=linux/arm64,linux/amd64 --name multi-platform-builder
+# docker buildx inspect --bootstrap
+# docker buildx build --platform linux/arm64,linux/amd64 -t docker.io/salrashid123/gcemetadataserver:$TAG --output type=registry --file Dockerfile .
+# docker buildx build --platform linux/arm64,linux/amd64 -t docker.io/salrashid123/gcemetadataserver:$TAG --output type=docker --file Dockerfile .
 
 WORKDIR /go/src/app
 COPY . .
 RUN go mod download
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -buildvcs=false  -o /go/bin/gce_metadata_server cmd/main.go 
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w -X main.Tag=$(git describe --tags --abbrev=0) -X main.Commit=$(git rev-parse HEAD)"  -o /go/bin/gce_metadata_server cmd/main.go 
 RUN chown root:root /go/bin/gce_metadata_server
 
 # base-debian11-root

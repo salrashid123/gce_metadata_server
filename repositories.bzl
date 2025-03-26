@@ -583,5 +583,3 @@ def go_repositories():
         sum = "h1:E7g+9GITq07hpfrRu66IVDexMakfv52eLZ2CXBWiKr4=",
         version = "v0.0.0-20191204190536-9bdfabe68543",
     )
-
-    print()

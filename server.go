@@ -460,7 +460,7 @@ func (h *MetadataServer) computeMetadatav1ProjectAttributesKeyHandler(w http.Res
 	} else {
 		w.WriteHeader(http.StatusNotFound)
 		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
-		fmt.Fprintf(w, notFoundErrorHandler(r.URL.Path))
+		fmt.Fprintf(w, "%s", notFoundErrorHandler(r.URL.Path))
 	}
 }
 
@@ -832,7 +832,7 @@ func (h *MetadataServer) computeMetadatav1InstanceAttributesKeyHandler(w http.Re
 	} else {
 		w.WriteHeader(http.StatusNotFound)
 		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
-		fmt.Fprintf(w, notFoundErrorHandler(r.URL.Path))
+		fmt.Fprintf(w, "%s", notFoundErrorHandler(r.URL.Path))
 	}
 }
 

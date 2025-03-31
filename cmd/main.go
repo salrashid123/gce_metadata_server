@@ -107,7 +107,7 @@ func main() {
 	// if using TPMs
 	var creds *google.Credentials
 	var rwc io.ReadWriteCloser
-	var namedHandle tpm2.NamedHandle
+	var handle tpm2.TPMHandle
 	var authSession tpmjwt.Session
 	// parse TPM PCR values (if set)
 	var pcrList = []uint{}
@@ -178,7 +178,6 @@ func main() {
 
 		// setup the EK for use with encrypted sessions to the TPM
 		var encryptionSessionHandle tpm2.TPMHandle
-		var encryptionPub *tpm2.TPMTPublic
 
 		if *sessionEncryptionName != "" {
 			createEKCmd := tpm2.CreatePrimary{
@@ -199,13 +198,8 @@ func main() {
 			}()
 
 			encryptionSessionHandle = createEKRsp.ObjectHandle
-			encryptionPub, err = createEKRsp.OutPublic.Contents()
-			if err != nil {
-				glog.Error(os.Stderr, "can't create ekpub blob %v", err)
-				os.Exit(1)
-			}
 			if *sessionEncryptionName != hex.EncodeToString(createEKRsp.Name.Buffer) {
-				glog.Error(os.Stderr, "session encryption names do not match expected [%s] got [%s]", *sessionEncryptionName, hex.EncodeToString(createEKRsp.Name.Buffer))
+				glog.Errorf("session encryption names do not match expected [%s] got [%s]", *sessionEncryptionName, hex.EncodeToString(createEKRsp.Name.Buffer))
 				os.Exit(1)
 			}
 		}
@@ -291,51 +285,38 @@ func main() {
 				}
 				_, _ = flushContextCmd.Execute(rwr)
 			}()
-
-			namedHandle = tpm2.NamedHandle{
-				Handle: rsaKey.ObjectHandle,
-				Name:   rsaKey.Name,
-			}
+			glog.V(40).Infof("TPM credentials using using Key handle %d", rsaKey.ObjectHandle)
 			ts, err = saltpm.TpmTokenSource(&saltpm.TpmTokenConfig{
 				TPMDevice:        rwc,
-				NamedHandle:      namedHandle,
+				Handle:           rsaKey.ObjectHandle,
 				AuthSession:      authSession,
 				Email:            claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
 				Scopes:           claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
 				EncryptionHandle: encryptionSessionHandle,
-				EncryptionPub:    encryptionPub,
 			})
 			if err != nil {
 				glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
 				os.Exit(1)
 			}
+
+			handle = rsaKey.ObjectHandle
 
 		} else if *persistentHandle > 0 {
-			glog.V(20).Infof("TPM credentials using using persistent handle")
-			pub, err := tpm2.ReadPublic{
-				ObjectHandle: tpm2.TPMHandle(*persistentHandle), //persistent handle
-			}.Execute(rwr)
-			if err != nil {
-				glog.Error(os.Stderr, "error executing tpm2.ReadPublic %v", err)
-				os.Exit(1)
-			}
-			namedHandle = tpm2.NamedHandle{
-				Handle: tpm2.TPMHandle(*persistentHandle), // persistent handle
-				Name:   pub.Name,
-			}
+			glog.V(40).Infof("TPM credentials using using persistent handle %d", *persistentHandle)
+
 			ts, err = saltpm.TpmTokenSource(&saltpm.TpmTokenConfig{
 				TPMDevice:        rwc,
-				NamedHandle:      namedHandle,
+				Handle:           tpm2.TPMHandle(*persistentHandle), // persistent handle
 				AuthSession:      authSession,
 				Email:            claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
 				Scopes:           claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
 				EncryptionHandle: encryptionSessionHandle,
-				EncryptionPub:    encryptionPub,
 			})
 			if err != nil {
 				glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
 				os.Exit(1)
 			}
+			handle = tpm2.TPMHandle(*persistentHandle)
 		} else {
 			glog.Error("Must specify either a persistent handle or a keyfile for use with at TPM")
 			os.Exit(1)
@@ -395,7 +376,7 @@ func main() {
 		DomainSocket:     *useDomainSocket,
 		UseTPM:           *useTPM,
 		TPMDevice:        rwc,
-		NamedHandle:      namedHandle,
+		Handle:           handle,
 		AuthSession:      authSession,
 		MetricsEnabled:   *metricsEnabled,
 		MetricsInterface: *metricsInterface,

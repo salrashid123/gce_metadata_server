@@ -128,10 +128,9 @@ type ServerConfig struct {
 
 	UseTPM           bool               // toggle if TPM should be used for credentials (default: false)
 	TPMDevice        io.ReadWriteCloser // initialized transport for the TPM
-	NamedHandle      tpm2.NamedHandle   // initialized  handle to the key
+	Handle           tpm2.TPMHandle     // initialized  handle to the key
 	AuthSession      tpmjwt.Session     // auth session to use
 	EncryptionHandle tpm2.TPMHandle     // (optional) handle to use for transit encryption
-	EncryptionPub    *tpm2.TPMTPublic   // (optional) public key to use for transit encryption
 
 	UsemTLS    bool   // toggle if mtls is used (default: false)
 	RootCAmTLS string // ca to validate client certs (default "")
@@ -654,12 +653,13 @@ func (h *MetadataServer) getIDToken(targetAudience string) (string, error) {
 		token := jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
 
 		ctx := context.Background()
+
+		glog.V(20).Infof("TPM credentials using using handle  %d", h.ServerConfig.Handle)
 		config := &tpmjwt.TPMConfig{
 			TPMDevice:        h.ServerConfig.TPMDevice,
-			NamedHandle:      h.ServerConfig.NamedHandle,
+			Handle:           h.ServerConfig.Handle,
 			AuthSession:      h.ServerConfig.AuthSession,
 			EncryptionHandle: h.ServerConfig.EncryptionHandle,
-			EncryptionPub:    h.ServerConfig.EncryptionPub,
 		}
 
 		keyctx, err := tpmjwt.NewTPMContext(ctx, config)
@@ -1221,8 +1221,8 @@ func NewMetadataServer(ctx context.Context, serverConfig *ServerConfig, creds *g
 		return nil, errors.New("serverConfig, credential and claims cannot be nil")
 	}
 
-	if serverConfig.UseTPM && &serverConfig.NamedHandle == nil {
-		return nil, errors.New("NamedHandle must be set if useTPM is enabled")
+	if serverConfig.UseTPM && &serverConfig.Handle == nil {
+		return nil, errors.New("Handle must be set if useTPM is enabled")
 	}
 
 	h := &MetadataServer{

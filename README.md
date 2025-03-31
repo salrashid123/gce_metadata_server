@@ -279,7 +279,7 @@ You can set the following options on usage:
 | **`-parentPass`** | TPM Parent key password (default: "") |
 | **`-keyPass`** | TPM key password (default: "") |
 | **`-pcrs`** | TPM PCR values the key is bound to (comma separated pcrs in ascending order) |
-| **`-sessionEncryptionName`** | hex encoded TPM object 'name' to use with an encrypted session |
+| **`--tpm-session-encrypt-with-name`** | hex encoded TPM object 'name' to use with an encrypted session |
 | **`-domainsocket`** | listen on unix socket |
 | **`GOOGLE_PROJECT_ID`** | static environment variable for PROJECT_ID to return |
 | **`GOOGLE_NUMERIC_PROJECT_ID`** | static environment variable for the numeric project id to return |

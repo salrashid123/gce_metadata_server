@@ -104,24 +104,12 @@ func main() {
 		os.Exit(-1)
 	}
 
-	// if using TPMs
 	var creds *google.Credentials
+
+	// if using TPMs
 	var rwc io.ReadWriteCloser
 	var handle tpm2.TPMHandle
 	var authSession tpmjwt.Session
-	// parse TPM PCR values (if set)
-	var pcrList = []uint{}
-	if *pcrs != "" && *useTPM {
-		strpcrs := strings.Split(*pcrs, ",")
-		for _, i := range strpcrs {
-			j, err := strconv.Atoi(i)
-			if err != nil {
-				glog.Error("ERROR:  could convert pcr value: %v", err)
-				os.Exit(1)
-			}
-			pcrList = append(pcrList, uint(j))
-		}
-	}
 
 	_, ok := claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"]
 	if !ok {
@@ -206,6 +194,18 @@ func main() {
 
 		// configure a session
 		if *pcrs != "" {
+			// parse TPM PCR values (if set)
+			var pcrList = []uint{}
+			strpcrs := strings.Split(*pcrs, ",")
+			for _, i := range strpcrs {
+				j, err := strconv.Atoi(i)
+				if err != nil {
+					glog.Error("ERROR:  could convert pcr value: %v", err)
+					os.Exit(1)
+				}
+				pcrList = append(pcrList, uint(j))
+			}
+
 			authSession, err = tpmjwt.NewPCRSession(rwr, []tpm2.TPMSPCRSelection{
 				{
 					Hash:      tpm2.TPMAlgSHA256,

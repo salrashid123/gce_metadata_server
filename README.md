@@ -701,6 +701,7 @@ Note, `Google.Api.Gax.Platform.Instance().ProjectId` requests the full [recursiv
 #### gcloud
 
 ```bash
+rm -rf $HOME/.config/gcloud
 export GCE_METADATA_ROOT=localhost:8080
 
 $ gcloud config list

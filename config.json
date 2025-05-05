@@ -96,7 +96,10 @@
           "driftToken": "0"
         },
         "zone": "projects/708288290784/zones/us-central1-a"
-      },
+    },
+    "universe": {
+      "universeDomain": "googleapis.com"
+    },
     "oslogin": {
       "authenticate": {
         "sessions": {}

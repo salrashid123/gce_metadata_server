@@ -4,7 +4,7 @@ metadata:
   name: gcp-svc-account
 type: Opaque
 data:
-  metadata-sa.json: "replace with contents of cat certs/metadata-sa.json | base64  --wrap=0 -"
+  metadata-sa.json: "replace with contents of `cat certs/metadata-sa.json | base64  --wrap=0 -`"
 ---
 apiVersion: v1
 kind: Service
@@ -74,4 +74,120 @@ metadata:
   name: mds-config
 data:
   config.json: |
-     "replace with contents of config.json"
+    {
+      "computeMetadata": {
+        "v1":{
+        "instance": {
+            "attributes": {
+              "enable-oslogin": "false",
+              "metadata2": "value2"
+            },
+            "cpuPlatform": "Intel Broadwell",
+            "description": "",
+            "disks": [
+              {
+                "deviceName": "instance-1",
+                "index": 0,
+                "interface": "SCSI",
+                "mode": "READ_WRITE",
+                "type": "PERSISTENT-BALANCED"
+              },
+              {
+                "deviceName": "disk-1",
+                "index": 1,
+                "interface": "SCSI",
+                "mode": "READ_WRITE",
+                "type": "PERSISTENT-BALANCED"
+              }
+            ],
+            "guestAttributes": {},
+            "hostname": "instance-1.c.srashid-test2.internal",
+            "id": 5775171277418378000,
+            "image": "projects/debian-cloud/global/images/debian-11-bullseye-v20231004",
+            "licenses": [
+              {
+                "id": "3853522013536123851"
+              }
+            ],
+            "machineType": "projects/708288290784/machineTypes/e2-standard-4",
+            "maintenanceEvent": "NONE",
+            "name": "instance-1",
+            "networkInterfaces": [
+              {
+                "accessConfigs": [
+                  {
+                    "externalIp": "34.69.160.1",
+                    "type": "ONE_TO_ONE_NAT"
+                  }
+                ],
+                "dnsServers": [
+                  "169.254.169.254"
+                ],
+                "forwardedIps": [],
+                "gateway": "10.128.0.1",
+                "ip": "10.128.0.19",
+                "ipAliases": [],
+                "mac": "42:01:0a:80:00:13",
+                "mtu": 1460,
+                "network": "projects/708288290784/networks/default",
+                "subnetmask": "255.255.240.0",
+                "targetInstanceIps": []
+              }
+            ],
+            "partnerAttributes": {},
+            "preempted": "FALSE",
+            "remainingCpuTime": -1,
+            "scheduling": {
+              "automaticRestart": "TRUE",
+              "onHostMaintenance": "MIGRATE",
+              "preemptible": "FALSE"
+            },
+            "serviceAccounts": {
+              "metadata-sa@$PROJECT.iam.gserviceaccount.com": {
+                "aliases": [
+                  "default"
+                ],
+                "email": "metadata-sa@$PROJECT.iam.gserviceaccount.com",
+                "scopes": [
+                  "https://www.googleapis.com/auth/cloud-platform",
+                  "https://www.googleapis.com/auth/userinfo.email"
+                ]
+              },
+              "default": {
+                "aliases": [
+                  "default"
+                ],
+                "email": "metadata-sa@$PROJECT.iam.gserviceaccount.com",
+                "scopes": [
+                  "https://www.googleapis.com/auth/cloud-platform",
+                  "https://www.googleapis.com/auth/userinfo.email"
+                ]
+              }
+            },
+            "tags": [
+              "tag1",
+              "tag2"
+            ],
+            "virtualClock": {
+              "driftToken": "0"
+            },
+            "zone": "projects/708288290784/zones/us-central1-a"
+        },
+        "universe": {
+          "universeDomain": "googleapis.com"
+        },
+        "oslogin": {
+          "authenticate": {
+            "sessions": {}
+          }
+        },
+        "project": {
+          "attributes": {
+            "ssh-keys": "srashid:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCdVeH9zvBfNc7x9mVxo6SMvtz6yRlXtvoiUyEBnSaQg4NIGFeyoRKkAdW2Ubp7ZSHn1kudHR1d9uiFqGtBJ/u6uS/07/mOFNKf4JRzb2dj7IpCZOntV4yQUu+TEcnS8TV9DW5aTQ3YMJgZEV+5FQr/1dTY3t+92gzIr5nGJqArRtJgiLACq34wgcU71cMiNpEhUHk07doIxoOC1AJaHyPVlAdNt1FKQoo7cfJPoKjYBPvUlnAmf1s6in90g7HqBMS5xo1cPhHY42JZpH0kySLpZKEwDtjXjoIT+felVOCq8HTOph1N9VmoW3IrtyB+sBod2kJGlOSmV0dypzW9Vrozd2J0c+D78tNooeHFgNKmu8/YP57TKgLKfZsg5aDCtrv0= srashid@srashid12"
+          },
+          "numericProjectId": 708288290784,
+          "projectId": "$PROJECT"
+        }
+      }
+    }
+    }

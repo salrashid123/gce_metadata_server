@@ -403,23 +403,21 @@ where `/tmp/oidcred.txt` contains the original oidc token
 
 If the service account private key is bound inside a `Trusted Platform Module (TPM)`, the metadata server can use that key to issue an `access_token` or an `id_token`
 
->> Note: not all platforms supports this mode.  The underlying go-tpm library is only supported on a few of the targets (`linux/darwin + amd64,arm64`).  If you need support for other platforms, one option is to comment the sections for the TPM, remove the library bindings and compile.
-
 Before using this mode, the key _must be_ sealed into the TPM and surfaced as a `persistentHandle` or as a [PEM encoded TPM Keyfile](https://github.com/salrashid123/tpm2/tree/master/tpm-key).  This can be done in a number of ways described [here](https://github.com/salrashid123/oauth2/blob/master/README.md#usage-tpmtokensource): 
 
 Basically, you can either
 
 - `A` download a Google ServiceAccount's json file and embed the private part to the TPM. [example](https://github.com/salrashid123/oauth2/blob/master/README.md#a-import-service-account-json-to-tpm)
 - `B` Generate a Key _on the TPM_ and then [import the public part to GCP](https://cloud.google.com/iam/docs/keys-upload). [example](https://github.com/salrashid123/oauth2/blob/master/README.md#b-generate-key-on-tpm-and-export-public-x509-certificate-to-gcp).  Note that you can [upload atmost 10 keys per service account](https://cloud.google.com/iam/quotas#limits)
-- `C` remote seal the service accounts RSA Private key, encrypt it with TPM's Endorsement Key and load it securely inside the TPM. [example](https://gist.github.com/salrashid123/9e4a0328fd8c84374ace78c76a1e34cb)
+- `C` remote seal the service accounts RSA Private key, encrypt it with TPM's Endorsement Key and load it securely inside the TPM. See [example with go-tpm-tools](https://gist.github.com/salrashid123/9e4a0328fd8c84374ace78c76a1e34cb) and [tpm2_duplicate](https://github.com/salrashid123/tpm2/tree/master/tpm2_duplicate#transfer-rsa-key-with-password-policy-from-a-b)
 
 `A` is the easiest for a demo
 
-`B` is the most secure
+`B` is the most secure since the key only ever exists inside a TPM
 
 `C` allows for multiple TPMs to use the same key 
 
-Anyway, once the RSA key is present as a handle, start the metadata server using the `--tpm` flag and set the `--persistentHandle=` value.
+Anyway, once the RSA key is present as a handle, start the metadata server using the `--tpm` flag and set the `--persistentHandle=` value or the `--keyfile=`.
 
 TPM based tokens derives the serivceAccount email from the configuration file.   You must first edit `config.json` and set the value of `Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email`.
 
@@ -449,10 +447,6 @@ tpm2_flushcontext -t
 tpm2_evictcontrol -C o -c key.ctx 0x81010002
 
 ### or as PEM format file
-## to create a TPM PEM formatted file,
-## either use https://github.com/salrashid123/tpm2genkey
-### ref https://github.com/salrashid123/tpm2/tree/master/tpm-key
-## or just use tpm2_encodeobject
 tpm2_encodeobject -C primary.ctx -u key.pub -r key.prv -o private.pem
 
 ## this formats it as TPM-encrypted PEM:
@@ -778,7 +772,7 @@ metadata:
   name: mds-config
 data:
   config.json: |
-     "replace with contents of config.json"  
+    "replace with contents of config.json"  
 ```
 
 Finally test
@@ -1104,7 +1098,7 @@ Certificate:
     Signature Algorithm: ecdsa-with-SHA256
 ```
 
-## Envoy Authentication Filter
+#### Envoy Authentication Filter
 
 [GCP Authentication Filter](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_filters/gcp_authn_filter) provides a way to for envoy to automatically inject an `id_token` into the upstream request.
 

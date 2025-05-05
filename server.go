@@ -201,6 +201,7 @@ type ComputeMetadata struct {
 // Configuration of the v1 settings for the metadata server.
 type V1 struct {
 	Instance Instance `json:"instance" altjson:"instance"`
+	Universe Universe `json:"universe"  altjson:"universe"`
 	Oslogin  OSlogin  `json:"oslogin"  altjson:"oslogin"`
 	Project  Project  `json:"project"  altjson:"project"`
 }
@@ -266,6 +267,11 @@ type OSlogin struct {
 		Sessions struct {
 		} `json:"sessions" altjson:"sessions"`
 	} `json:"authenticate" altjson:"authenticate"`
+}
+
+// Universe configuration to apply
+type Universe struct {
+	UniverseDomain string `json:"universeDomain" altjson:"universe-domain"`
 }
 
 // Project configuration to apply
@@ -400,6 +406,26 @@ func (h *MetadataServer) computeMetadatav1ProjectNumericProjectIDHandler(w http.
 	} else {
 		resp = []byte(strconv.FormatInt(h.Claims.ComputeMetadata.V1.Project.NumericProjectID, 10))
 	}
+	e := getETag(resp)
+	w.Header()["ETag"] = []string{e}
+	w.Write(resp)
+}
+
+func (h *MetadataServer) computeMetadatav1UniverseHandler(w http.ResponseWriter, r *http.Request) {
+	if h.handleRecursion(w, r, h.Claims.ComputeMetadata.V1.Universe) {
+		return
+	}
+	w.Header().Set("Content-Type", "application/text")
+	resp := h.pathListFields(h.Claims.ComputeMetadata.V1.Universe)
+	e := getETag([]byte(resp))
+	w.Header()["ETag"] = []string{e}
+	w.Write([]byte(resp))
+}
+
+func (h *MetadataServer) computeMetadatav1UniverseUniverseDomainHandler(w http.ResponseWriter, r *http.Request) {
+	var resp []byte
+	w.Header().Set("Content-Type", "text/plain")
+	resp = []byte(h.Claims.ComputeMetadata.V1.Universe.UniverseDomain)
 	e := getETag(resp)
 	w.Header()["ETag"] = []string{e}
 	w.Write(resp)
@@ -1076,6 +1102,10 @@ func (h *MetadataServer) Start() error {
 	r.Handle("/computeMetadata/v1/project/attributes", http.HandlerFunc(h.handleBasePathRedirect)).Methods(http.MethodGet)
 	r.Handle("/computeMetadata/v1/project/", http.HandlerFunc(h.computeMetadatav1ProjectHandler)).Methods(http.MethodGet)
 	r.Handle("/computeMetadata/v1/project", http.HandlerFunc(h.handleBasePathRedirect)).Methods(http.MethodGet)
+
+	r.Handle("/computeMetadata/v1/universe/universe-domain", http.HandlerFunc(h.computeMetadatav1UniverseUniverseDomainHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/universe/", http.HandlerFunc(h.computeMetadatav1UniverseHandler)).Methods(http.MethodGet)
+	r.Handle("/computeMetadata/v1/universe", http.HandlerFunc(h.handleBasePathRedirect)).Methods(http.MethodGet)
 
 	r.Handle("/computeMetadata/v1/", http.HandlerFunc(h.computeMetadatav1Handler)).Methods(http.MethodGet)
 	r.Handle("/computeMetadata/v1", http.HandlerFunc(h.handleBasePathRedirect)).Methods(http.MethodGet)

@@ -264,14 +264,29 @@ Or download an appropriate binary from the [Releases](https://github.com/salrash
 
 You can set the following options on usage:
 
+##### `Base Options`
+
 | Option | Description |
 |:------------|-------------|
 | **`-configFile`** | configuration File (default: `config.json`) |
 | **`-interface`** | interface to bind to (default: `127.0.0.1`) |
 | **`-port`** | port to listen on (default: `:8080`) |
+| **`-version`** | Print version |
+
+##### `Authentication Options`
+| Option | Description |
+|:------------|-------------|
 | **`-serviceAccountFile`** | path to serviceAccount json Key file |
 | **`-impersonate`** | use impersonation |
 | **`-federate`** | use workload identity federation |
+| **`GOOGLE_PROJECT_ID`** | static environment variable for PROJECT_ID to return |
+| **`GOOGLE_NUMERIC_PROJECT_ID`** | static environment variable for the numeric project id to return |
+| **`GOOGLE_ACCESS_TOKEN`** | static environment variable for access_token to return |
+| **`GOOGLE_ID_TOKEN`** | static environment variable for id_token to return |
+
+##### `TPM Authentication Options`
+| Option | Description |
+|:------------|-------------|
 | **`-tpm`** | use TPM |
 | **`-persistentHandle`** | TPM persistentHandle (default: none) |
 | **`-tpmKeyFile`** | TPM Encrypted private key (default: none) |
@@ -280,20 +295,25 @@ You can set the following options on usage:
 | **`-keyPass`** | TPM key password (default: "") |
 | **`-pcrs`** | TPM PCR values the key is bound to (comma separated pcrs in ascending order) |
 | **`--tpm-session-encrypt-with-name`** | hex encoded TPM object 'name' to use with an encrypted session |
-| **`-domainsocket`** | listen on unix socket |
-| **`GOOGLE_PROJECT_ID`** | static environment variable for PROJECT_ID to return |
-| **`GOOGLE_NUMERIC_PROJECT_ID`** | static environment variable for the numeric project id to return |
-| **`GOOGLE_ACCESS_TOKEN`** | static environment variable for access_token to return |
-| **`GOOGLE_ID_TOKEN`** | static environment variable for id_token to return |
+
+##### `Monitoring Options`
+| Option | Description |
+|:------------|-------------|
 | **`-metricsEnabled`** | Enable prometheus metrics endpoint (default: false) |
 | **`-metricsInterface`** | Prometheus metrics interface (default: 127.0.0.1) |
 | **`-metricsPort`** | Prometheus metrics port (default: 9000) |
 | **`-metricsPath`** | Prometheus metrics path (default: /metrics) |
+
+
+##### `Misc Options`
+| Option | Description |
+|:------------|-------------|
+| **`-domainsocket`** | listen on unix socket |
 | **`-usemTLS`** | Start server with mtls (default: false) |
 | **`-rootCAmTLS`** | Root CA for mtls client validation (default: `certs/root.crt`) |
 | **`-serverCert`** | Server certificate for mtls (default: `certs/server.crt`) |
 | **`-serverKey`** | Server key for mtls (default: `certs/server.key`) |
-| **`-version`** | Print version |
+
 
 ### With JSON ServiceAccount file
 

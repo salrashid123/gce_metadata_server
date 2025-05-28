@@ -3,6 +3,7 @@ package mds
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -363,7 +364,7 @@ func TestProjectNumberHandler(t *testing.T) {
 
 	t.Setenv("GCE_METADATA_HOST", fmt.Sprintf("127.0.0.1:%d", p))
 
-	projectNumber, err := metadata.NumericProjectID()
+	projectNumber, err := metadata.NumericProjectIDWithContext(context.Background())
 	if err != nil {
 		t.Errorf("error getting ProjectNumber: got %v", err)
 	}
@@ -405,7 +406,7 @@ func TestInstanceIDHandler(t *testing.T) {
 
 	t.Setenv("GCE_METADATA_HOST", fmt.Sprintf("127.0.0.1:%d", p))
 
-	mid, err := metadata.InstanceID()
+	mid, err := metadata.InstanceIDWithContext(context.Background())
 	if err != nil {
 		t.Errorf("error getting ProjectNumber: got %v", err)
 	}
@@ -415,3 +416,261 @@ func TestInstanceIDHandler(t *testing.T) {
 			mid, expectedInstanceID)
 	}
 }
+
+func TestMaintenanceEventWaitForChange(t *testing.T) {
+	oldClaim := "NONE"
+	newClaim := "MIGRATE_ON_HOST_MAINTENANCE"
+
+	p, err := getFreePort()
+	if err != nil {
+		t.Errorf("error getting emulator port %v", err)
+	}
+	cc := &Claims{
+		ComputeMetadata: ComputeMetadata{
+			V1: V1{
+				Instance: Instance{
+					MaintenanceEvent: oldClaim,
+				},
+			},
+		},
+	}
+	sc := &ServerConfig{
+		Port: fmt.Sprintf(":%d", p),
+	}
+
+	h, err := NewMetadataServer(context.Background(), sc, &google.Credentials{}, cc)
+	if err != nil {
+		t.Errorf("error creating emulator %v", err)
+	}
+
+	err = h.Start()
+	if err != nil {
+		t.Errorf("error starting emulator %v", err)
+	}
+	defer h.Shutdown()
+
+	t.Setenv("GCE_METADATA_HOST", fmt.Sprintf("127.0.0.1:%d", p))
+
+	// change the value 2 seconds later, yes, i know its a race condition
+	/// but 5 seconds is more than enough time to to make the outbound request
+	/// outside of the go routine
+	go func() {
+		time.Sleep(2 * time.Second)
+		h.Claims.ComputeMetadata.V1.Instance.MaintenanceEvent = newClaim
+	}()
+
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/computeMetadata/v1/instance/maintenance-event?wait_for_change=true", p), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	addHeaders(*req)
+	c := &http.Client{}
+	res, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer res.Body.Close()
+	mid, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(mid) != newClaim {
+		t.Errorf("handler returned unexpected body: got %s want %v",
+			mid, newClaim)
+	}
+}
+
+func TestAttributeWaitForChange(t *testing.T) {
+	mKey := "metadataKey1"
+	valOrig := "originalValue"
+	valNew := "newValue"
+
+	p, err := getFreePort()
+	if err != nil {
+		t.Errorf("error getting emulator port %v", err)
+	}
+	cc := &Claims{
+		ComputeMetadata: ComputeMetadata{
+			V1: V1{
+				Instance: Instance{
+					Attributes: map[string]string{
+						mKey:  valOrig,
+						"foo": "bar",
+					},
+				},
+			},
+		},
+	}
+	sc := &ServerConfig{
+		Port: fmt.Sprintf(":%d", p),
+	}
+
+	h, err := NewMetadataServer(context.Background(), sc, &google.Credentials{}, cc)
+	if err != nil {
+		t.Errorf("error creating emulator %v", err)
+	}
+
+	err = h.Start()
+	if err != nil {
+		t.Errorf("error starting emulator %v", err)
+	}
+	defer h.Shutdown()
+
+	t.Setenv("GCE_METADATA_HOST", fmt.Sprintf("127.0.0.1:%d", p))
+
+	go func() {
+		time.Sleep(2 * time.Second)
+		h.Claims.ComputeMetadata.V1.Instance.Attributes = map[string]string{mKey: valNew, "foo": "bar"}
+	}()
+
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/computeMetadata/v1/instance/attributes/%s?wait_for_change=true", p, mKey), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	addHeaders(*req)
+	c := &http.Client{}
+	res, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer res.Body.Close()
+	mid, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(mid) != valNew {
+		t.Errorf("handler returned unexpected body: got %s want %v",
+			mid, valNew)
+	}
+}
+
+// /*
+// 	"github.com/google/go-tpm-tools/simulator"
+// 	"github.com/google/go-tpm/tpm2"
+// 	"github.com/google/go-tpm/tpm2/transport"
+// 	saltpm "github.com/salrashid123/oauth2/tpm"
+// */
+
+// func TestTPMAccessTokenCredentialHandler(t *testing.T) {
+
+// 	tpmDevice, err := simulator.Get()
+// 	if err != nil {
+// 		t.Errorf("error getting simulator %v", err)
+// 	}
+// 	defer tpmDevice.Close()
+
+// 	rwr := transport.FromReadWriter(tpmDevice)
+// 	primaryKey, err := tpm2.CreatePrimary{
+// 		PrimaryHandle: tpm2.TPMRHOwner,
+// 		InPublic:      tpm2.New2B(keyfile.ECCSRK_H2_Template),
+// 	}.Execute(rwr)
+// 	if err != nil {
+// 		t.Errorf("error creating primary %v", err)
+// 	}
+// 	defer func() {
+// 		flushContextCmd := tpm2.FlushContext{
+// 			FlushHandle: primaryKey.ObjectHandle,
+// 		}
+// 		_, _ = flushContextCmd.Execute(rwr)
+// 	}()
+
+// 	rsaKeyResponse, err := tpm2.CreateLoaded{
+// 		ParentHandle: tpm2.AuthHandle{
+// 			Handle: primaryKey.ObjectHandle,
+// 			Name:   primaryKey.Name,
+// 			Auth:   tpm2.PasswordAuth(nil),
+// 		},
+// 		InPublic: tpm2.New2BTemplate(&tpm2.TPMTPublic{
+// 			Type:    tpm2.TPMAlgRSA,
+// 			NameAlg: tpm2.TPMAlgSHA256,
+// 			ObjectAttributes: tpm2.TPMAObject{
+// 				SignEncrypt:         true,
+// 				FixedTPM:            true,
+// 				FixedParent:         true,
+// 				SensitiveDataOrigin: true,
+// 				UserWithAuth:        true,
+// 			},
+// 			AuthPolicy: tpm2.TPM2BDigest{},
+// 			Parameters: tpm2.NewTPMUPublicParms(
+// 				tpm2.TPMAlgRSA,
+// 				&tpm2.TPMSRSAParms{
+// 					Scheme: tpm2.TPMTRSAScheme{
+// 						Scheme: tpm2.TPMAlgRSASSA,
+// 						Details: tpm2.NewTPMUAsymScheme(
+// 							tpm2.TPMAlgRSASSA,
+// 							&tpm2.TPMSSigSchemeRSASSA{
+// 								HashAlg: tpm2.TPMAlgSHA256,
+// 							},
+// 						),
+// 					},
+// 					KeyBits: 2048,
+// 				},
+// 			),
+// 			Unique: tpm2.NewTPMUPublicID(
+// 				tpm2.TPMAlgRSA,
+// 				&tpm2.TPM2BPublicKeyRSA{
+// 					Buffer: make([]byte, 256),
+// 				},
+// 			),
+// 		}),
+// 	}.Execute(rwr)
+// 	if err != nil {
+// 		t.Errorf("error creating key %v", err)
+// 	}
+// 	defer func() {
+// 		flushContextCmd := tpm2.FlushContext{
+// 			FlushHandle: rsaKeyResponse.ObjectHandle,
+// 		}
+// 		_, _ = flushContextCmd.Execute(rwr)
+// 	}()
+
+// 	var authSession tpmjwt.Session
+// 	tpmts, err := saltpm.TpmTokenSource(&saltpm.TpmTokenConfig{
+// 		TPMDevice:   tpmDevice,
+// 		Handle:      rsaKeyResponse.ObjectHandle,
+// 		AuthSession: authSession,
+// 		Email:       "metadata-sa@$PROJECT.iam.gserviceaccount.com",
+// 		Scopes:      []string{"https://www.googleapis.com/auth/cloud-platform"},
+// 	})
+
+// 	creds := &google.Credentials{
+// 		ProjectID:   "bar",
+// 		TokenSource: tpmts}
+
+// 	p, err := getFreePort()
+// 	if err != nil {
+// 		t.Errorf("error getting emulator port %v", err)
+// 	}
+// 	sc := &ServerConfig{
+// 		Port: fmt.Sprintf(":%d", p),
+// 	}
+
+// 	h, err := NewMetadataServer(context.Background(), sc, creds, &Claims{})
+// 	if err != nil {
+// 		t.Errorf("error creating emulator %v", err)
+// 	}
+// 	err = h.Start()
+// 	if err != nil {
+// 		t.Errorf("error starting emulator %v", err)
+// 	}
+// 	defer h.Shutdown()
+
+// 	t.Setenv("GCE_METADATA_HOST", fmt.Sprintf("127.0.0.1:%d", p))
+
+// 	ts, err := google.DefaultTokenSource(context.Background(), cloudPlatformScope)
+// 	if err != nil {
+// 		t.Errorf("error getting tokenSource %v", err)
+// 	}
+
+// 	_, err = ts.Token()
+// 	if err != nil {
+// 		t.Errorf("error getting token %v", err)
+// 	}
+
+// }

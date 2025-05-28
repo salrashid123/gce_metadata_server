@@ -1,7 +1,7 @@
 {
   "computeMetadata": {
     "v1":{
-    "instance": {
+      "instance": {
         "attributes": {
           "enable-oslogin": "false",
           "metadata2": "value2"
@@ -58,13 +58,21 @@
             "targetInstanceIps": []
           }
         ],
-        "partnerAttributes": {},
+        "partnerAttributes": {
+          "testnamespace": {
+            "key": "value1"
+          }
+        },
         "preempted": "FALSE",
         "remainingCpuTime": -1,
         "scheduling": {
           "automaticRestart": "TRUE",
           "onHostMaintenance": "MIGRATE",
           "preemptible": "FALSE"
+        },
+        "shutdownDetails": {
+          "TargetState": "UNKNOWN",
+          "StopState": "UNKNOWN"
         },
         "serviceAccounts": {
           "metadata-sa@$PROJECT.iam.gserviceaccount.com": {
@@ -95,23 +103,31 @@
         "virtualClock": {
           "driftToken": "0"
         },
+        "upcomingMaintenance": {
+          "canReschedule": "TRUE",
+          "latestWindowStartTime": "2025-12-01T19:00:01Z",
+          "maintenanceStatus": "PENDING",
+          "type": "SCHEDULED",
+          "windowEndTime": "2025-12-01T22:00:00Z",
+          "windowStartTime": "2025-12-01T19:00:00Z"
+        },
         "zone": "projects/708288290784/zones/us-central1-a"
-    },
-    "universe": {
-      "universeDomain": "googleapis.com"
-    },
-    "oslogin": {
-      "authenticate": {
-        "sessions": {}
-      }
-    },
-    "project": {
-      "attributes": {
-        "ssh-keys": "srashid:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCdVeH9zvBfNc7x9mVxo6SMvtz6yRlXtvoiUyEBnSaQg4NIGFeyoRKkAdW2Ubp7ZSHn1kudHR1d9uiFqGtBJ/u6uS/07/mOFNKf4JRzb2dj7IpCZOntV4yQUu+TEcnS8TV9DW5aTQ3YMJgZEV+5FQr/1dTY3t+92gzIr5nGJqArRtJgiLACq34wgcU71cMiNpEhUHk07doIxoOC1AJaHyPVlAdNt1FKQoo7cfJPoKjYBPvUlnAmf1s6in90g7HqBMS5xo1cPhHY42JZpH0kySLpZKEwDtjXjoIT+felVOCq8HTOph1N9VmoW3IrtyB+sBod2kJGlOSmV0dypzW9Vrozd2J0c+D78tNooeHFgNKmu8/YP57TKgLKfZsg5aDCtrv0= srashid@srashid12"
       },
-      "numericProjectId": 708288290784,
+      "universe": {
+        "universeDomain": "googleapis.com"
+      },
+      "oslogin": {
+        "authenticate": {
+          "sessions": {}
+        }
+      },
+      "project": {
+        "attributes": {
+          "ssh-keys": "srashid:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCdVeH9zvBfNc7x9mVxo6SMvtz6yRlXtvoiUyEBnSaQg4NIGFeyoRKkAdW2Ubp7ZSHn1kudHR1d9uiFqGtBJ/u6uS/07/mOFNKf4JRzb2dj7IpCZOntV4yQUu+TEcnS8TV9DW5aTQ3YMJgZEV+5FQr/1dTY3t+92gzIr5nGJqArRtJgiLACq34wgcU71cMiNpEhUHk07doIxoOC1AJaHyPVlAdNt1FKQoo7cfJPoKjYBPvUlnAmf1s6in90g7HqBMS5xo1cPhHY42JZpH0kySLpZKEwDtjXjoIT+felVOCq8HTOph1N9VmoW3IrtyB+sBod2kJGlOSmV0dypzW9Vrozd2J0c+D78tNooeHFgNKmu8/YP57TKgLKfZsg5aDCtrv0= srashid@srashid12"
+        },
+        "numericProjectId": 708288290784,
       "projectId": "$PROJECT"
+      }
     }
   }
-}
 }

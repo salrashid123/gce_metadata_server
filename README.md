@@ -177,9 +177,11 @@ r.Handle("/")
     - [Running as Kubernetes Service](#running-as-kubernetes-service)
     - [Static environment variables](#static-environment-variables)
 * [Dynamic Configuration File Updates](#dynamic-configuration-file-updates)
-* [ETag](#etag)    
+* [ETag](#etag)   
+* [Wait For Change](#wait-for-change) 
 * [Extending the sample](#extending-the-sample)
 * [Using link-local address](#using-link-local-address)
+* [Restricting Connections using iptables](#restricting-connections-using-iptables)
 * [Using domain sockets](#using-domain-sockets)
 * [Building with Bazel](#building-with-bazel)
 * [Building with Kaniko](#building-with-kaniko)
@@ -197,7 +199,9 @@ Note, the real metadata server has some additional query parameters which are ei
 
 - [recursive=true](https://cloud.google.com/compute/docs/metadata/querying-metadata#aggcontents) partially implemented
 - [?alt=json](https://cloud.google.com/compute/docs/metadata/querying-metadata#format_query_output) not implemented
-- [?wait_for_change=true](https://cloud.google.com/compute/docs/metadata/querying-metadata#waitforchange) not implemented
+- [?wait_for_change=true](https://cloud.google.com/compute/docs/metadata/querying-metadata#waitforchange) partially implemented.  Supported for:
+  - `/computeMetadata/v1/instance/maintenance-event`
+  - `/computeMetadata/v1/instance/attributes/{key}`
 
 You are free to expand on the endpoints surfaced here..pls feel free to file a PR!
 
@@ -283,6 +287,7 @@ You can set the following options on usage:
 | **`GOOGLE_NUMERIC_PROJECT_ID`** | static environment variable for the numeric project id to return |
 | **`GOOGLE_ACCESS_TOKEN`** | static environment variable for access_token to return |
 | **`GOOGLE_ID_TOKEN`** | static environment variable for id_token to return |
+| **`GOOGLE_SERVICE_ACCOUNT`** | static environment variable for serviceAccount email |
 
 ##### `TPM Authentication Options`
 | Option | Description |
@@ -304,7 +309,6 @@ You can set the following options on usage:
 | **`-metricsPort`** | Prometheus metrics port (default: 9000) |
 | **`-metricsPath`** | Prometheus metrics path (default: /metrics) |
 
-
 ##### `Misc Options`
 | Option | Description |
 |:------------|-------------|
@@ -313,6 +317,10 @@ You can set the following options on usage:
 | **`-rootCAmTLS`** | Root CA for mtls client validation (default: `certs/root.crt`) |
 | **`-serverCert`** | Server certificate for mtls (default: `certs/server.crt`) |
 | **`-serverKey`** | Server key for mtls (default: `certs/server.key`) |
+
+##### `Logging Options`
+
+Metadata uses [glog logging flags](https://pkg.go.dev/github.com/golang/glog) flags (suggest `-alsologtostderr -v=10`)
 
 
 ### With JSON ServiceAccount file
@@ -384,6 +392,7 @@ To use this mode, you must first setup the Federation and then set the environme
 for reference, see
 
 * [Exchange Generic OIDC Credentials for GCP Credentials using GCP STS Service](https://github.com/salrashid123/gcpcompat-oidc)
+* [Simple GCP OIDC workload Federation using a fake oidc server](https://gist.github.com/salrashid123/677866e42cf2785fe885ae9d6130fc21)
 * [Exchange AWS Credentials for GCP Credentials using GCP STS Service](https://github.com/salrashid123/gcpcompat-aws)
 
 where the `sts-creds.json` file is the generated one you created.  For example using the OIDC tutorial above, it may look like
@@ -423,7 +432,7 @@ where `/tmp/oidcred.txt` contains the original oidc token
 
 If the service account private key is bound inside a `Trusted Platform Module (TPM)`, the metadata server can use that key to issue an `access_token` or an `id_token`
 
-Before using this mode, the key _must be_ sealed into the TPM and surfaced as a `persistentHandle` or as a [PEM encoded TPM Keyfile](https://github.com/salrashid123/tpm2/tree/master/tpm-key).  This can be done in a number of ways described [here](https://github.com/salrashid123/oauth2/blob/master/README.md#usage-tpmtokensource): 
+Before using this mode, the key _must be_ sealed into the TPM and surfaced as a `persistentHandle` or as a [PEM encoded TPM Keyfile](https://github.com/salrashid123/tpm2/tree/master/tpm-key).
 
 Basically, you can either
 
@@ -433,7 +442,7 @@ Basically, you can either
 
 `A` is the easiest for a demo
 
-`B` is the most secure since the key only ever exists inside a TPM
+`B` the key only ever exists inside one TPM
 
 `C` allows for multiple TPMs to use the same key 
 
@@ -459,14 +468,14 @@ printf '\x00\x00' > unique.dat
 tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
  
 tpm2_import -C primary.ctx -G rsa2048:rsassa:null -g sha256 -i /tmp/key_rsa.pem -u key.pub -r key.prv
-tpm2_flushcontext -t
 tpm2_load -C primary.ctx -u key.pub -r key.prv -c key.ctx
-tpm2_flushcontext -t
 
 ## either persist the key to a handle
 tpm2_evictcontrol -C o -c key.ctx 0x81010002
 
 ### or as PEM format file
+### (note you may need to add a -p parameter to tpm2_encodeobject depending on how recent tpm2_tools you're using
+###  see (https://github.com/tpm2-software/tpm2-tools/issues/3458))
 tpm2_encodeobject -C primary.ctx -u key.pub -r key.prv -o private.pem
 
 ## this formats it as TPM-encrypted PEM:
@@ -510,7 +519,38 @@ The TPM based credentials imports a JWT generator library to perform the oauth a
 * [salrashid123/golang-jwt-tpm](https://github.com/salrashid123/golang-jwt-tpm)
 * [salrashid123/oauth2](https://github.com/salrashid123/oauth2)
 
-If the TPM based key is restricted through a PCR policy, you will need to supply the list of PCRs its bound to using the `--pcrs` flag: (eg `--pcrs=2,3,23`).  See examples [here](https://github.com/salrashid123/gcp-adc-tpm?tab=readme-ov-file#pcr-policy)
+If the TPM key is restricted through a auth password or PCR policy, you will need to supply the password or list of PCRs its bound to using the `--keyPass=` or `--pcrs` flag: (eg `--pcrs=2,3,23`).  See examples [here](https://github.com/salrashid123/gcp-adc-tpm?tab=readme-ov-file#pcr-policy)
+
+```bash
+## RSA - password policy
+	printf '\x00\x00' > unique.dat
+	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+
+	tpm2_import -C primary.ctx -G rsa2048:rsassa:null -g sha256 -i /tmp/key_rsa.pem -u key.pub -r key.prv -p pass1
+	tpm2_load -C primary.ctx  -u key.pub -r key.prv -c key.ctx -p pass1
+	# tpm2_evictcontrol -C o -c key.ctx 0x81008002
+	tpm2_encodeobject -C primary.ctx -u key.pub -r key.prv -o  /tmp/private.pem -p
+
+go run cmd/main.go --configFile=config.json   -alsologtostderr -v 50 -port :8080 --tpm --keyfile=/tmp/private.pem --keyPass pass1
+```
+
+```bash
+## RSA - pcr policy
+	tpm2_pcrread sha256:23
+	tpm2_startauthsession -S session.dat
+	tpm2_policypcr -S session.dat -l sha256:23  -L policy.dat
+	tpm2_flushcontext session.dat
+
+	printf '\x00\x00' > unique.dat
+	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+
+	tpm2_import -C primary.ctx -G rsa2048:rsassa:null -g sha256 -i /tmp/key_rsa.pem -u key.pub -r key.prv  -L policy.dat
+	tpm2_load -C primary.ctx -u key.pub -r key.prv -c key.ctx
+	# tpm2_evictcontrol -C o -c key.ctx 0x81008003
+	tpm2_encodeobject -C primary.ctx -u key.pub -r key.prv -o /tmp/private.pem 
+
+go run cmd/main.go --configFile=config.json   -alsologtostderr -v 50 -port :8080 --tpm --keyfile=/tmp/private.pem -pcrs=23
+```
 
 Note that if you are using PCR policy, the metadata server cache's the credential values until it expires (which is typically an hour). If you enable a PCR policy and then change it to invalidate the TPM-based key's usage, the server will return the same token until it needs to referesh it.
 
@@ -569,6 +609,8 @@ curl -s -H 'Metadata-Flavor: Google' --connect-to metadata.google.internal:80:12
   "token_type": "Bearer"
 }
 ```
+
+The `access_token` returns the value for the `default` service account only.  A TODO: is to support multiple service accounts when the GCE supports it and if its set in the path.
 
 ### IDToken
 
@@ -822,28 +864,45 @@ GCE metadata servers return values with [ETag](https://cloud.google.com/compute/
 
 This metadata server will hash the value for the body to return and use that as the ETag.  If you update the configuration file with new attributes or values, the ETag for that node will change.  The `ETag` header key is returned in non-canonical format.
 
-Note `wait-for-change` value is not supported currently so while you can poll for etag changes, you cannot listen and hold.
-
 Finally, since the etag is just a hash of the node, if you change a value then back again, the same etag will get returned for that node. 
+
+### Wait For Change
+
+The `wait_for_change` value is supported only on certain endpoints, currently:
+
+  - `/computeMetadata/v1/instance/maintenance-event`
+  - `/computeMetadata/v1/instance/attributes/{key}`
+
+For example, to wait for the `maintenance-event` to change state,
+
+run 
+
+```bash
+curl -s -H 'Metadata-Flavor: Google' --connect-to metadata.google.internal:80:127.0.0.1:8080 \
+     http://metadata.google.internal/computeMetadata/v1/instance/maintenance-event?wait_for_change=true
+```
+
+then edit `config.json` and change the value of `.computeMetadata.v1.instance.maintenanceEvent` to `MIGRATE_ON_HOST_MAINTENANCE`
+
+The curl command should terminate and return the new value
 
 ### Static environment variables
 
-If you do not have access to certificate file or would like to specify **static** token values via env-var, the metadata server supports the following environment variables as substitutions.  Once you set these environment variables, the service will not look for anything using the service Account JSON file (even if specified)
+If you do not have access to a service account key file or would like to specify **static** token values via env-var, the metadata server supports the following environment variables as substitutions.  Once you set these environment variables, the service will not look for anything using the service Account JSON file (even if specified).
+
+You must set all the following environment variables:
+
 
 ```bash
-export GOOGLE_PROJECT_ID=`gcloud config get-value core/project`
-export GOOGLE_NUMERIC_PROJECT_ID=`gcloud projects describe $GOOGLE_PROJECT_ID --format="value(projectNumber)"`
+export GOOGLE_PROJECT_ID="some_project_id"
+export GOOGLE_NUMERIC_PROJECT_ID="some_project_number"
 export GOOGLE_ACCESS_TOKEN="some_static_token"
 export GOOGLE_ID_TOKEN="some_id_token"
-export GOOGLE_ACCOUNT_EMAIL="metadata-sa@PROJECT.iam.gserviceaccount.com"
-```
+export GOOGLE_SERVICE_ACCOUNT="metadata-sa@PROJECT.iam.gserviceaccount.com"
 
-for example you can use those env vars and specify a fake svc account json key file (fake since its not actually even used)
-
-```bash
 ./gce_metadata_server -logtostderr  \
    -alsologtostderr -v 5 \
-   -port :8080 --configFile=`pwd`/config.json  --serviceAccountFile=certs/fake_sa.json
+   -port :8080 --configFile=`pwd`/config.json
 ```
 
 or
@@ -854,12 +913,11 @@ docker run \
   -e GOOGLE_ACCESS_TOKEN=$GOOGLE_ACCESS_TOKEN \
   -e GOOGLE_NUMERIC_PROJECT_ID=$GOOGLE_NUMERIC_PROJECT_ID \
   -e GOOGLE_PROJECT_ID=$GOOGLE_PROJECT_ID \
-  -e GOOGLE_ACCOUNT_EMAIL=$GOOGLE_ACCOUNT_EMAIL \
+  -e GOOGLE_SERVICE_ACCOUNT=$GOOGLE_SERVICE_ACCOUNT \
   -e GOOGLE_ID_TOKEN=$GOOGLE_ID_TOKEN \  
   -v `pwd`/config.json:/config.json \
-  -v `pwd`/certs/fake_sa.json:/certs/fake_sa.json \
   -t salrashid123/gcemetadataserver \
-  -port :8080 --configFile=/config.json --serviceAccountFile=/certs/fake_sa.json \
+  -port :8080 --configFile=/config.json \
   --interface=0.0.0.0 -logtostderr -alsologtostderr -v 5
 ```
 
@@ -922,6 +980,22 @@ curl -v -H 'Metadata-Flavor: Google' \
 ```
 
 If you don't mind running the program on port `:80` directly, you can skip the socat and iptables and simply start the emulator to on the link address (`-port :80 --interface=169.254.169.254`)  after setting the `/etc/hosts` variable.
+
+#### Restricting Connections using iptables
+
+You can restrict access to the metadata server using several techniques.
+
+If you want to use `iptables` to restrct access to only users in group `gid=1001`:
+
+```bash
+iptables -A INPUT -p tcp -s localhost --dport 8080 -j ACCEPT
+iptables -A INPUT -p tcp --dport 8080 -j REJECT
+
+iptables -A OUTPUT -p tcp -o lo -d 127.0.0.1 --dport 8080 -m owner --gid-owner 1001 -j ACCEPT
+iptables -A OUTPUT -p tcp -o lo -d 127.0.0.1 --dport 8080 -j REJECT
+```
+
+todo: using selinux
 
 #### Using Domain Sockets
 
@@ -1016,31 +1090,30 @@ For example, the attestation for releases `[@refs/tags/v3.93.5]` can be found at
 Then to verify:
 
 ```bash
-$ wget https://github.com/salrashid123/gce_metadata_server/releases/download/v3.93.5/gce_metadata_server_3.93.5_linux_amd64
-$ wget https://github.com/salrashid123/gce_metadata_server/attestations/4853131/download -O salrashid123-gce_metadata_server-attestation-4853131.json
+wget https://github.com/salrashid123/gce_metadata_server/releases/download/v3.93.5/gce_metadata_server_3.93.5_linux_amd64
+wget https://github.com/salrashid123/gce_metadata_server/attestations/4853131/download -O salrashid123-gce_metadata_server-attestation-4853131.json
 
-$ gh attestation verify --owner salrashid123 --bundle salrashid123-gce_metadata_server-attestation-4853131.json  gce_metadata_server_3.93.5_linux_amd64 
+gh attestation verify --owner salrashid123 --bundle salrashid123-gce_metadata_server-attestation-4853131.json  gce_metadata_server_3.93.5_linux_amd64 
 
-Loaded digest sha256:1be0046bd047431ae0933e09e95e21e3146bff112099b08a54be1141b1576f92 for file://gce_metadata_server_3.93.5_linux_amd64
-Loaded 1 attestation from salrashid123-gce_metadata_server-attestation-4853131.json
+  Loaded digest sha256:1be0046bd047431ae0933e09e95e21e3146bff112099b08a54be1141b1576f92 for file://gce_metadata_server_3.93.5_linux_amd64
+  Loaded 1 attestation from salrashid123-gce_metadata_server-attestation-4853131.json
 
-The following policy criteria will be enforced:
-- Predicate type must match:................ https://slsa.dev/provenance/v1
-- Source Repository Owner URI must match:... https://github.com/salrashid123
-- Subject Alternative Name must match regex: (?i)^https://github.com/salrashid123/
-- OIDC Issuer must match:................... https://token.actions.githubusercontent.com
+  The following policy criteria will be enforced:
+  - Predicate type must match:................ https://slsa.dev/provenance/v1
+  - Source Repository Owner URI must match:... https://github.com/salrashid123
+  - Subject Alternative Name must match regex: (?i)^https://github.com/salrashid123/
+  - OIDC Issuer must match:................... https://token.actions.githubusercontent.com
 
-✓ Verification succeeded!
+  ✓ Verification succeeded!
 
-The following 1 attestation matched the policy criteria
+  The following 1 attestation matched the policy criteria
 
-- Attestation #1
-  - Build repo:..... salrashid123/gce_metadata_server
-  - Build workflow:. .github/workflows/release.yaml@refs/tags/v3.93.5
-  - Signer repo:.... salrashid123/gce_metadata_server
-  - Signer workflow: .github/workflows/release.yaml@refs/tags/v3.93.5
+  - Attestation #1
+    - Build repo:..... salrashid123/gce_metadata_server
+    - Build workflow:. .github/workflows/release.yaml@refs/tags/v3.93.5
+    - Signer repo:.... salrashid123/gce_metadata_server
+    - Signer workflow: .github/workflows/release.yaml@refs/tags/v3.93.5
 ```
-
 
 #### Verify Container Image Signature
 
@@ -1052,14 +1125,16 @@ IMAGE="index.docker.io/salrashid123/gcemetadataserver@sha256:c3cec9e18adb87a1488
 
 ## i signed it directly, keyless:
 export COSIGN_EXPERIMENTAL=1
-# $ cosign sign $IMAGE
+# cosign sign $IMAGE
 
 ## which you can verify:
-$ cosign verify --certificate-identity=salrashid123@gmail.com  --certificate-oidc-issuer=https://github.com/login/oauth $IMAGE | jq '.'
+cosign verify --certificate-identity=salrashid123@gmail.com  --certificate-oidc-issuer=https://github.com/login/oauth $IMAGE | jq '.'
 
 ## search and get 
-# $ rekor-cli search --rekor_server https://rekor.sigstore.dev  --email salrashid123@gmail.com
-# $ rekor-cli get --rekor_server https://rekor.sigstore.dev  --log-index $LogIndex  --format=json | jq '.'
+## get LogIndex   | jq '.[].optional.Bundle.Payload.logIndex'
+# export LogIndex=78786678
+# rekor-cli search --rekor_server https://rekor.sigstore.dev  --email salrashid123@gmail.com
+# rekor-cli get --rekor_server https://rekor.sigstore.dev  --log-index $LogIndex  --format=json | jq '.'
 ```
 
 #### GCE mTLS
@@ -1173,7 +1248,7 @@ the token has the audience set to the envoy configuration file
 
 Basic latency and counter Prometheus metrics are enabled using the `--metrisEnabled` flag.
 
-Once enabled, path latency is recoreded at the default prometheus endpoint at `http://localhost:9000/metrics`.
+Once enabled, path latency is recorded at the default prometheus endpoint  `http://localhost:9000/metrics`.
 
 Apart from latency, any dynamic field for access or identity tokens also has a counter and status metric surfaced.
 

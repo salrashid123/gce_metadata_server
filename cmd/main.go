@@ -118,7 +118,7 @@ func main() {
 	}
 
 	if *useImpersonate {
-		glog.Infoln("Using Service Account Impersonation")
+		glog.Infoln("Using Service Account Impersonation for credentials")
 
 		ts, err := impersonate.CredentialsTokenSource(ctx, impersonate.CredentialsConfig{
 			TargetPrincipal: claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
@@ -133,7 +133,7 @@ func main() {
 			TokenSource: ts,
 		}
 	} else if *useFederate {
-		glog.Infoln("Using Workload Identity Federation")
+		glog.Infoln("Using Workload Identity Federation for credentials")
 
 		if os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") == "" {
 			glog.Error("GOOGLE_APPLICATION_CREDENTIAL must be set with --federate")
@@ -148,7 +148,7 @@ func main() {
 			os.Exit(1)
 		}
 	} else if *useTPM {
-		glog.Infoln("Using TPM based token handle")
+		glog.Infoln("Using TPM for credentials")
 
 		// verify we actually have access to the TPM
 		rwc, err = OpenTPM(*tpmPath)
@@ -326,7 +326,7 @@ func main() {
 			ProjectID:   claims.ComputeMetadata.V1.Project.ProjectID,
 			TokenSource: ts,
 		}
-	} else {
+	} else if *serviceAccountFile != "" {
 
 		glog.Infoln("Using serviceAccountFile for credentials")
 		var err error
@@ -358,7 +358,21 @@ func main() {
 		if credFileEmail != claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email {
 			glog.Warningf("Warning: service account email in config file [%s] does not match project from credentials [%s]", claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email, credFileEmail)
 		}
-
+	} else {
+		glog.Infoln("Using environment variables for credentials")
+		if os.Getenv("GOOGLE_ACCESS_TOKEN") == "" || os.Getenv("GOOGLE_ID_TOKEN") == "" || os.Getenv("GOOGLE_PROJECT_ID") == "" || os.Getenv("GOOGLE_NUMERIC_PROJECT_ID") == "" || os.Getenv("GOOGLE_SERVICE_ACCOUNT") == "" {
+			glog.Errorf("Environment variables must be set: GOOGLE_ID_TOKEN,  GOOGLE_ACCESS_TOKEN,  GOOGLE_PROJECT_ID,  GOOGLE_NUMERIC_PROJECT_ID,  GOOGLE_SERVICE_ACCOUNT")
+			os.Exit(1)
+		}
+		ts := oauth2.StaticTokenSource(&oauth2.Token{
+			AccessToken: os.Getenv(os.Getenv("GOOGLE_ACCESS_TOKEN")),
+			Expiry:      time.Now().Add(time.Second * 3600),
+			TokenType:   "Bearer",
+		})
+		creds = &google.Credentials{
+			ProjectID:   os.Getenv("GOOGLE_PROJECT_ID"),
+			TokenSource: ts,
+		}
 	}
 
 	if *usemTLS && (*rootCAmTLS == "" || *serverCert == "" || *serverKey == "") {
@@ -410,7 +424,7 @@ func main() {
 				}
 
 				if event.Has(fsnotify.Write) {
-					if event.Name == *configFile {
+					if event.Name == fmt.Sprintf("%s/%s", filepath.Dir(*configFile), filepath.Base(*configFile)) {
 						time.Sleep(8 * time.Millisecond) // https://github.com/fsnotify/fsnotify/issues/372
 						configData, err := os.ReadFile(*configFile)
 						if err != nil {
@@ -424,6 +438,7 @@ func main() {
 							glog.Errorf("Error parsing json: %v\n", err)
 							return
 						}
+						glog.V(10).Infoln("configFile updated")
 						f.Claims = *claims
 					}
 				}

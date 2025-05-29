@@ -529,7 +529,7 @@ If the TPM key is restricted through a auth password or PCR policy, you will nee
 	tpm2_import -C primary.ctx -G rsa2048:rsassa:null -g sha256 -i /tmp/key_rsa.pem -u key.pub -r key.prv -p pass1
 	tpm2_load -C primary.ctx  -u key.pub -r key.prv -c key.ctx -p pass1
 	# tpm2_evictcontrol -C o -c key.ctx 0x81008002
-	tpm2_encodeobject -C primary.ctx -u key.pub -r key.prv -o  /tmp/private.pem -p
+	tpm2_encodeobject -C primary.ctx -u key.pub -r key.prv -o  /tmp/private.pem
 
 go run cmd/main.go --configFile=config.json   -alsologtostderr -v 50 -port :8080 --tpm --keyfile=/tmp/private.pem --keyPass pass1
 ```

@@ -759,13 +759,13 @@ func (h *MetadataServer) getIDToken(targetAudience string, acct string) (string,
 		}
 
 		claims := &idTokenJWT{
-			jwt.RegisteredClaims{
+			RegisteredClaims: jwt.RegisteredClaims{
 				Issuer:    h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts[acct].Email,
 				IssuedAt:  jwt.NewNumericDate(iat),
 				ExpiresAt: jwt.NewNumericDate(exp),
 				Audience:  []string{"https://oauth2.googleapis.com/token"},
 			},
-			targetAudience,
+			TargetAudience: targetAudience,
 		}
 
 		tpmjwt.SigningMethodTPMRS256.Override()
@@ -1027,11 +1027,13 @@ func (h *MetadataServer) computeMetadatav1InstanceUpcomingMaintenanceHandler(w h
 
 	var emp UpComingMaintenance
 	if h.Claims.ComputeMetadata.V1.Instance.UpComingMaintenance == emp {
-		res := "{ \"error\": \"no notifications have been received yet, try again later\" }"
-		httpError(w, res, http.StatusServiceUnavailable, "text/html")
+		w.Header().Set("Content-Type", "application/text")
+		resp := "NONE"
+		e := getETag([]byte(resp))
+		w.Header()["ETag"] = []string{e}
+		w.Write([]byte(resp))
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
 
 	if h.handleRecursion(w, r, h.Claims.ComputeMetadata.V1.Instance.UpComingMaintenance) {
 		return

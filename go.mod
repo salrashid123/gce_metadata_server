@@ -13,7 +13,7 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/prometheus/client_golang v1.21.1
 	github.com/salrashid123/golang-jwt-tpm v1.8.9
-	github.com/salrashid123/oauth2/v3 v3.0.2
+	github.com/salrashid123/oauth2/v3 v3.0.3
 	golang.org/x/oauth2 v0.30.0
 	google.golang.org/api v0.228.0
 )

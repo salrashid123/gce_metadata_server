@@ -5,16 +5,16 @@ go 1.24.0
 require (
 	cloud.google.com/go/compute/metadata v0.6.0
 	cloud.google.com/go/iam v1.4.2
-	github.com/foxboron/go-tpm-keyfiles v0.0.0-20250323135004-b31fac66206e
+	github.com/foxboron/go-tpm-keyfiles v0.0.0-20250520203025-c3c3a4ec1653
 	github.com/fsnotify/fsnotify v1.8.0
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/golang/glog v1.2.4
-	github.com/google/go-tpm v0.9.3
+	github.com/google/go-tpm v0.9.5
 	github.com/gorilla/mux v1.8.1
 	github.com/prometheus/client_golang v1.21.1
 	github.com/salrashid123/golang-jwt-tpm v1.8.9
-	github.com/salrashid123/oauth2/tpm v0.0.0-20250331161936-82ecdbb7a28f
-	golang.org/x/oauth2 v0.28.0
+	github.com/salrashid123/oauth2/v3 v3.0.2
+	golang.org/x/oauth2 v0.30.0
 	google.golang.org/api v0.228.0
 )
 

@@ -25,7 +25,7 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 	mds "github.com/salrashid123/gce_metadata_server"
 	tpmjwt "github.com/salrashid123/golang-jwt-tpm"
-	saltpm "github.com/salrashid123/oauth2/tpm"
+	saltpm "github.com/salrashid123/oauth2/v3"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -54,6 +54,7 @@ var (
 	keyPass               = flag.String("keyPass", "", "TPM Key password")
 	pcrs                  = flag.String("pcrs", "", "PCR Bound value (increasing order, comma separated)")
 	sessionEncryptionName = flag.String("tpm-session-encrypt-with-name", "", "hex encoded TPM object 'name' to use with an encrypted session")
+	useOauthToken         = flag.Bool("useOauthToken", false, "Use oauth2 token instead of jwtAccessToken (default: false)")
 
 	usemTLS           = flag.Bool("usemTLS", false, "Use mTLS")
 	rootCAmTLS        = flag.String("rootCAmTLS", "certs/root.crt", "rootCA to validate client certs ")
@@ -293,6 +294,7 @@ func main() {
 				Email:            claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
 				Scopes:           claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
 				EncryptionHandle: encryptionSessionHandle,
+				UseOauthToken:    *useOauthToken,
 			})
 			if err != nil {
 				glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
@@ -311,6 +313,7 @@ func main() {
 				Email:            claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
 				Scopes:           claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
 				EncryptionHandle: encryptionSessionHandle,
+				UseOauthToken:    *useOauthToken,
 			})
 			if err != nil {
 				glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)

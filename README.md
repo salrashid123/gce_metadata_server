@@ -300,6 +300,7 @@ You can set the following options on usage:
 | **`-keyPass`** | TPM key password (default: "") |
 | **`-pcrs`** | TPM PCR values the key is bound to (comma separated pcrs in ascending order) |
 | **`--tpm-session-encrypt-with-name`** | hex encoded TPM object 'name' to use with an encrypted session |
+| **`--useOauthToken`** | Use oauth2 token instead of jwtAccessToken (default: false)|
 
 ##### `Monitoring Options`
 | Option | Description |
@@ -1257,6 +1258,10 @@ Apart from latency, any dynamic field for access or identity tokens also has a c
 a lot todo here, right...thats just life
 
 ```bash
+# export CICD_SA_JSON=`cat certs/metadata-sa.json`
+# export CICD_SA_PEM=`cat certs/metadata-sa.json | jq -r '.private_key'`
+# export CICD_SA_EMAIL=metadata-sa@$PROJECT_ID.iam.gserviceaccount.com
+
 $ go test -v 
 
 === RUN   TestBasePathRedirectHandler

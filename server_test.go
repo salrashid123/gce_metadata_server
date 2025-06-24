@@ -550,6 +550,134 @@ func TestAttributeWaitForChange(t *testing.T) {
 	}
 }
 
+/*
+# export CICD_SA_JSON=`cat certs/metadata-sa.json`
+# export CICD_SA_PEM=`cat certs/metadata-sa.json | jq -r '.private_key'`
+# export CICD_SA_EMAIL=metadata-sa@$PROJECT_ID.iam.gserviceaccount.com
+*/
+
+// func TestRealAccessToken(t *testing.T) {
+
+// 	saEmail := os.Getenv("CICD_SA_EMAIL")
+// 	// saPEM := os.Getenv("CICD_SA_PEM")
+// 	saJSON := os.Getenv("CICD_SA_JSON")
+
+// 	creds, err := google.CredentialsFromJSON(t.Context(), []byte(saJSON), cloudPlatformScope)
+// 	if err != nil {
+// 		t.Errorf("error getting default creds %v", err)
+// 	}
+
+// 	p, err := getFreePort()
+// 	if err != nil {
+// 		t.Errorf("error getting emulator port %v", err)
+// 	}
+// 	sc := &ServerConfig{
+// 		Port: fmt.Sprintf(":%d", p),
+// 	}
+
+// 	cl := &Claims{
+// 		ComputeMetadata: ComputeMetadata{
+// 			V1: V1{
+// 				Project: Project{
+// 					ProjectID: "testing",
+// 				},
+// 				Instance: Instance{
+// 					ServiceAccounts: map[string]serviceAccountDetails{
+// 						"default": serviceAccountDetails{
+// 							Aliases: []string{"default"},
+// 							Email:   saEmail,
+// 							Scopes:  []string{cloudPlatformScope},
+// 						},
+// 					},
+// 				},
+// 			},
+// 		},
+// 	}
+
+// 	h, err := NewMetadataServer(context.Background(), sc, creds, cl)
+// 	if err != nil {
+// 		t.Errorf("error creating emulator %v", err)
+// 	}
+// 	err = h.Start()
+// 	if err != nil {
+// 		t.Errorf("error starting emulator %v", err)
+// 	}
+// 	defer h.Shutdown()
+
+// 	t.Setenv("GCE_METADATA_HOST", fmt.Sprintf("127.0.0.1:%d", p))
+
+// 	ts := google.ComputeTokenSource("default", cloudPlatformScope)
+// 	// ts, err := google.DefaultTokenSource(t.Context(), cloudPlatformScope)
+// 	// if err != nil {
+// 	// 	t.Errorf("error starting emulator %v", err)
+// 	// }
+// 	_, err = ts.Token()
+// 	if err != nil {
+// 		t.Errorf("error getting token %v", err)
+// 	}
+// }
+
+// func TestRealIdToken(t *testing.T) {
+
+// 	saEmail := os.Getenv("CICD_SA_EMAIL")
+// 	// saPEM := os.Getenv("CICD_SA_PEM")
+// 	saJSON := os.Getenv("CICD_SA_JSON")
+
+// 	creds, err := google.CredentialsFromJSON(t.Context(), []byte(saJSON), cloudPlatformScope)
+// 	if err != nil {
+// 		t.Errorf("error getting default creds %v", err)
+// 	}
+
+// 	p, err := getFreePort()
+// 	if err != nil {
+// 		t.Errorf("error getting emulator port %v", err)
+// 	}
+// 	sc := &ServerConfig{
+// 		Port: fmt.Sprintf(":%d", p),
+// 	}
+
+// 	cl := &Claims{
+// 		ComputeMetadata: ComputeMetadata{
+// 			V1: V1{
+// 				Project: Project{
+// 					ProjectID: "testing",
+// 				},
+// 				Instance: Instance{
+// 					ServiceAccounts: map[string]serviceAccountDetails{
+// 						"default": serviceAccountDetails{
+// 							Aliases: []string{"default"},
+// 							Email:   saEmail,
+// 							Scopes:  []string{cloudPlatformScope},
+// 						},
+// 					},
+// 				},
+// 			},
+// 		},
+// 	}
+
+// 	h, err := NewMetadataServer(context.Background(), sc, creds, cl)
+// 	if err != nil {
+// 		t.Errorf("error creating emulator %v", err)
+// 	}
+// 	err = h.Start()
+// 	if err != nil {
+// 		t.Errorf("error starting emulator %v", err)
+// 	}
+// 	defer h.Shutdown()
+
+// 	t.Setenv("GCE_METADATA_HOST", fmt.Sprintf("127.0.0.1:%d", p))
+
+// 	ts, err := idtoken.NewTokenSource(t.Context(), "https://foo.bar")
+// 	if err != nil {
+// 		t.Errorf("error getting tokensource %v", err)
+// 	}
+
+// 	_, err = ts.Token()
+// 	if err != nil {
+// 		t.Errorf("error getting token %v", err)
+// 	}
+// }
+
 // /*
 // 	"github.com/google/go-tpm-tools/simulator"
 // 	"github.com/google/go-tpm/tpm2"
@@ -558,6 +686,9 @@ func TestAttributeWaitForChange(t *testing.T) {
 // */
 
 // func TestTPMAccessTokenCredentialHandler(t *testing.T) {
+
+// 	saEmail := os.Getenv("CICD_SA_EMAIL")
+// 	saPEM := os.Getenv("CICD_SA_PEM")
 
 // 	tpmDevice, err := simulator.Get()
 // 	if err != nil {
@@ -580,49 +711,88 @@ func TestAttributeWaitForChange(t *testing.T) {
 // 		_, _ = flushContextCmd.Execute(rwr)
 // 	}()
 
-// 	rsaKeyResponse, err := tpm2.CreateLoaded{
+// 	block, _ := pem.Decode([]byte(saPEM))
+// 	if block == nil {
+// 		t.Errorf("     Failed to decode PEM block containing the key %v", err)
+// 	}
+// 	pvp, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+// 	if err != nil {
+// 		t.Errorf("error creating parsing pem %v", err)
+// 	}
+// 	pv := pvp.(*rsa.PrivateKey)
+
+// 	rsaTemplate := tpm2.TPMTPublic{
+// 		Type:    tpm2.TPMAlgRSA,
+// 		NameAlg: tpm2.TPMAlgSHA256,
+// 		ObjectAttributes: tpm2.TPMAObject{
+// 			FixedTPM:            false,
+// 			FixedParent:         false,
+// 			SensitiveDataOrigin: false,
+// 			UserWithAuth:        true,
+// 			SignEncrypt:         true,
+// 		},
+// 		AuthPolicy: tpm2.TPM2BDigest{},
+// 		Parameters: tpm2.NewTPMUPublicParms(
+// 			tpm2.TPMAlgRSA,
+// 			&tpm2.TPMSRSAParms{
+// 				Exponent: uint32(pv.PublicKey.E),
+// 				Scheme: tpm2.TPMTRSAScheme{
+// 					Scheme: tpm2.TPMAlgRSASSA,
+// 					Details: tpm2.NewTPMUAsymScheme(
+// 						tpm2.TPMAlgRSASSA,
+// 						&tpm2.TPMSSigSchemeRSASSA{
+// 							HashAlg: tpm2.TPMAlgSHA256,
+// 						},
+// 					),
+// 				},
+// 				KeyBits: 2048,
+// 			},
+// 		),
+
+// 		Unique: tpm2.NewTPMUPublicID(
+// 			tpm2.TPMAlgRSA,
+// 			&tpm2.TPM2BPublicKeyRSA{
+// 				Buffer: pv.PublicKey.N.Bytes(),
+// 			},
+// 		),
+// 	}
+
+// 	sens2B := tpm2.Marshal(tpm2.TPMTSensitive{
+// 		SensitiveType: tpm2.TPMAlgRSA,
+// 		Sensitive: tpm2.NewTPMUSensitiveComposite(
+// 			tpm2.TPMAlgRSA,
+// 			&tpm2.TPM2BPrivateKeyRSA{Buffer: pv.Primes[0].Bytes()},
+// 		),
+// 	})
+
+// 	l := tpm2.Marshal(tpm2.TPM2BPrivate{Buffer: sens2B})
+
+// 	importResponse, err := tpm2.Import{
 // 		ParentHandle: tpm2.AuthHandle{
 // 			Handle: primaryKey.ObjectHandle,
 // 			Name:   primaryKey.Name,
 // 			Auth:   tpm2.PasswordAuth(nil),
 // 		},
-// 		InPublic: tpm2.New2BTemplate(&tpm2.TPMTPublic{
-// 			Type:    tpm2.TPMAlgRSA,
-// 			NameAlg: tpm2.TPMAlgSHA256,
-// 			ObjectAttributes: tpm2.TPMAObject{
-// 				SignEncrypt:         true,
-// 				FixedTPM:            true,
-// 				FixedParent:         true,
-// 				SensitiveDataOrigin: true,
-// 				UserWithAuth:        true,
-// 			},
-// 			AuthPolicy: tpm2.TPM2BDigest{},
-// 			Parameters: tpm2.NewTPMUPublicParms(
-// 				tpm2.TPMAlgRSA,
-// 				&tpm2.TPMSRSAParms{
-// 					Scheme: tpm2.TPMTRSAScheme{
-// 						Scheme: tpm2.TPMAlgRSASSA,
-// 						Details: tpm2.NewTPMUAsymScheme(
-// 							tpm2.TPMAlgRSASSA,
-// 							&tpm2.TPMSSigSchemeRSASSA{
-// 								HashAlg: tpm2.TPMAlgSHA256,
-// 							},
-// 						),
-// 					},
-// 					KeyBits: 2048,
-// 				},
-// 			),
-// 			Unique: tpm2.NewTPMUPublicID(
-// 				tpm2.TPMAlgRSA,
-// 				&tpm2.TPM2BPublicKeyRSA{
-// 					Buffer: make([]byte, 256),
-// 				},
-// 			),
-// 		}),
+// 		ObjectPublic: tpm2.New2B(rsaTemplate),
+// 		Duplicate:    tpm2.TPM2BPrivate{Buffer: l},
 // 	}.Execute(rwr)
 // 	if err != nil {
-// 		t.Errorf("error creating key %v", err)
+// 		t.Errorf("error importing TPM key %v", err)
 // 	}
+
+// 	rsaKeyResponse, err := tpm2.Load{
+// 		ParentHandle: tpm2.AuthHandle{
+// 			Handle: primaryKey.ObjectHandle,
+// 			Name:   primaryKey.Name,
+// 			Auth:   tpm2.PasswordAuth(nil),
+// 		},
+// 		InPublic:  tpm2.New2B(rsaTemplate),
+// 		InPrivate: importResponse.OutPrivate,
+// 	}.Execute(rwr)
+// 	if err != nil {
+// 		t.Errorf("error loading tpm key %v", err)
+// 	}
+
 // 	defer func() {
 // 		flushContextCmd := tpm2.FlushContext{
 // 			FlushHandle: rsaKeyResponse.ObjectHandle,
@@ -635,8 +805,8 @@ func TestAttributeWaitForChange(t *testing.T) {
 // 		TPMDevice:   tpmDevice,
 // 		Handle:      rsaKeyResponse.ObjectHandle,
 // 		AuthSession: authSession,
-// 		Email:       "metadata-sa@$PROJECT.iam.gserviceaccount.com",
-// 		Scopes:      []string{"https://www.googleapis.com/auth/cloud-platform"},
+// 		Email:       saEmail,
+// 		Scopes:      []string{cloudPlatformScope},
 // 	})
 
 // 	creds := &google.Credentials{
@@ -648,10 +818,31 @@ func TestAttributeWaitForChange(t *testing.T) {
 // 		t.Errorf("error getting emulator port %v", err)
 // 	}
 // 	sc := &ServerConfig{
-// 		Port: fmt.Sprintf(":%d", p),
+// 		Port:   fmt.Sprintf(":%d", p),
+// 		UseTPM: true,
+// 		Handle: rsaKeyResponse.ObjectHandle,
 // 	}
 
-// 	h, err := NewMetadataServer(context.Background(), sc, creds, &Claims{})
+// 	cl := &Claims{
+// 		ComputeMetadata: ComputeMetadata{
+// 			V1: V1{
+// 				Project: Project{
+// 					ProjectID: "testing",
+// 				},
+// 				Instance: Instance{
+// 					ServiceAccounts: map[string]serviceAccountDetails{
+// 						"default": serviceAccountDetails{
+// 							Aliases: []string{"default"},
+// 							Email:   saEmail,
+// 							Scopes:  []string{cloudPlatformScope},
+// 						},
+// 					},
+// 				},
+// 			},
+// 		},
+// 	}
+
+// 	h, err := NewMetadataServer(context.Background(), sc, creds, cl)
 // 	if err != nil {
 // 		t.Errorf("error creating emulator %v", err)
 // 	}
@@ -666,6 +857,205 @@ func TestAttributeWaitForChange(t *testing.T) {
 // 	ts, err := google.DefaultTokenSource(context.Background(), cloudPlatformScope)
 // 	if err != nil {
 // 		t.Errorf("error getting tokenSource %v", err)
+// 	}
+
+// 	_, err = ts.Token()
+// 	if err != nil {
+// 		t.Errorf("error getting token %v", err)
+// 	}
+
+// 	// ctx := context.Background()
+// 	// storeageClient, err := storage.NewClient(ctx, option.WithTokenSource(ts))
+// 	// if err != nil {
+// 	// 	t.Errorf("Unable to acquire storage Client: %v", err)
+// 	// }
+
+// 	// it := storeageClient.Buckets(ctx, "some-test-project")
+// 	// for {
+// 	// 	bucketAttrs, err := it.Next()
+// 	// 	if err == iterator.Done {
+// 	// 		break
+// 	// 	}
+// 	// 	if err != nil {
+// 	// 		t.Errorf("Unable to acquire storage Client: %v", err)
+// 	// 	}
+// 	// 	t.Log(bucketAttrs.Name)
+// 	// }
+// }
+
+// func TestTPMIdTokenHandler(t *testing.T) {
+
+// 	saEmail := os.Getenv("CICD_SA_EMAIL")
+// 	saPEM := os.Getenv("CICD_SA_PEM")
+
+// 	tpmDevice, err := simulator.Get()
+// 	if err != nil {
+// 		t.Errorf("error getting simulator %v", err)
+// 	}
+// 	defer tpmDevice.Close()
+
+// 	rwr := transport.FromReadWriter(tpmDevice)
+// 	primaryKey, err := tpm2.CreatePrimary{
+// 		PrimaryHandle: tpm2.TPMRHOwner,
+// 		InPublic:      tpm2.New2B(keyfile.ECCSRK_H2_Template),
+// 	}.Execute(rwr)
+// 	if err != nil {
+// 		t.Errorf("error creating primary %v", err)
+// 	}
+// 	defer func() {
+// 		flushContextCmd := tpm2.FlushContext{
+// 			FlushHandle: primaryKey.ObjectHandle,
+// 		}
+// 		_, _ = flushContextCmd.Execute(rwr)
+// 	}()
+
+// 	block, _ := pem.Decode([]byte(saPEM))
+// 	if block == nil {
+// 		t.Errorf("     Failed to decode PEM block containing the key %v", err)
+// 	}
+// 	pvp, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+// 	if err != nil {
+// 		t.Errorf("error creating parsing pem %v", err)
+// 	}
+// 	pv := pvp.(*rsa.PrivateKey)
+
+// 	rsaTemplate := tpm2.TPMTPublic{
+// 		Type:    tpm2.TPMAlgRSA,
+// 		NameAlg: tpm2.TPMAlgSHA256,
+// 		ObjectAttributes: tpm2.TPMAObject{
+// 			FixedTPM:            false,
+// 			FixedParent:         false,
+// 			SensitiveDataOrigin: false,
+// 			UserWithAuth:        true,
+// 			SignEncrypt:         true,
+// 		},
+// 		AuthPolicy: tpm2.TPM2BDigest{},
+// 		Parameters: tpm2.NewTPMUPublicParms(
+// 			tpm2.TPMAlgRSA,
+// 			&tpm2.TPMSRSAParms{
+// 				Exponent: uint32(pv.PublicKey.E),
+// 				Scheme: tpm2.TPMTRSAScheme{
+// 					Scheme: tpm2.TPMAlgRSASSA,
+// 					Details: tpm2.NewTPMUAsymScheme(
+// 						tpm2.TPMAlgRSASSA,
+// 						&tpm2.TPMSSigSchemeRSASSA{
+// 							HashAlg: tpm2.TPMAlgSHA256,
+// 						},
+// 					),
+// 				},
+// 				KeyBits: 2048,
+// 			},
+// 		),
+
+// 		Unique: tpm2.NewTPMUPublicID(
+// 			tpm2.TPMAlgRSA,
+// 			&tpm2.TPM2BPublicKeyRSA{
+// 				Buffer: pv.PublicKey.N.Bytes(),
+// 			},
+// 		),
+// 	}
+
+// 	sens2B := tpm2.Marshal(tpm2.TPMTSensitive{
+// 		SensitiveType: tpm2.TPMAlgRSA,
+// 		Sensitive: tpm2.NewTPMUSensitiveComposite(
+// 			tpm2.TPMAlgRSA,
+// 			&tpm2.TPM2BPrivateKeyRSA{Buffer: pv.Primes[0].Bytes()},
+// 		),
+// 	})
+
+// 	l := tpm2.Marshal(tpm2.TPM2BPrivate{Buffer: sens2B})
+
+// 	importResponse, err := tpm2.Import{
+// 		ParentHandle: tpm2.AuthHandle{
+// 			Handle: primaryKey.ObjectHandle,
+// 			Name:   primaryKey.Name,
+// 			Auth:   tpm2.PasswordAuth(nil),
+// 		},
+// 		ObjectPublic: tpm2.New2B(rsaTemplate),
+// 		Duplicate:    tpm2.TPM2BPrivate{Buffer: l},
+// 	}.Execute(rwr)
+// 	if err != nil {
+// 		t.Errorf("error importing TPM key %v", err)
+// 	}
+
+// 	rsaKeyResponse, err := tpm2.Load{
+// 		ParentHandle: tpm2.AuthHandle{
+// 			Handle: primaryKey.ObjectHandle,
+// 			Name:   primaryKey.Name,
+// 			Auth:   tpm2.PasswordAuth(nil),
+// 		},
+// 		InPublic:  tpm2.New2B(rsaTemplate),
+// 		InPrivate: importResponse.OutPrivate,
+// 	}.Execute(rwr)
+// 	if err != nil {
+// 		t.Errorf("error loading tpm key %v", err)
+// 	}
+
+// 	defer func() {
+// 		flushContextCmd := tpm2.FlushContext{
+// 			FlushHandle: rsaKeyResponse.ObjectHandle,
+// 		}
+// 		_, _ = flushContextCmd.Execute(rwr)
+// 	}()
+
+// 	var authSession tpmjwt.Session
+// 	tpmts, err := saltpm.TpmTokenSource(&saltpm.TpmTokenConfig{
+// 		TPMDevice:   tpmDevice,
+// 		Handle:      rsaKeyResponse.ObjectHandle,
+// 		AuthSession: authSession,
+// 		Email:       saEmail,
+// 		Scopes:      []string{cloudPlatformScope},
+// 	})
+
+// 	creds := &google.Credentials{
+// 		ProjectID:   "bar",
+// 		TokenSource: tpmts}
+
+// 	p, err := getFreePort()
+// 	if err != nil {
+// 		t.Errorf("error getting emulator port %v", err)
+// 	}
+// 	sc := &ServerConfig{
+// 		Port:      fmt.Sprintf(":%d", p),
+// 		TPMDevice: tpmDevice,
+// 		UseTPM:    true,
+// 		Handle:    rsaKeyResponse.ObjectHandle,
+// 	}
+
+// 	cl := &Claims{
+// 		ComputeMetadata: ComputeMetadata{
+// 			V1: V1{
+// 				Project: Project{
+// 					ProjectID: "testing",
+// 				},
+// 				Instance: Instance{
+// 					ServiceAccounts: map[string]serviceAccountDetails{
+// 						"default": serviceAccountDetails{
+// 							Aliases: []string{"default"},
+// 							Email:   saEmail,
+// 							Scopes:  []string{cloudPlatformScope},
+// 						},
+// 					},
+// 				},
+// 			},
+// 		},
+// 	}
+
+// 	h, err := NewMetadataServer(context.Background(), sc, creds, cl)
+// 	if err != nil {
+// 		t.Errorf("error creating emulator %v", err)
+// 	}
+// 	err = h.Start()
+// 	if err != nil {
+// 		t.Errorf("error starting emulator %v", err)
+// 	}
+// 	defer h.Shutdown()
+
+// 	t.Setenv("GCE_METADATA_HOST", fmt.Sprintf("127.0.0.1:%d", p))
+
+// 	ts, err := idtoken.NewTokenSource(t.Context(), "https://foo.bar")
+// 	if err != nil {
+// 		t.Errorf("error getting tokensource %v", err)
 // 	}
 
 // 	_, err = ts.Token()

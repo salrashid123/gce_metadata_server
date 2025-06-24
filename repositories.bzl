@@ -70,8 +70,8 @@ def go_repositories():
     go_repository(
         name = "com_github_foxboron_go_tpm_keyfiles",
         importpath = "github.com/foxboron/go-tpm-keyfiles",
-        sum = "h1:2jjYsGgM13xId2Ku+UGDQTO5It50LhT6lljiVJvBj1Y=",
-        version = "v0.0.0-20250323135004-b31fac66206e",
+        sum = "h1:QpQsORx5N2EwomFMgeeY2Vzjf4h3nS2XtD8ETonNJVY=",
+        version = "v0.0.0-20250520203025-c3c3a4ec1653",
     )
     go_repository(
         name = "com_github_foxboron_swtpm_test",
@@ -142,8 +142,8 @@ def go_repositories():
     go_repository(
         name = "com_github_google_go_tpm",
         importpath = "github.com/google/go-tpm",
-        sum = "h1:+yx0/anQuGzi+ssRqeD6WpXjW2L/V0dItUayO0i9sRc=",
-        version = "v0.9.3",
+        sum = "h1:ocUmnDebX54dnW+MQWGQRbdaAcJELsa6PqZhJ48KwVU=",
+        version = "v0.9.5",
     )
     go_repository(
         name = "com_github_google_go_tpm_tools",
@@ -302,10 +302,10 @@ def go_repositories():
         version = "v1.8.9",
     )
     go_repository(
-        name = "com_github_salrashid123_oauth2_tpm",
-        importpath = "github.com/salrashid123/oauth2/tpm",
-        sum = "h1:fGCPweRF6gDKtMSrOXj2uruDD9Uu94cDWmrYKw+/hz0=",
-        version = "v0.0.0-20250331161936-82ecdbb7a28f",
+        name = "com_github_salrashid123_oauth2_v3",
+        importpath = "github.com/salrashid123/oauth2/v3",
+        sum = "h1:js7Vv4z58brcYxyRUk26GN3+cT7N1JF6MLtuEQiYD5o=",
+        version = "v3.0.2",
     )
     go_repository(
         name = "com_github_stretchr_testify",
@@ -514,8 +514,8 @@ def go_repositories():
     go_repository(
         name = "org_golang_x_oauth2",
         importpath = "golang.org/x/oauth2",
-        sum = "h1:CrgCKl8PPAVtLnU3c+EDw6x11699EWlsDeWNWKdIOkc=",
-        version = "v0.28.0",
+        sum = "h1:dnDm7JmhM45NNpd8FDDeLhK6FwqbOf4MLCM9zb1BOHI=",
+        version = "v0.30.0",
     )
     go_repository(
         name = "org_golang_x_sync",

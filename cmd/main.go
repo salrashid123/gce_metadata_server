@@ -160,7 +160,7 @@ func main() {
 		defer func() {
 			if err := rwc.Close(); err != nil {
 				glog.Error("can't close TPM %q: %v", *tpmPath, err)
-				os.Exit(1)
+				return
 			}
 		}()
 		rwr := transport.FromReadWriter(rwc)
@@ -176,7 +176,7 @@ func main() {
 			createEKRsp, err := createEKCmd.Execute(rwr)
 			if err != nil {
 				glog.Error(os.Stderr, "can't acquire acquire ek %v", err)
-				os.Exit(1)
+				return
 			}
 
 			defer func() {
@@ -189,7 +189,7 @@ func main() {
 			encryptionSessionHandle = createEKRsp.ObjectHandle
 			if *sessionEncryptionName != hex.EncodeToString(createEKRsp.Name.Buffer) {
 				glog.Errorf("session encryption names do not match expected [%s] got [%s]", *sessionEncryptionName, hex.EncodeToString(createEKRsp.Name.Buffer))
-				os.Exit(1)
+				return
 			}
 		}
 
@@ -202,7 +202,7 @@ func main() {
 				j, err := strconv.Atoi(i)
 				if err != nil {
 					glog.Error("ERROR:  could convert pcr value: %v", err)
-					os.Exit(1)
+					return
 				}
 				pcrList = append(pcrList, uint(j))
 			}
@@ -215,14 +215,14 @@ func main() {
 			})
 			if err != nil {
 				glog.Error(os.Stderr, "error creating tpm pcrsession %v\n", err)
-				os.Exit(1)
+				return
 			}
 
 		} else if *keyPass != "" {
 			authSession, err = tpmjwt.NewPasswordSession(rwr, []byte(*keyPass))
 			if err != nil {
 				glog.Error(os.Stderr, "error creating tpm passwordsession%v\n", err)
-				os.Exit(1)
+				return
 			}
 		}
 
@@ -233,12 +233,12 @@ func main() {
 			c, err := os.ReadFile(*tpmKeyFile)
 			if err != nil {
 				glog.Error("can't load tpmkeyfile: %v", err)
-				os.Exit(1)
+				return
 			}
 			key, err := keyfile.Decode(c)
 			if err != nil {
 				glog.Error("can't decode tpmkeyfile: %v", err)
-				os.Exit(1)
+				return
 			}
 
 			/*
@@ -255,7 +255,7 @@ func main() {
 			}.Execute(rwr)
 			if err != nil {
 				glog.Error("can't create primary: %v", err)
-				os.Exit(1)
+				return
 			}
 
 			defer func() {
@@ -277,7 +277,7 @@ func main() {
 
 			if err != nil {
 				glog.Error("can't loading key: %v", err)
-				os.Exit(1)
+				return
 			}
 
 			defer func() {
@@ -294,7 +294,7 @@ func main() {
 			}.Execute(rwr)
 			if err != nil {
 				glog.Error(os.Stderr, "error reading keyFile public from TPM: %v\n", err)
-				os.Exit(1)
+				return
 			}
 			glog.V(40).Infof("TPM credentials using using Key handle %s", hex.EncodeToString(pub.Name.Buffer))
 
@@ -309,7 +309,7 @@ func main() {
 			})
 			if err != nil {
 				glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
-				os.Exit(1)
+				return
 			}
 
 		} else if *persistentHandle > 0 {
@@ -322,7 +322,7 @@ func main() {
 			}.Execute(rwr)
 			if err != nil {
 				glog.Error(os.Stderr, "error reading persistentHandle public from TPM: %v\n", err)
-				os.Exit(1)
+				return
 			}
 			glog.V(40).Infof("TPM credentials name %s", hex.EncodeToString(pub.Name.Buffer))
 
@@ -337,12 +337,12 @@ func main() {
 			})
 			if err != nil {
 				glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
-				os.Exit(1)
+				return
 			}
 
 		} else {
 			glog.Error("Must specify either a persistent handle or a keyfile for use with at TPM")
-			os.Exit(1)
+			return
 		}
 
 		creds = &google.Credentials{

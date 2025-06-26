@@ -286,10 +286,21 @@ func main() {
 				}
 				_, _ = flushContextCmd.Execute(rwr)
 			}()
-			glog.V(40).Infof("TPM credentials using using Key handle %d", rsaKey.ObjectHandle)
+
+			handle = rsaKey.ObjectHandle
+
+			pub, err := tpm2.ReadPublic{
+				ObjectHandle: handle,
+			}.Execute(rwr)
+			if err != nil {
+				glog.Error(os.Stderr, "error reading keyFile public from TPM: %v\n", err)
+				os.Exit(1)
+			}
+			glog.V(40).Infof("TPM credentials using using Key handle %s", hex.EncodeToString(pub.Name.Buffer))
+
 			ts, err = saltpm.TpmTokenSource(&saltpm.TpmTokenConfig{
 				TPMDevice:        rwc,
-				Handle:           rsaKey.ObjectHandle,
+				Handle:           handle,
 				AuthSession:      authSession,
 				Email:            claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
 				Scopes:           claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
@@ -300,15 +311,24 @@ func main() {
 				glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
 				os.Exit(1)
 			}
-
-			handle = rsaKey.ObjectHandle
 
 		} else if *persistentHandle > 0 {
 			glog.V(40).Infof("TPM credentials using using persistent handle %d", *persistentHandle)
 
+			handle = tpm2.TPMHandle(*persistentHandle)
+
+			pub, err := tpm2.ReadPublic{
+				ObjectHandle: handle,
+			}.Execute(rwr)
+			if err != nil {
+				glog.Error(os.Stderr, "error reading persistentHandle public from TPM: %v\n", err)
+				os.Exit(1)
+			}
+			glog.V(40).Infof("TPM credentials name %s", hex.EncodeToString(pub.Name.Buffer))
+
 			ts, err = saltpm.TpmTokenSource(&saltpm.TpmTokenConfig{
 				TPMDevice:        rwc,
-				Handle:           tpm2.TPMHandle(*persistentHandle), // persistent handle
+				Handle:           handle, // persistent handle
 				AuthSession:      authSession,
 				Email:            claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
 				Scopes:           claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
@@ -319,7 +339,7 @@ func main() {
 				glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
 				os.Exit(1)
 			}
-			handle = tpm2.TPMHandle(*persistentHandle)
+
 		} else {
 			glog.Error("Must specify either a persistent handle or a keyfile for use with at TPM")
 			os.Exit(1)

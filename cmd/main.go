@@ -77,6 +77,10 @@ func OpenTPM(path string) (io.ReadWriteCloser, error) {
 }
 
 func main() {
+	os.Exit(run()) // since defer func() needs to get called first
+}
+
+func run() int {
 
 	flag.Parse()
 
@@ -85,7 +89,7 @@ func main() {
 		fmt.Printf("Version: %s\n", Tag)
 		fmt.Printf("Date: %s\n", Date)
 		fmt.Printf("Commit: %s\n", Commit)
-		os.Exit(0)
+		return 0
 	}
 
 	ctx := context.Background()
@@ -95,14 +99,14 @@ func main() {
 	configData, err := os.ReadFile(*configFile)
 	if err != nil {
 		glog.Errorf("Error reading config data file: %v\n", err)
-		os.Exit(-1)
+		return -1
 	}
 
 	claims := &mds.Claims{}
 	err = json.Unmarshal(configData, claims)
 	if err != nil {
 		glog.Errorf("Error parsing json: %v\n", err)
-		os.Exit(-1)
+		return -1
 	}
 
 	var creds *google.Credentials
@@ -115,7 +119,7 @@ func main() {
 	_, ok := claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"]
 	if !ok {
 		glog.Errorf("default service account must be set")
-		os.Exit(-1)
+		return -1
 	}
 
 	if *useImpersonate {
@@ -127,7 +131,7 @@ func main() {
 		})
 		if err != nil {
 			glog.Errorf("Unable to create Impersonated TokenSource %v ", err)
-			os.Exit(1)
+			return -1
 		}
 
 		creds = &google.Credentials{
@@ -138,7 +142,7 @@ func main() {
 
 		if os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") == "" {
 			glog.Error("GOOGLE_APPLICATION_CREDENTIAL must be set with --federate")
-			os.Exit(1)
+			return -1
 		}
 
 		glog.Infof("Federation path: %s", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
@@ -146,7 +150,7 @@ func main() {
 		creds, err = google.FindDefaultCredentials(ctx, claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes...)
 		if err != nil {
 			glog.Errorf("Unable load federated credentials %v", err)
-			os.Exit(1)
+			return -1
 		}
 	} else if *useTPM {
 		glog.Infoln("Using TPM for credentials")
@@ -155,7 +159,7 @@ func main() {
 		rwc, err = OpenTPM(*tpmPath)
 		if err != nil {
 			glog.Error("can't open TPM %q: %v", *tpmPath, err)
-			os.Exit(1)
+			return -1
 		}
 		defer func() {
 			if err := rwc.Close(); err != nil {
@@ -176,7 +180,7 @@ func main() {
 			createEKRsp, err := createEKCmd.Execute(rwr)
 			if err != nil {
 				glog.Error(os.Stderr, "can't acquire acquire ek %v", err)
-				return
+				return -1
 			}
 
 			defer func() {
@@ -189,7 +193,7 @@ func main() {
 			encryptionSessionHandle = createEKRsp.ObjectHandle
 			if *sessionEncryptionName != hex.EncodeToString(createEKRsp.Name.Buffer) {
 				glog.Errorf("session encryption names do not match expected [%s] got [%s]", *sessionEncryptionName, hex.EncodeToString(createEKRsp.Name.Buffer))
-				return
+				return -1
 			}
 		}
 
@@ -202,7 +206,7 @@ func main() {
 				j, err := strconv.Atoi(i)
 				if err != nil {
 					glog.Error("ERROR:  could convert pcr value: %v", err)
-					return
+					return -1
 				}
 				pcrList = append(pcrList, uint(j))
 			}
@@ -215,14 +219,14 @@ func main() {
 			})
 			if err != nil {
 				glog.Error(os.Stderr, "error creating tpm pcrsession %v\n", err)
-				return
+				return -1
 			}
 
 		} else if *keyPass != "" {
 			authSession, err = tpmjwt.NewPasswordSession(rwr, []byte(*keyPass))
 			if err != nil {
 				glog.Error(os.Stderr, "error creating tpm passwordsession%v\n", err)
-				return
+				return -1
 			}
 		}
 
@@ -233,12 +237,12 @@ func main() {
 			c, err := os.ReadFile(*tpmKeyFile)
 			if err != nil {
 				glog.Error("can't load tpmkeyfile: %v", err)
-				return
+				return -1
 			}
 			key, err := keyfile.Decode(c)
 			if err != nil {
 				glog.Error("can't decode tpmkeyfile: %v", err)
-				return
+				return -1
 			}
 
 			/*
@@ -255,7 +259,7 @@ func main() {
 			}.Execute(rwr)
 			if err != nil {
 				glog.Error("can't create primary: %v", err)
-				return
+				return -1
 			}
 
 			defer func() {
@@ -277,7 +281,7 @@ func main() {
 
 			if err != nil {
 				glog.Error("can't loading key: %v", err)
-				return
+				return -1
 			}
 
 			defer func() {
@@ -294,7 +298,7 @@ func main() {
 			}.Execute(rwr)
 			if err != nil {
 				glog.Error(os.Stderr, "error reading keyFile public from TPM: %v\n", err)
-				return
+				return -1
 			}
 			glog.V(40).Infof("TPM credentials using using Key handle %s", hex.EncodeToString(pub.Name.Buffer))
 
@@ -309,7 +313,7 @@ func main() {
 			})
 			if err != nil {
 				glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
-				return
+				return -1
 			}
 
 		} else if *persistentHandle > 0 {
@@ -322,7 +326,7 @@ func main() {
 			}.Execute(rwr)
 			if err != nil {
 				glog.Error(os.Stderr, "error reading persistentHandle public from TPM: %v\n", err)
-				return
+				return -1
 			}
 			glog.V(40).Infof("TPM credentials name %s", hex.EncodeToString(pub.Name.Buffer))
 
@@ -337,12 +341,12 @@ func main() {
 			})
 			if err != nil {
 				glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
-				return
+				return -1
 			}
 
 		} else {
 			glog.Error("Must specify either a persistent handle or a keyfile for use with at TPM")
-			return
+			return -1
 		}
 
 		creds = &google.Credentials{
@@ -356,12 +360,12 @@ func main() {
 		data, err := os.ReadFile(*serviceAccountFile)
 		if err != nil {
 			glog.Errorf("Unable to read serviceAccountFile %v", err)
-			os.Exit(1)
+			return -1
 		}
 		creds, err = google.CredentialsFromJSON(ctx, data, claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes...)
 		if err != nil {
 			glog.Errorf("Unable to parse serviceAccountFile %v ", err)
-			os.Exit(1)
+			return -1
 		}
 
 		if creds.ProjectID != claims.ComputeMetadata.V1.Project.ProjectID {
@@ -375,7 +379,7 @@ func main() {
 		err = json.Unmarshal(creds.JSON, &credJsonMap)
 		if err != nil {
 			glog.Errorf("Unable to parse serviceAccountFile as json %v ", err)
-			os.Exit(1)
+			return -1
 		}
 		credFileEmail := credJsonMap["client_email"]
 		if credFileEmail != claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email {
@@ -385,7 +389,7 @@ func main() {
 		glog.Infoln("Using environment variables for credentials")
 		if os.Getenv("GOOGLE_ACCESS_TOKEN") == "" || os.Getenv("GOOGLE_ID_TOKEN") == "" || os.Getenv("GOOGLE_PROJECT_ID") == "" || os.Getenv("GOOGLE_NUMERIC_PROJECT_ID") == "" || os.Getenv("GOOGLE_SERVICE_ACCOUNT") == "" {
 			glog.Errorf("Environment variables must be set: GOOGLE_ID_TOKEN,  GOOGLE_ACCESS_TOKEN,  GOOGLE_PROJECT_ID,  GOOGLE_NUMERIC_PROJECT_ID,  GOOGLE_SERVICE_ACCOUNT")
-			os.Exit(1)
+			return -1
 		}
 		ts := oauth2.StaticTokenSource(&oauth2.Token{
 			AccessToken: os.Getenv(os.Getenv("GOOGLE_ACCESS_TOKEN")),
@@ -401,7 +405,7 @@ func main() {
 	if *usemTLS && (*rootCAmTLS == "" || *serverCert == "" || *serverKey == "") {
 		if err != nil {
 			glog.Errorf("Must specify rootCAmTLS, serverCert and serverKey if useMTLS is set")
-			os.Exit(1)
+			return -1
 		}
 	}
 
@@ -428,13 +432,13 @@ func main() {
 	f, err := mds.NewMetadataServer(ctx, serverConfig, creds, claims)
 	if err != nil {
 		glog.Errorf("Error creating metadata server %v\n", err)
-		os.Exit(1)
+		return -1
 	}
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		glog.Errorf("Error creating file watcher: %v\n", err)
-		os.Exit(1)
+		return -1
 	}
 	defer watcher.Close()
 
@@ -477,7 +481,7 @@ func main() {
 	err = watcher.Add(filepath.Dir(*configFile))
 	if err != nil {
 		glog.Errorf("Error watching configFile: %v\n", err)
-		os.Exit(1)
+		return -1
 	}
 
 	done := make(chan os.Signal, 1)
@@ -486,12 +490,13 @@ func main() {
 	err = f.Start()
 	if err != nil {
 		glog.Errorf("Error starting %v\n", err)
-		os.Exit(1)
+		return -1
 	}
 	<-done
 	err = f.Shutdown()
 	if err != nil {
 		glog.Errorf("Error stopping %v\n", err)
-		os.Exit(1)
+		return -1
 	}
+	return 0
 }

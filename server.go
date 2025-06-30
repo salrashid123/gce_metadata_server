@@ -167,8 +167,9 @@ func notFoundErrorHandler(path string) string {
 
 func prometheusMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		route := mux.CurrentRoute(r)
-		path, _ := route.GetPathTemplate()
+		//route := mux.CurrentRoute(r)
+		//path, _ := route.GetPathTemplate()  // for template path
+		path := r.RequestURI // for absolute path
 		timer := prometheus.NewTimer(httpDuration.WithLabelValues(path))
 		next.ServeHTTP(w, r)
 		timer.ObserveDuration()

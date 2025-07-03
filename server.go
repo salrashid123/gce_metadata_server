@@ -22,7 +22,6 @@
 package mds
 
 import (
-	"bytes"
 	"crypto/md5"
 	"crypto/tls"
 	"crypto/x509"
@@ -40,15 +39,13 @@ import (
 	"fmt"
 
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 
-	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/golang/glog"
 	tpmjwt "github.com/salrashid123/golang-jwt-tpm"
+	tpmoauth "github.com/salrashid123/oauth2/v3"
 	"golang.org/x/oauth2"
-
 	"google.golang.org/api/idtoken"
 	"google.golang.org/api/impersonate"
 
@@ -751,91 +748,19 @@ func (h *MetadataServer) getIDToken(targetAudience string, acct string) (string,
 			AccessToken: resp.Token,
 		})
 	} else if h.ServerConfig.UseTPM {
-		iat := time.Now()
-		exp := iat.Add(time.Second * 10)
-
-		type idTokenJWT struct {
-			jwt.RegisteredClaims
-			TargetAudience string `json:"target_audience"`
-		}
-
-		claims := &idTokenJWT{
-			RegisteredClaims: jwt.RegisteredClaims{
-				Issuer:    h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts[acct].Email,
-				IssuedAt:  jwt.NewNumericDate(iat),
-				ExpiresAt: jwt.NewNumericDate(exp),
-				Audience:  []string{"https://oauth2.googleapis.com/token"},
-			},
-			TargetAudience: targetAudience,
-		}
-
-		tpmjwt.SigningMethodTPMRS256.Override()
-		jwt.MarshalSingleStringAsArray = false
-		token := jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
-
-		ctx := context.Background()
-
-		glog.V(20).Infof("TPM credentials using using handle  %d", h.ServerConfig.Handle)
-		config := &tpmjwt.TPMConfig{
+		idTokenSource, err = tpmoauth.TpmTokenSource(&tpmoauth.TpmTokenConfig{
 			TPMDevice:        h.ServerConfig.TPMDevice,
 			Handle:           h.ServerConfig.Handle,
+			Email:            h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts[acct].Email,
 			AuthSession:      h.ServerConfig.AuthSession,
+			IdentityToken:    true,
+			Audience:         targetAudience,
 			EncryptionHandle: h.ServerConfig.EncryptionHandle,
-		}
-
-		keyctx, err := tpmjwt.NewTPMContext(ctx, config)
-		if err != nil {
-			glog.Errorf("Unable to initialize tpmJWT: %v", err)
-			return "", err
-		}
-
-		tokenString, err := token.SignedString(keyctx)
-		if err != nil {
-			glog.Errorf("Error signing %v", err)
-			return "", err
-		}
-
-		client := &http.Client{}
-
-		data := url.Values{}
-		data.Add("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer")
-		data.Add("assertion", tokenString)
-
-		hreq, err := http.NewRequest(http.MethodPost, "https://oauth2.googleapis.com/token", bytes.NewBufferString(data.Encode()))
-		if err != nil {
-			glog.Errorf("Error: Unable to generate token Request, %v\n", err)
-			return "", err
-		}
-		hreq.Header.Set("Content-Type", "application/x-www-form-urlencoded; param=value")
-		resp, err := client.Do(hreq)
-		if err != nil {
-			glog.Errorf("Error: unable to POST token request, %v\n", err)
-			return "", err
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			f, err := io.ReadAll(resp.Body)
-			if err != nil {
-				glog.Errorf("Error Reading response body, %v\n", err)
-				return "", err
-			}
-			glog.Errorf("Error: Token Request error:, %s\n", f)
-			return "", fmt.Errorf("error response from oauth2 %s", f)
-		}
-		defer resp.Body.Close()
-
-		type idTokenResponse struct {
-			IdToken string `json:"id_token"`
-		}
-
-		var ret idTokenResponse
-		err = json.NewDecoder(resp.Body).Decode(&ret)
-		if err != nil {
-			return "", err
-		}
-		idTokenSource = oauth2.StaticTokenSource(&oauth2.Token{
-			AccessToken: ret.IdToken,
 		})
+		if err != nil {
+			glog.Errorf("Error getting id_token %v\n", err)
+			return "", fmt.Errorf("could not get id_token %v", err)
+		}
 	} else {
 		idTokenSource, err = idtoken.NewTokenSource(ctx, targetAudience, idtoken.WithCredentialsJSON(h.Creds.JSON))
 		if err != nil {

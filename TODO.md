@@ -22,7 +22,7 @@ workload-trusted-root-certs
 - [https://cloud.google.com/compute/docs/metadata/overview#partner_attributes](https://cloud.google.com/compute/docs/metadata/overview#partner_attributes)
 
 
-```bash
+```text
 $ curl -s -H "Metadata-Flavor: Google" 'http://metadata.google.internal/computeMetadata/v1/instance/partner-attributes/'
 iam.googleapis.com/
 wc.compute.googleapis.com/
@@ -67,7 +67,7 @@ projects/srashid-test2/locations/us-central1/caPools/s-pool-1
 
 ##### Implement Workload Identities
 
-```json
+```text
 $ curl -s -H "Metadata-Flavor: Google" 'http://metadata.google.internal/computeMetadata/v1/instance/workload-certificates-config-status'
 {
  "partnerMetadataConfigsErrors": {}
@@ -95,7 +95,7 @@ $ curl -s -H "Metadata-Flavor: Google" 'http://metadata.google.internal/computeM
 
 ##### Implement GCE Workload Certificates
 
-```json
+```text
 $ curl -s -H "Metadata-Flavor: Google" 'http://metadata.google.internal/computeMetadata/v1/instance/gce-workload-certificates/'
 config-status
 trust-anchors

@@ -25,7 +25,7 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 	mds "github.com/salrashid123/gce_metadata_server"
 	tpmjwt "github.com/salrashid123/golang-jwt-tpm"
-	saltpm "github.com/salrashid123/oauth2/v3"
+	tpmoauth "github.com/salrashid123/oauth2/v3"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -293,62 +293,38 @@ func run() int {
 
 			handle = rsaKey.ObjectHandle
 
-			pub, err := tpm2.ReadPublic{
-				ObjectHandle: handle,
-			}.Execute(rwr)
-			if err != nil {
-				glog.Error(os.Stderr, "error reading keyFile public from TPM: %v\n", err)
-				return -1
-			}
-			glog.V(40).Infof("TPM credentials using using Key handle %s", hex.EncodeToString(pub.Name.Buffer))
-
-			ts, err = saltpm.TpmTokenSource(&saltpm.TpmTokenConfig{
-				TPMDevice:        rwc,
-				Handle:           handle,
-				AuthSession:      authSession,
-				Email:            claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
-				Scopes:           claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
-				EncryptionHandle: encryptionSessionHandle,
-				UseOauthToken:    *useOauthToken,
-			})
-			if err != nil {
-				glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
-				return -1
-			}
-
 		} else if *persistentHandle > 0 {
 			glog.V(40).Infof("TPM credentials using using persistent handle %d", *persistentHandle)
 
 			handle = tpm2.TPMHandle(*persistentHandle)
-
-			pub, err := tpm2.ReadPublic{
-				ObjectHandle: handle,
-			}.Execute(rwr)
-			if err != nil {
-				glog.Error(os.Stderr, "error reading persistentHandle public from TPM: %v\n", err)
-				return -1
-			}
-			glog.V(40).Infof("TPM credentials name %s", hex.EncodeToString(pub.Name.Buffer))
-
-			ts, err = saltpm.TpmTokenSource(&saltpm.TpmTokenConfig{
-				TPMDevice:        rwc,
-				Handle:           handle, // persistent handle
-				AuthSession:      authSession,
-				Email:            claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
-				Scopes:           claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
-				EncryptionHandle: encryptionSessionHandle,
-				UseOauthToken:    *useOauthToken,
-			})
-			if err != nil {
-				glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
-				return -1
-			}
 
 		} else {
 			glog.Error("Must specify either a persistent handle or a keyfile for use with at TPM")
 			return -1
 		}
 
+		pub, err := tpm2.ReadPublic{
+			ObjectHandle: handle,
+		}.Execute(rwr)
+		if err != nil {
+			glog.Error(os.Stderr, "error reading persistentHandle public from TPM: %v\n", err)
+			return -1
+		}
+		glog.V(40).Infof("TPM credentials name %s", hex.EncodeToString(pub.Name.Buffer))
+
+		ts, err = tpmoauth.TpmTokenSource(&tpmoauth.TpmTokenConfig{
+			TPMDevice:        rwc,
+			Handle:           handle,
+			AuthSession:      authSession,
+			Email:            claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
+			Scopes:           claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
+			EncryptionHandle: encryptionSessionHandle,
+			UseOauthToken:    *useOauthToken,
+		})
+		if err != nil {
+			glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
+			return -1
+		}
 		creds = &google.Credentials{
 			ProjectID:   claims.ComputeMetadata.V1.Project.ProjectID,
 			TokenSource: ts,

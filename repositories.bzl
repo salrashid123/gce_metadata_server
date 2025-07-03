@@ -304,8 +304,8 @@ def go_repositories():
     go_repository(
         name = "com_github_salrashid123_oauth2_v3",
         importpath = "github.com/salrashid123/oauth2/v3",
-        sum = "h1:MemRjQGJWN6bbpZoEuhU5+v++q4gLvRxFEpcJWSoD5Q=",
-        version = "v3.0.3",
+        sum = "h1:vntcacuybKqc/+UpjOifVnkwchFAB29IP9ig/hBHqKQ=",
+        version = "v3.0.4",
     )
     go_repository(
         name = "com_github_stretchr_testify",

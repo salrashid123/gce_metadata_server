@@ -19,7 +19,6 @@ use_repo(
     "com_github_foxboron_go_tpm_keyfiles",
     "com_github_fsnotify_fsnotify",
     "com_github_golang_glog",
-    "com_github_golang_jwt_jwt_v5",
     "com_github_google_go_tpm",
     "com_github_gorilla_mux",
     "com_github_prometheus_client_golang",

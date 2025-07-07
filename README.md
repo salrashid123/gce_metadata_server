@@ -1249,7 +1249,7 @@ the token has the audience set to the envoy configuration file
 
 Basic latency and counter Prometheus metrics are enabled using the `--metrisEnabled` flag.
 
-Once enabled, path latency is recorded at the default prometheus endpoint  `http://localhost:9000/metrics`.
+Once enabled, path latency is recorded at the default prometheus endpoint  [http://localhost:9000/metrics](http://localhost:9000/metrics).
 
 Apart from latency, any dynamic field for access or identity tokens also has a counter and status metric surfaced.
 
@@ -1258,9 +1258,15 @@ Apart from latency, any dynamic field for access or identity tokens also has a c
 a lot todo here, right...thats just life
 
 ```bash
-# export CICD_SA_JSON=`cat certs/metadata-sa.json`
-# export CICD_SA_PEM=`cat certs/metadata-sa.json | jq -r '.private_key'`
-# export CICD_SA_EMAIL=metadata-sa@$PROJECT_ID.iam.gserviceaccount.com
+### software TPM
+# rm -rf /tmp/myvtpm/
+# mkdir /tmp/myvtpm
+# swtpm_setup --tpmstate /tmp/myvtpm --tpm2 --create-ek-cert
+# swtpm socket --tpmstate dir=/tmp/myvtpm --tpm2 --server type=tcp,port=2321 --ctrl type=tcp,port=2322 --flags not-need-init,startup-clear --log level=2
+
+export CICD_SA_JSON=`cat certs/metadata-sa.json`
+export CICD_SA_PEM=`cat certs/metadata-sa.json | jq -r '.private_key'`
+export CICD_SA_EMAIL=`cat certs/metadata-sa.json | jq -r '.client_email'`
 
 $ go test -v 
 
@@ -1271,7 +1277,7 @@ $ go test -v
 === RUN   TestAccessTokenHandler
 --- PASS: TestAccessTokenHandler (0.00s)
 === RUN   TestAccessTokenDefaultCredentialHandler
---- PASS: TestAccessTokenDefaultCredentialHandler (0.00s)
+--- PASS: TestAccessTokenDefaultCredentialHandler (0.01s)
 === RUN   TestAccessTokenComputeCredentialHandler
 --- PASS: TestAccessTokenComputeCredentialHandler (0.00s)
 === RUN   TestAccessTokenEnvironmentCredentialHandler
@@ -1282,14 +1288,32 @@ $ go test -v
 --- PASS: TestProjectNumberHandler (0.00s)
 === RUN   TestInstanceIDHandler
 --- PASS: TestInstanceIDHandler (0.00s)
+=== RUN   TestMaintenanceEventWaitForChange
+--- PASS: TestMaintenanceEventWaitForChange (2.01s)
+=== RUN   TestAttributeWaitForChange
+--- PASS: TestAttributeWaitForChange (2.01s)
+=== RUN   TestRealAccessToken
+--- PASS: TestRealAccessToken (0.13s)
+=== RUN   TestRealIdToken
+--- PASS: TestRealIdToken (0.13s)
+=== RUN   TestTPMAccessTokenCredentialHandler
+=== RUN   TestTPMAccessTokenCredentialHandler/noKeyPassword
+=== RUN   TestTPMAccessTokenCredentialHandler/withKeyPassword
+--- PASS: TestTPMAccessTokenCredentialHandler (0.03s)
+    --- PASS: TestTPMAccessTokenCredentialHandler/noKeyPassword (0.01s)
+    --- PASS: TestTPMAccessTokenCredentialHandler/withKeyPassword (0.01s)
+=== RUN   TestTPMIdTokenHandler
+--- PASS: TestTPMIdTokenHandler (0.04s)
 PASS
-ok  	github.com/salrashid123/gce_metadata_server	0.053s
+ok  	github.com/salrashid123/gce_metadata_server	4.408s
 ```
 
-as bazel
+TODO: figure out how to make `github.com/google/go-tpm-tools/simulator` to compile with bazel and cgo
 
+
+for now, w'ere using the swtpm
 ```bash
-$ bazel test :go_default_test 
+$ bazel test --test_env CICD_SA_PEM --test_env CICD_SA_EMAIL  --test_env CICD_SA_JSON  :go_default_test
 
   INFO: Analyzed target //:go_default_test (0 packages loaded, 0 targets configured).
   INFO: Found 1 test target...

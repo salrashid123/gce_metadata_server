@@ -15,6 +15,14 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      - name: Install a swtpm
+        run: |
+          sudo apt-get update && sudo apt-get -y install swtpm swtpm-tools
+
+      - name: run swtpm
+        run: |
+          mkdir /tmp/myvtpm && swtpm socket --tpmstate dir=/tmp/myvtpm --tpm2 --server type=tcp,port=2321 --ctrl type=tcp,port=2322 --flags not-need-init,startup-clear &
+
       - name: Check out code
         uses: actions/checkout@v4
 

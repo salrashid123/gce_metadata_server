@@ -42,6 +42,7 @@ go_test(
         "@com_google_cloud_go_compute_metadata//:go_default_library",
         "@org_golang_x_oauth2//:go_default_library",
         "@org_golang_x_oauth2//google:go_default_library",
+        "@com_github_foxboron_go_tpm_keyfiles//:go_default_library",
     ],
 )
 

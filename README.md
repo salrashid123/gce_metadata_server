@@ -1306,6 +1306,13 @@ $ go test -v
 --- PASS: TestTPMIdTokenHandler (0.04s)
 PASS
 ok  	github.com/salrashid123/gce_metadata_server	4.408s
+
+
+
+### if you want to omit using live credentials or a TPM
+
+go test -v  --skip '^(TestReal|TestTPM)'
+
 ```
 
 TODO: figure out how to make `github.com/google/go-tpm-tools/simulator` to compile with bazel and cgo

@@ -437,9 +437,17 @@ Before using this mode, the key _must be_ sealed into the TPM and surfaced as a 
 
 Basically, you can either
 
-- `A` download a Google ServiceAccount's json file and embed the private part to the TPM. [example](https://github.com/salrashid123/oauth2/blob/master/README.md#a-import-service-account-json-to-tpm)
-- `B` Generate a Key _on the TPM_ and then [import the public part to GCP](https://cloud.google.com/iam/docs/keys-upload). [example](https://github.com/salrashid123/oauth2/blob/master/README.md#b-generate-key-on-tpm-and-export-public-x509-certificate-to-gcp).  Note that you can [upload atmost 10 keys per service account](https://cloud.google.com/iam/quotas#limits)
-- `C` remote seal the service accounts RSA Private key, encrypt it with TPM's Endorsement Key and load it securely inside the TPM. See [example with go-tpm-tools](https://gist.github.com/salrashid123/9e4a0328fd8c84374ace78c76a1e34cb) and [tpm2_duplicate](https://github.com/salrashid123/tpm2/tree/master/tpm2_duplicate#transfer-rsa-key-with-password-policy-from-a-b)
+- `A` download a Google ServiceAccount's json file and embed the private part to the TPM.
+
+  see [example](https://github.com/salrashid123/oauth2/blob/master/README.md#a-import-service-account-json-to-tpm)
+
+- `B` Generate a Key _on the TPM_ and then [import the public part to GCP](https://cloud.google.com/iam/docs/keys-upload).
+
+  see [example](https://github.com/salrashid123/oauth2/blob/master/README.md#b-generate-key-on-tpm-and-export-public-x509-certificate-to-gcp).  Note that you can [upload atmost 10 keys per service account](https://cloud.google.com/iam/quotas#limits)
+
+- `C` remote seal the service accounts RSA Private key, encrypt it with TPM's `Endorsement Key` and load it securely inside the TPM. 
+
+  see [example](https://github.com/salrashid123/oauth2/blob/master/README.md#c--remotely-transferring-an-encrypted-rsa-key-into-the-tpm) and [tpm2_duplicate](https://github.com/salrashid123/tpm2/tree/master/tpm2_duplicate#transfer-rsa-key-with-password-policy-from-a-b)
 
 `A` is the easiest for a demo
 

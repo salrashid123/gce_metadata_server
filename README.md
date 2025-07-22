@@ -449,6 +449,8 @@ Basically, you can either
 
   see [example](https://github.com/salrashid123/oauth2/blob/master/README.md#c--remotely-transferring-an-encrypted-rsa-key-into-the-tpm) and [tpm2_duplicate](https://github.com/salrashid123/tpm2/tree/master/tpm2_duplicate#transfer-rsa-key-with-password-policy-from-a-b)
 
+  * [tpmcopy: Transfer RSA|ECC|AES|HMAC key to a remote Trusted Platform Module (TPM)](https://github.com/salrashid123/tpmcopy)
+
 `A` is the easiest for a demo
 
 `B` the key only ever exists inside one TPM

@@ -1005,6 +1005,11 @@ Number of Buckets: 62
 
 >> needless to say, the metadata Service should be accessed only form authorized pods
 
+Finally, you can also run the metadata server as a daemonset or mount the TPM to a service, see
+
+* [Kubernetes Trusted Platform Module (TPM) using Device Plugin and Gatekeeper](https://github.com/salrashid123/tpm_kubernetes)
+* [Kubernetes Trusted Platform Module (TPM) DaemonSet](https://github.com/salrashid123/tpm_daemonset)
+
 ### Dynamic Configuration File Updates
 
 Changes to the claims configuration file (`--configFile=`) while the metadata server is running will automatically update values returned by the server.

@@ -55,6 +55,7 @@ var (
 	pcrs                  = flag.String("pcrs", "", "PCR Bound value (increasing order, comma separated)")
 	sessionEncryptionName = flag.String("tpm-session-encrypt-with-name", "", "hex encoded TPM object 'name' to use with an encrypted session")
 	useOauthToken         = flag.Bool("useOauthToken", false, "Use oauth2 token instead of jwtAccessToken (default: false)")
+	useEKParent           = flag.Bool("useEKParent", false, "Use endorsement RSAKey as parent (not h2) (default: false)")
 
 	usemTLS           = flag.Bool("usemTLS", false, "Use mTLS")
 	rootCAmTLS        = flag.String("rootCAmTLS", "certs/root.crt", "rootCA to validate client certs ")
@@ -211,22 +212,86 @@ func run() int {
 				pcrList = append(pcrList, uint(j))
 			}
 
-			authSession, err = tpmjwt.NewPCRSession(rwr, []tpm2.TPMSPCRSelection{
-				{
-					Hash:      tpm2.TPMAlgSHA256,
-					PCRSelect: tpm2.PCClientCompatible.PCRs(pcrList...),
-				},
-			})
-			if err != nil {
-				glog.Error(os.Stderr, "error creating tpm pcrsession %v\n", err)
-				return -1
+			if *useEKParent {
+				primaryKey, err := tpm2.CreatePrimary{
+					PrimaryHandle: tpm2.TPMRHEndorsement,
+					InPublic:      tpm2.New2B(tpm2.RSAEKTemplate), // TODO: allow ECEKTemplate
+				}.Execute(rwr)
+				if err != nil {
+					glog.Error("can't create pimaryEK: %v", err)
+					return -1
+				}
+
+				defer func() {
+					flushContextCmd := tpm2.FlushContext{
+						FlushHandle: primaryKey.ObjectHandle,
+					}
+					_, _ = flushContextCmd.Execute(rwr)
+				}()
+
+				sel := []tpm2.TPMSPCRSelection{
+					{
+						Hash:      tpm2.TPMAlgSHA256,
+						PCRSelect: tpm2.PCClientCompatible.PCRs(pcrList...),
+					}}
+				authSession, err = tpmjwt.NewPCRAndDuplicateSelectSession(rwr, sel, []byte(*keyPass), primaryKey.Name)
+				if err != nil {
+					glog.Error("can't create autsession: %v", err)
+					return -1
+				}
+				flushContextCmd := tpm2.FlushContext{
+					FlushHandle: primaryKey.ObjectHandle,
+				}
+				_, _ = flushContextCmd.Execute(rwr)
+
+			} else {
+
+				authSession, err = tpmjwt.NewPCRSession(rwr, []tpm2.TPMSPCRSelection{
+					{
+						Hash:      tpm2.TPMAlgSHA256,
+						PCRSelect: tpm2.PCClientCompatible.PCRs(pcrList...),
+					},
+				})
+				if err != nil {
+					glog.Error(os.Stderr, "error creating tpm pcrsession %v\n", err)
+					return -1
+				}
 			}
 
 		} else if *keyPass != "" {
-			authSession, err = tpmjwt.NewPasswordSession(rwr, []byte(*keyPass))
-			if err != nil {
-				glog.Error(os.Stderr, "error creating tpm passwordsession%v\n", err)
-				return -1
+			if *useEKParent {
+				primaryKey, err := tpm2.CreatePrimary{
+					PrimaryHandle: tpm2.TPMRHEndorsement,
+					InPublic:      tpm2.New2B(tpm2.RSAEKTemplate),
+				}.Execute(rwr)
+				if err != nil {
+					glog.Error("can't create pimaryEK: %v", err)
+					return -1
+				}
+
+				defer func() {
+					flushContextCmd := tpm2.FlushContext{
+						FlushHandle: primaryKey.ObjectHandle,
+					}
+					_, _ = flushContextCmd.Execute(rwr)
+				}()
+
+				authSession, err = tpmjwt.NewPolicyAuthValueAndDuplicateSelectSession(rwr, []byte(*keyPass), primaryKey.Name)
+				if err != nil {
+					glog.Error("can't create autsession: %v", err)
+					return -1
+				}
+				flushContextCmd := tpm2.FlushContext{
+					FlushHandle: primaryKey.ObjectHandle,
+				}
+				_, _ = flushContextCmd.Execute(rwr)
+
+			} else {
+				authSession, err = tpmjwt.NewPasswordSession(rwr, []byte(*keyPass))
+				if err != nil {
+					glog.Error(os.Stderr, "error creating tpm passwordsession%v\n", err)
+					return -1
+				}
 			}
 		}
 
@@ -244,57 +309,118 @@ func run() int {
 				glog.Error("can't decode tpmkeyfile: %v", err)
 				return -1
 			}
+			if *useEKParent {
 
-			/*
-				Template for the H2 h-2 is described in pg 43 [TCG EK Credential Profile](https://trustedcomputinggroup.org/wp-content/uploads/TCG_IWG_EKCredentialProfile_v2p4_r2_10feb2021.pdf)
-
-				for use with KeyFiles described in 	[ASN.1 Specification for TPM 2.0 Key Files](https://www.hansenpartnership.com/draft-bottomley-tpm2-keys.html#name-parent)
-
-				printf '\x00\x00' > unique.dat
-				tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
-			*/
-			primaryKey, err := tpm2.CreatePrimary{
-				PrimaryHandle: key.Parent,
-				InPublic:      tpm2.New2B(keyfile.ECCSRK_H2_Template),
-			}.Execute(rwr)
-			if err != nil {
-				glog.Error("can't create primary: %v", err)
-				return -1
-			}
-
-			defer func() {
-				flushContextCmd := tpm2.FlushContext{
-					FlushHandle: primaryKey.ObjectHandle,
+				primaryKey, err := tpm2.CreatePrimary{
+					PrimaryHandle: tpm2.TPMRHEndorsement,
+					InPublic:      tpm2.New2B(tpm2.RSAEKTemplate),
+				}.Execute(rwr)
+				if err != nil {
+					glog.Error("can't create pimaryEK: %v", err)
+					return -1
 				}
-				_, _ = flushContextCmd.Execute(rwr)
-			}()
 
-			rsaKey, err := tpm2.Load{
-				ParentHandle: tpm2.AuthHandle{
-					Handle: primaryKey.ObjectHandle,
-					Name:   tpm2.TPM2BName(primaryKey.Name),
-					Auth:   tpm2.PasswordAuth([]byte(*parentPass)),
-				},
-				InPublic:  key.Pubkey,
-				InPrivate: key.Privkey,
-			}.Execute(rwr)
-
-			if err != nil {
-				glog.Error("can't loading key: %v", err)
-				return -1
-			}
-
-			defer func() {
-				flushContextCmd := tpm2.FlushContext{
-					FlushHandle: rsaKey.ObjectHandle,
+				defer func() {
+					flushContextCmd := tpm2.FlushContext{
+						FlushHandle: primaryKey.ObjectHandle,
+					}
+					_, _ = flushContextCmd.Execute(rwr)
+				}()
+				load_session, load_session_cleanup, err := tpm2.PolicySession(rwr, tpm2.TPMAlgSHA256, 16)
+				if err != nil {
+					glog.Error("can't load policysession : %v", err)
+					return -1
 				}
-				_, _ = flushContextCmd.Execute(rwr)
-			}()
+				defer load_session_cleanup()
 
-			handle = rsaKey.ObjectHandle
+				_, err = tpm2.PolicySecret{
+					AuthHandle: tpm2.AuthHandle{
+						Handle: tpm2.TPMRHEndorsement,
+						Name:   tpm2.HandleName(tpm2.TPMRHEndorsement),
+						Auth:   tpm2.PasswordAuth([]byte(*parentPass)),
+					},
+					PolicySession: load_session.Handle(),
+					NonceTPM:      load_session.NonceTPM(),
+				}.Execute(rwr)
+				if err != nil {
+					glog.Error("can't create policysecret: %v", err)
+					return -1
+				}
+
+				rsaKey, err := tpm2.Load{
+					ParentHandle: tpm2.AuthHandle{
+						Handle: primaryKey.ObjectHandle,
+						Name:   tpm2.TPM2BName(primaryKey.Name),
+						Auth:   load_session,
+					},
+					InPublic:  key.Pubkey,
+					InPrivate: key.Privkey,
+				}.Execute(rwr)
+				if err != nil {
+					glog.Error("can't load key: %v", err)
+					return -1
+				}
+
+				defer func() {
+					flushContextCmd := tpm2.FlushContext{
+						FlushHandle: rsaKey.ObjectHandle,
+					}
+					_, _ = flushContextCmd.Execute(rwr)
+				}()
+
+				handle = rsaKey.ObjectHandle
+
+			} else {
+				/*
+					Template for the H2 h-2 is described in pg 43 [TCG EK Credential Profile](https://trustedcomputinggroup.org/wp-content/uploads/TCG_IWG_EKCredentialProfile_v2p4_r2_10feb2021.pdf)
+
+					for use with KeyFiles described in 	[ASN.1 Specification for TPM 2.0 Key Files](https://www.hansenpartnership.com/draft-bottomley-tpm2-keys.html#name-parent)
+
+					printf '\x00\x00' > unique.dat
+					tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+				*/
+				primaryKey, err := tpm2.CreatePrimary{
+					PrimaryHandle: key.Parent,
+					InPublic:      tpm2.New2B(keyfile.ECCSRK_H2_Template),
+				}.Execute(rwr)
+				if err != nil {
+					glog.Error("can't create primary: %v", err)
+					return -1
+				}
+
+				defer func() {
+					flushContextCmd := tpm2.FlushContext{
+						FlushHandle: primaryKey.ObjectHandle,
+					}
+					_, _ = flushContextCmd.Execute(rwr)
+				}()
+
+				rsaKey, err := tpm2.Load{
+					ParentHandle: tpm2.AuthHandle{
+						Handle: primaryKey.ObjectHandle,
+						Name:   tpm2.TPM2BName(primaryKey.Name),
+						Auth:   tpm2.PasswordAuth([]byte(*parentPass)),
+					},
+					InPublic:  key.Pubkey,
+					InPrivate: key.Privkey,
+				}.Execute(rwr)
+
+				if err != nil {
+					glog.Error("can't loading key: %v", err)
+					return -1
+				}
+
+				defer func() {
+					flushContextCmd := tpm2.FlushContext{
+						FlushHandle: rsaKey.ObjectHandle,
+					}
+					_, _ = flushContextCmd.Execute(rwr)
+				}()
+				handle = rsaKey.ObjectHandle
+			}
 
 		} else if *persistentHandle > 0 {
-			glog.V(40).Infof("TPM credentials using using persistent handle %d", *persistentHandle)
+			glog.V(40).Infof("TPM credentials using using persistent handle 0x%s", strconv.FormatUint(uint64(*persistentHandle), 16))
 
 			handle = tpm2.TPMHandle(*persistentHandle)
 

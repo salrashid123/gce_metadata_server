@@ -11,7 +11,7 @@ require (
 	github.com/google/go-tpm v0.9.5
 	github.com/gorilla/mux v1.8.1
 	github.com/prometheus/client_golang v1.21.1
-	github.com/salrashid123/golang-jwt-tpm v1.8.9
+	github.com/salrashid123/golang-jwt-tpm v1.8.92
 	github.com/salrashid123/oauth2/v3 v3.0.4
 	golang.org/x/oauth2 v0.30.0
 	google.golang.org/api v0.228.0
@@ -25,7 +25,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
+	github.com/golang-jwt/jwt/v5 v5.2.3 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.1 // indirect
@@ -43,7 +43,7 @@ require (
 	golang.org/x/crypto v0.36.0 // indirect
 	golang.org/x/net v0.38.0 // indirect
 	golang.org/x/sync v0.12.0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 	golang.org/x/time v0.11.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250324211829-b45e905df463 // indirect

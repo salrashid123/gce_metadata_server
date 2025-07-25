@@ -112,8 +112,8 @@ def go_repositories():
     go_repository(
         name = "com_github_golang_jwt_jwt_v5",
         importpath = "github.com/golang-jwt/jwt/v5",
-        sum = "h1:Rl4B7itRWVtYIHFrSNd7vhTiz9UpLdi6gZhZ3wEeDy8=",
-        version = "v5.2.2",
+        sum = "h1:kkGXqQOBSDDWRhWNXTFpqGSCMyh/PLnqUvMGJPDJDs0=",
+        version = "v5.2.3",
     )
     go_repository(
         name = "com_github_golang_protobuf",
@@ -298,8 +298,8 @@ def go_repositories():
     go_repository(
         name = "com_github_salrashid123_golang_jwt_tpm",
         importpath = "github.com/salrashid123/golang-jwt-tpm",
-        sum = "h1:IvUWjP/ErgqlAkj7IoZWSqGuS5PaObjBe0lcUO9rNLY=",
-        version = "v1.8.9",
+        sum = "h1:vy113IFgPG1fzGs8QqvBVl4k0dvEbAigd1OrSQXQk5o=",
+        version = "v1.8.92",
     )
     go_repository(
         name = "com_github_salrashid123_oauth2_v3",
@@ -526,8 +526,8 @@ def go_repositories():
     go_repository(
         name = "org_golang_x_sys",
         importpath = "golang.org/x/sys",
-        sum = "h1:ioabZlmFYtWhL+TRYpcnNlLwhyxaM9kWTDEmfnprqik=",
-        version = "v0.31.0",
+        sum = "h1:H5Y5sJ2L2JRdyv7ROF1he/lPdvFsd0mJHFw2ThKHxLA=",
+        version = "v0.34.0",
     )
     go_repository(
         name = "org_golang_x_term",

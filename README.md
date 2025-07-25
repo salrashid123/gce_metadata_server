@@ -301,6 +301,7 @@ You can set the following options on usage:
 | **`-pcrs`** | TPM PCR values the key is bound to (comma separated pcrs in ascending order) |
 | **`--tpm-session-encrypt-with-name`** | hex encoded TPM object 'name' to use with an encrypted session |
 | **`--useOauthToken`** | Use oauth2 token instead of jwtAccessToken (default: false)|
+| **`--useEKParent`** | Use endorsement RSAKey as parent (default: false) |
 
 ##### `Monitoring Options`
 | Option | Description |
@@ -564,6 +565,147 @@ go run cmd/main.go --configFile=config.json   -alsologtostderr -v 50 -port :8080
 ```
 
 Note that if you are using PCR policy, the metadata server cache's the credential values until it expires (which is typically an hour). If you enable a PCR policy and then change it to invalidate the TPM-based key's usage, the server will return the same token until it needs to referesh it.
+
+##### Use Endorsement Key as parent
+
+If you used option `C` above to transfer the service account key from `TPM-A` to `TPM-B` (tpm-b being the system where you will run the metadata server):
+
+you can use `tpm2_duplicate` or the  utility here [tpmcopy: Transfer RSA|ECC|AES|HMAC key to a remote Trusted Platform Module (TPM)](https://github.com/salrashid123/tpmcopy) tool.  Note that the 'parent' key is set to `Endorsement RSA` which needs to get initialized on tpm-b first.  Furthermore, the key is bound by `pcr_duplicateselect` policy which must get fulfilled.
+
+The following examples shows how to use the metadata server if you transferred the key using pcr or password policy as well as if you saved the transferred key as PEM or persistent handle
+
+* Password Policy
+
+With service account key saved as PEM key file
+
+```bash
+### TPM-B
+tpmcopy --mode publickey --parentKeyType=rsa -tpmPublicKeyFile=/tmp/public.pem --tpm-path=$TPMB
+### copy public.pem to TPM-A
+
+### TPM-A
+tpmcopy --mode duplicate  --secret=/tmp/key_rsa.pem --keyType=rsa \
+   --password=bar -tpmPublicKeyFile=/tmp/public.pem -out=/tmp/out.json --tpm-path=$TPMA
+
+### copy out.json to TPM-B
+### TPM-B
+tpmcopy --mode import --parentKeyType=rsa --in=/tmp/out.json --out=/tmp/tpmkey.pem --parent=0x81008000 --tpm-path=$TPMB
+
+### run emulator
+go run cmd/main.go -logtostderr --configFile=config.json \
+  -alsologtostderr -v 5   -port :8080   --tpm --keyfile /tmp/tpmkey.pem \
+   --useEKParent --keyPass=bar --tpm-path=127.0.0.1:2341
+```
+
+With service account key saved as a `PersistentHandle`
+
+```bash
+### TPM-B
+tpmcopy --mode publickey --parentKeyType=rsa -tpmPublicKeyFile=/tmp/public.pem --tpm-path=$TPMB
+### copy public.pem to TPM-A
+
+### TPM-A
+tpmcopy --mode duplicate  --secret=/tmp/key_rsa.pem --keyType=rsa \
+   --password=bar -tpmPublicKeyFile=/tmp/public.pem -out=/tmp/out.json --tpm-path=$TPMA
+
+### copy out.json to TPM-B
+### TPM-B
+tpmcopy --mode import --parentKeyType=rsa \
+ --in=/tmp/out.json --out=/tmp/tpmkey.pem \
+ --pubout=/tmp/pub.dat --privout=/tmp/priv.dat \
+  --parent=0x81008000 --tpm-path=$TPMB
+
+tpmcopy --mode evict \
+    --persistentHandle=0x81008001 \
+   --in=/tmp/tpmkey.pem --tpm-path=$TPMB
+
+# tpm2_createek -c ek.ctx -G rsa -u ek.pub 
+# tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
+# tpm2 startauthsession --session session.ctx --policy-session
+# tpm2 policysecret --session session.ctx --object-context endorsement
+# tpm2_load -C ek.ctx -c key.ctx -u pub.dat -r priv.dat --auth session:session.ctx
+# tpm2_evictcontrol -c key.ctx 0x81008001
+# tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
+
+### run emulator
+go run cmd/main.go -logtostderr --configFile=config.json \
+  -alsologtostderr -v 5   -port :8080   --tpm --persistentHandle 0x81008001 \
+   --useEKParent --keyPass=bar --tpm-path=127.0.0.1:2341
+```
+
+* PCR Policy
+
+Ensure `TPM-B` as a PCR you want to bind to
+
+```bash
+$ tpm2_pcrread sha256:23
+  sha256:
+    23: 0x0000000000000000000000000000000000000000000000000000000000000000
+$ tpm2_pcrextend 23:sha256=0x0000000000000000000000000000000000000000000000000000000000000000
+$ tpm2_pcrread sha256:23
+  sha256:
+    23: 0xF5A5FD42D16A20302798EF6ED309979B43003D2320D9F0E8EA9831A92759FB4B
+```
+
+With service account key saved as PEM key file
+
+```bash
+### TPM-B
+tpmcopy --mode publickey --parentKeyType=rsa -tpmPublicKeyFile=/tmp/public.pem --tpm-path=$TPMB
+### copy public.pem to TPM-A
+
+### TPM-A
+tpmcopy --mode duplicate --keyType=rsa    --secret=/tmp/key_rsa.pem \
+     --pcrValues=23:f5a5fd42d16a20302798ef6ed309979b43003d2320d9f0e8ea9831a92759fb4b  \
+      -tpmPublicKeyFile=/tmp/public.pem -out=/tmp/out.json --tpm-path=$TPMA
+### copy out.json to TPM-B
+
+### TPM-B
+tpmcopy --mode import --parentKeyType=rsa --in=/tmp/out.json --out=/tmp/tpmkey.pem --tpm-path=$TPMB
+
+### run emulator
+go run cmd/main.go -logtostderr --configFile=config.json \
+  -alsologtostderr -v 5   -port :8080   --tpm --keyfile /tmp/tpmkey.pem \
+   --useEKParent -pcrs=23 --tpm-path=127.0.0.1:2341
+```
+
+With service account key saved as a `PersistentHandle`
+
+```bash
+### TPM-B
+tpmcopy --mode publickey --parentKeyType=rsa -tpmPublicKeyFile=/tmp/public.pem --tpm-path=$TPMB
+### copy public.pem to TPM-A
+
+### TPM-A
+tpmcopy --mode duplicate --keyType=rsa    --secret=/tmp/key_rsa.pem \
+     --pcrValues=23:f5a5fd42d16a20302798ef6ed309979b43003d2320d9f0e8ea9831a92759fb4b  \
+      -tpmPublicKeyFile=/tmp/public.pem -out=/tmp/out.json --tpm-path=$TPMA
+
+### copy out.json to TPM-B
+### TPM-B
+tpmcopy --mode import --parentKeyType=rsa \
+ --in=/tmp/out.json --out=/tmp/tpmkey.pem \
+ --pubout=/tmp/pub.dat --privout=/tmp/priv.dat \
+  --parent=0x81008000 --tpm-path=$TPMB
+
+tpmcopy --mode evict \
+    --persistentHandle=0x81008001 \
+   --in=/tmp/tpmkey.pem --tpm-path=$TPMB
+
+### or using tpm2_tools:
+# tpm2_createek -c ek.ctx -G rsa -u ek.pub 
+# tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
+# tpm2 startauthsession --session session.ctx --policy-session
+# tpm2 policysecret --session session.ctx --object-context endorsement
+# tpm2_load -C ek.ctx -c key.ctx -u pub.dat -r priv.dat --auth session:session.ctx
+# tpm2_evictcontrol -c key.ctx 0x81008001
+# tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
+
+### run emulator
+go run cmd/main.go -logtostderr --configFile=config.json \
+  -alsologtostderr -v 5   -port :8080   --tpm --persistentHandle 0x81008001 \
+   --useEKParent --pcrs=23  --tpm-path=127.0.0.1:2341
+```
 
 If you want to enable [TPM Encrypted sessions](https://github.com/salrashid123/tpm2/tree/master/tpm_encrypted_session), you should provide the "name" of a trusted key on the TPM for each call.
 

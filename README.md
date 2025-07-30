@@ -159,6 +159,11 @@ r.Handle("/")
   - [With Impersonation](#with-impersonation)
   - [With Workload Federation](#with-workload-federation)
   - [With TPM](#with-trusted-platform-module-tpm)
+    - [a) Import Key](#imported-tpm-key)
+    - [b) TPM Generated](#generated-tpm-key)
+    - [c) Transferred](#transferred-tpm-key)
+    - [Key Policies](#key-policies)     
+    - [Session Encryption](#session-encryption)    
 * [Usage](#usage)      
 * [Startup](#startup)
   - [AccessToken](#accesstoken)
@@ -438,7 +443,7 @@ Before using this mode, the key _must be_ sealed into the TPM and surfaced as a 
 
 Basically, you can either
 
-- `A` download a Google ServiceAccount's json file and embed the private part to the TPM.
+- `A` download (import) a Google ServiceAccount's json file and embed the private part to the TPM.
 
   see [example](https://github.com/salrashid123/oauth2/blob/master/README.md#a-import-service-account-json-to-tpm)
 
@@ -448,9 +453,7 @@ Basically, you can either
 
 - `C` remote seal the service accounts RSA Private key, encrypt it with TPM's `Endorsement Key` and load it securely inside the TPM. 
 
-  see [example](https://github.com/salrashid123/oauth2/blob/master/README.md#c--remotely-transferring-an-encrypted-rsa-key-into-the-tpm) and [tpm2_duplicate](https://github.com/salrashid123/tpm2/tree/master/tpm2_duplicate#transfer-rsa-key-with-password-policy-from-a-b)
-
-  * [tpmcopy: Transfer RSA|ECC|AES|HMAC key to a remote Trusted Platform Module (TPM)](https://github.com/salrashid123/tpmcopy)
+  see [example](https://github.com/salrashid123/oauth2/blob/master/README.md#c--remotely-transferring-an-encrypted-rsa-key-into-the-tpm) and [tpm2_duplicate](https://github.com/salrashid123/tpm2/tree/master/tpm2_duplicate#transfer-rsa-key-with-password-policy-from-a-b) and [tpmcopy](https://github.com/salrashid123/tpmcopy)
 
 `A` is the easiest for a demo
 
@@ -461,6 +464,8 @@ Basically, you can either
 Anyway, once the RSA key is present as a handle, start the metadata server using the `--tpm` flag and set the `--persistentHandle=` value or the `--keyfile=`.
 
 TPM based tokens derives the serivceAccount email from the configuration file.   You must first edit `config.json` and set the value of `Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email`.
+
+#### Imported TPM Key
 
 For a full example with `A`, you'll need a serviceAccount key file first which you'll embed into the TPM.
 
@@ -531,46 +536,49 @@ The TPM based credentials imports a JWT generator library to perform the oauth a
 * [salrashid123/golang-jwt-tpm](https://github.com/salrashid123/golang-jwt-tpm)
 * [salrashid123/oauth2](https://github.com/salrashid123/oauth2)
 
-If the TPM key is restricted through a auth password or PCR policy, you will need to supply the password or list of PCRs its bound to using the `--keyPass=` or `--pcrs` flag: (eg `--pcrs=2,3,23`).  See examples [here](https://github.com/salrashid123/gcp-adc-tpm?tab=readme-ov-file#pcr-policy)
+
+#### Generated TPM Key
+
+If you used option `B` to generate a key on the TPM and issue an `x509`, you can do that in a number of ways described [here](https://github.com/salrashid123/oauth2/blob/master/README.md#b-generate-key-on-tpm-and-export-public-x509-certificate-to-gcp). 
+
+The following uses openssl3 with [tpm2-openssl](https://github.com/tpm2-software/tpm2-openssl) installed and a self-signed cert.  You are ofcourse free to use the TPM-based key to issue a CSR which is signed by an external CA
 
 ```bash
-## RSA - password policy
-	printf '\x00\x00' > unique.dat
-	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+apt install tpm2-openssl tpm2-tools tpm2-abrmd libtss2-tcti-tabrmd0
 
-	tpm2_import -C primary.ctx -G rsa2048:rsassa:null -g sha256 -i /tmp/key_rsa.pem -u key.pub -r key.prv -p pass1
-	tpm2_load -C primary.ctx  -u key.pub -r key.prv -c key.ctx -p pass1
-	# tpm2_evictcontrol -C o -c key.ctx 0x81008002
-	tpm2_encodeobject -C primary.ctx -u key.pub -r key.prv -o  /tmp/private.pem
+openssl list --providers -provider tpm2
+    Providers:
+      tpm2
+        name: TPM 2.0 Provider
+        version: 
+        status: active
 
-go run cmd/main.go --configFile=config.json   -alsologtostderr -v 50 -port :8080 --tpm --keyfile=/tmp/private.pem --keyPass pass1
+## create H2 primary
+printf '\x00\x00' > unique.dat
+tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+
+## create a key
+tpm2_create -G rsa2048:rsassa:null -g sha256 -u key.pub -r key.priv -C primary.ctx
+tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
+# tpm2_evictcontrol -C o -c key.ctx 0x81010002
+tpm2_readpublic -c key.ctx -f PEM -o svc_account_tpm_pub.pem
+tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
+
+## you may need to add a -p if your tpm2 tools is not recent (see https://github.com/tpm2-software/tpm2-tools/issues/3458)
+tpm2_encodeobject -C primary.ctx -u key.pub -r key.priv -o svc_account_tpm.pem
+
+### issue the x509 as self-signed
+openssl req  -provider tpm2  -provider default   -new -x509 -key svc_account_tpm.pem -out ssvc_account_tpm.crt -days 365
+
+### then upload the key
+gcloud  iam service-accounts keys upload svc_account_tpm.pem  --iam-account metadata-sa@$PROJECT.iam.gserviceaccount.com
 ```
 
-```bash
-## RSA - pcr policy
-	tpm2_pcrread sha256:23
-	tpm2_startauthsession -S session.dat
-	tpm2_policypcr -S session.dat -l sha256:23  -L policy.dat
-	tpm2_flushcontext session.dat
-
-	printf '\x00\x00' > unique.dat
-	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
-
-	tpm2_import -C primary.ctx -G rsa2048:rsassa:null -g sha256 -i /tmp/key_rsa.pem -u key.pub -r key.prv  -L policy.dat
-	tpm2_load -C primary.ctx -u key.pub -r key.prv -c key.ctx
-	# tpm2_evictcontrol -C o -c key.ctx 0x81008003
-	tpm2_encodeobject -C primary.ctx -u key.pub -r key.prv -o /tmp/private.pem 
-
-go run cmd/main.go --configFile=config.json   -alsologtostderr -v 50 -port :8080 --tpm --keyfile=/tmp/private.pem -pcrs=23
-```
-
-Note that if you are using PCR policy, the metadata server cache's the credential values until it expires (which is typically an hour). If you enable a PCR policy and then change it to invalidate the TPM-based key's usage, the server will return the same token until it needs to referesh it.
-
-##### Use Endorsement Key as parent
+#### Transferred TPM Key
 
 If you used option `C` above to transfer the service account key from `TPM-A` to `TPM-B` (tpm-b being the system where you will run the metadata server):
 
-you can use `tpm2_duplicate` or the  utility here [tpmcopy: Transfer RSA|ECC|AES|HMAC key to a remote Trusted Platform Module (TPM)](https://github.com/salrashid123/tpmcopy) tool.  Note that the 'parent' key is set to `Endorsement RSA` which needs to get initialized on tpm-b first.  Furthermore, the key is bound by `pcr_duplicateselect` policy which must get fulfilled.
+you can use `tpm2_duplicate` or the  utility here [tpmcopy](https://github.com/salrashid123/tpmcopy) tool.  Note that the 'parent' key is set to `Endorsement RSA` which needs to get initialized on tpm-b first.  Furthermore, the key is bound by `pcr_duplicateselect` policy which must get fulfilled.
 
 The following examples shows how to use the metadata server if you transferred the key using pcr or password policy as well as if you saved the transferred key as PEM or persistent handle
 
@@ -706,6 +714,49 @@ go run cmd/main.go -logtostderr --configFile=config.json \
   -alsologtostderr -v 5   -port :8080   --tpm --persistentHandle 0x81008001 \
    --useEKParent --pcrs=23  --tpm-path=127.0.0.1:2341
 ```
+
+#### Key Policies
+
+If the TPM key is restricted through a auth password or PCR policy, you will need to supply the password or list of PCRs its bound to using the `--keyPass=` or `--pcrs` flag: (eg `--pcrs=2,3,23`).  See examples [here](https://github.com/salrashid123/gcp-adc-tpm?tab=readme-ov-file#pcr-policy)
+
+Specifically for option `(a)` here (there are corresponding encodings for `(b)` and `(c)`):
+
+```bash
+## RSA - password policy
+	printf '\x00\x00' > unique.dat
+	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+
+	tpm2_import -C primary.ctx -G rsa2048:rsassa:null -g sha256 -i /tmp/key_rsa.pem -u key.pub -r key.prv -p pass1
+	tpm2_load -C primary.ctx  -u key.pub -r key.prv -c key.ctx -p pass1
+	# tpm2_evictcontrol -C o -c key.ctx 0x81008002
+	tpm2_encodeobject -C primary.ctx -u key.pub -r key.prv -o  /tmp/private.pem
+
+## run emulator
+go run cmd/main.go --configFile=config.json   -alsologtostderr -v 50 -port :8080 --tpm --keyfile=/tmp/private.pem --keyPass pass1
+```
+
+```bash
+## RSA - pcr policy
+	tpm2_pcrread sha256:23
+	tpm2_startauthsession -S session.dat
+	tpm2_policypcr -S session.dat -l sha256:23  -L policy.dat
+	tpm2_flushcontext session.dat
+
+	printf '\x00\x00' > unique.dat
+	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+
+	tpm2_import -C primary.ctx -G rsa2048:rsassa:null -g sha256 -i /tmp/key_rsa.pem -u key.pub -r key.prv  -L policy.dat
+	tpm2_load -C primary.ctx -u key.pub -r key.prv -c key.ctx
+	# tpm2_evictcontrol -C o -c key.ctx 0x81008003
+	tpm2_encodeobject -C primary.ctx -u key.pub -r key.prv -o /tmp/private.pem 
+
+## run emulator
+go run cmd/main.go --configFile=config.json   -alsologtostderr -v 50 -port :8080 --tpm --keyfile=/tmp/private.pem -pcrs=23
+```
+
+Note that if you are using PCR policy, the metadata server cache's the credential values until it expires (which is typically an hour). If you enable a PCR policy and then change it to invalidate the TPM-based key's usage, the server will return the same token until it needs to referesh it.
+
+#### Session Encryption
 
 If you want to enable [TPM Encrypted sessions](https://github.com/salrashid123/tpm2/tree/master/tpm_encrypted_session), you should provide the "name" of a trusted key on the TPM for each call.
 

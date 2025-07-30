@@ -599,46 +599,20 @@ tpmcopy --mode duplicate  --secret=/tmp/key_rsa.pem --keyType=rsa \
 ### TPM-B
 tpmcopy --mode import --parentKeyType=rsa --in=/tmp/out.json --out=/tmp/tpmkey.pem --parent=0x81008000 --tpm-path=$TPMB
 
-### run emulator
-go run cmd/main.go -logtostderr --configFile=config.json \
-  -alsologtostderr -v 5   -port :8080   --tpm --keyfile /tmp/tpmkey.pem \
-   --useEKParent --keyPass=bar --tpm-path=127.0.0.1:2341
-```
-
-With service account key saved as a `PersistentHandle`
-
-```bash
-### TPM-B
-tpmcopy --mode publickey --parentKeyType=rsa -tpmPublicKeyFile=/tmp/public.pem --tpm-path=$TPMB
-### copy public.pem to TPM-A
-
-### TPM-A
-tpmcopy --mode duplicate  --secret=/tmp/key_rsa.pem --keyType=rsa \
-   --password=bar -tpmPublicKeyFile=/tmp/public.pem -out=/tmp/out.json --tpm-path=$TPMA
-
-### copy out.json to TPM-B
-### TPM-B
-tpmcopy --mode import --parentKeyType=rsa \
- --in=/tmp/out.json --out=/tmp/tpmkey.pem \
- --pubout=/tmp/pub.dat --privout=/tmp/priv.dat \
-  --parent=0x81008000 --tpm-path=$TPMB
-
+## optionally evict to persistent handle
 tpmcopy --mode evict \
     --persistentHandle=0x81008001 \
    --in=/tmp/tpmkey.pem --tpm-path=$TPMB
 
-# tpm2_createek -c ek.ctx -G rsa -u ek.pub 
-# tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
-# tpm2 startauthsession --session session.ctx --policy-session
-# tpm2 policysecret --session session.ctx --object-context endorsement
-# tpm2_load -C ek.ctx -c key.ctx -u pub.dat -r priv.dat --auth session:session.ctx
-# tpm2_evictcontrol -c key.ctx 0x81008001
-# tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
-
-### run emulator
+### run emulator using key file
 go run cmd/main.go -logtostderr --configFile=config.json \
-  -alsologtostderr -v 5   -port :8080   --tpm --persistentHandle 0x81008001 \
+  -alsologtostderr -v 5   -port :8080   --tpm --keyfile /tmp/tpmkey.pem \
    --useEKParent --keyPass=bar --tpm-path=127.0.0.1:2341
+
+### run emulator using persistntHandle
+go run cmd/main.go -logtostderr --configFile=config.json \
+  -alsologtostderr -v 5   -port :8080   --tpm -persistentHandle 0x81008001 \
+   --useEKParent --keyPass=bar --tpm-path=127.0.0.1:2341   
 ```
 
 * PCR Policy
@@ -671,48 +645,20 @@ tpmcopy --mode duplicate --keyType=rsa    --secret=/tmp/key_rsa.pem \
 ### TPM-B
 tpmcopy --mode import --parentKeyType=rsa --in=/tmp/out.json --out=/tmp/tpmkey.pem --tpm-path=$TPMB
 
-### run emulator
-go run cmd/main.go -logtostderr --configFile=config.json \
-  -alsologtostderr -v 5   -port :8080   --tpm --keyfile /tmp/tpmkey.pem \
-   --useEKParent -pcrs=23 --tpm-path=127.0.0.1:2341
-```
-
-With service account key saved as a `PersistentHandle`
-
-```bash
-### TPM-B
-tpmcopy --mode publickey --parentKeyType=rsa -tpmPublicKeyFile=/tmp/public.pem --tpm-path=$TPMB
-### copy public.pem to TPM-A
-
-### TPM-A
-tpmcopy --mode duplicate --keyType=rsa    --secret=/tmp/key_rsa.pem \
-     --pcrValues=23:f5a5fd42d16a20302798ef6ed309979b43003d2320d9f0e8ea9831a92759fb4b  \
-      -tpmPublicKeyFile=/tmp/public.pem -out=/tmp/out.json --tpm-path=$TPMA
-
-### copy out.json to TPM-B
-### TPM-B
-tpmcopy --mode import --parentKeyType=rsa \
- --in=/tmp/out.json --out=/tmp/tpmkey.pem \
- --pubout=/tmp/pub.dat --privout=/tmp/priv.dat \
-  --parent=0x81008000 --tpm-path=$TPMB
-
+## optionally evict to persistent handle
 tpmcopy --mode evict \
     --persistentHandle=0x81008001 \
    --in=/tmp/tpmkey.pem --tpm-path=$TPMB
 
-### or using tpm2_tools:
-# tpm2_createek -c ek.ctx -G rsa -u ek.pub 
-# tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
-# tpm2 startauthsession --session session.ctx --policy-session
-# tpm2 policysecret --session session.ctx --object-context endorsement
-# tpm2_load -C ek.ctx -c key.ctx -u pub.dat -r priv.dat --auth session:session.ctx
-# tpm2_evictcontrol -c key.ctx 0x81008001
-# tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
-
 ### run emulator
 go run cmd/main.go -logtostderr --configFile=config.json \
-  -alsologtostderr -v 5   -port :8080   --tpm --persistentHandle 0x81008001 \
-   --useEKParent --pcrs=23  --tpm-path=127.0.0.1:2341
+  -alsologtostderr -v 5   -port :8080   --tpm --keyfile /tmp/tpmkey.pem \
+   --useEKParent -pcrs=23 --tpm-path=127.0.0.1:2341
+
+### run emulator using persistntHandle
+go run cmd/main.go -logtostderr --configFile=config.json \
+  -alsologtostderr -v 5   -port :8080   --tpm -persistentHandle 0x81008001 \
+   --useEKParent -pcrs=23  --tpm-path=127.0.0.1:2341      
 ```
 
 #### Key Policies

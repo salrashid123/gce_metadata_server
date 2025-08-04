@@ -589,6 +589,15 @@ With service account key saved as PEM key file
 ```bash
 ### TPM-B
 tpmcopy --mode publickey --parentKeyType=rsa -tpmPublicKeyFile=/tmp/public.pem --tpm-path=$TPMB
+
+### or using tpm2_tools to get the public key
+## tpm2_createek -c /tmp/ek.ctx -G rsa -u /tmp/ek.pub
+## tpm2_readpublic -c /tmp/ek.ctx -o /tmp/public.pem -f PEM -n /tmp/ek.name 
+
+## or extract the public key from the EKCert x509: 
+## tpm2_getekcertificate -X -o EKCert.bin
+## openssl x509 -in EKCert.bin -inform DER -noout -text
+
 ### copy public.pem to TPM-A
 
 ### TPM-A

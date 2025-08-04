@@ -23,12 +23,16 @@ package mds
 
 import (
 	"crypto/md5"
+	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"io"
+	"log"
 	"net"
 	"reflect"
 	"strconv"
@@ -53,6 +57,7 @@ import (
 	"golang.org/x/oauth2/google"
 
 	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/tpm2/transport"
 
 	iamcredentials "cloud.google.com/go/iam/credentials/apiv1"
 	iamcredentialspb "cloud.google.com/go/iam/credentials/apiv1/credentialspb"
@@ -90,6 +95,38 @@ var (
 			Help: "backend status, partitioned by status code and path.",
 		},
 		[]string{"code", "path"},
+	)
+
+	versionMetric = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "metadata_server_version",
+			Help: "The current running version of the MetadataServer",
+		},
+		[]string{"version"},
+	)
+
+	serviceAccountName = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "service_account_name",
+			Help: "The current name of the serviceAccount email",
+		},
+		[]string{"email"},
+	)
+
+	credentialTypeMetric = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "credential_type",
+			Help: "Type of credentials being used [serviceAccountKey | TPM | Federated | Impersonated]",
+		},
+		[]string{"type"},
+	)
+
+	serviceAccountKeyHash = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "service_account_hash",
+			Help: "The hash of the serviceAccount Public Key",
+		},
+		[]string{"fingerprint"},
 	)
 )
 
@@ -146,6 +183,8 @@ type ServerConfig struct {
 	RootCAmTLS string // ca to validate client certs (default "")
 	ServerCert string // server certificate for mtls (default: "")
 	ServerKey  string // server key for mtls (default: "")
+
+	Tag string // build tag
 }
 
 func notFoundErrorHandler(path string) string {
@@ -1625,6 +1664,111 @@ func (h *MetadataServer) Start() error {
 		if h.ServerConfig.MetricsPort == "" {
 			h.ServerConfig.MetricsPort = defaultMetricsPort
 		}
+
+		prometheus.MustRegister(versionMetric)
+		versionMetric.With(prometheus.Labels{"version": h.ServerConfig.Tag}).Set(1)
+
+		prometheus.MustRegister(serviceAccountName)
+		serviceAccountName.With(prometheus.Labels{"email": h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email}).Set(1)
+
+		prometheus.MustRegister(credentialTypeMetric)
+		prometheus.MustRegister(serviceAccountKeyHash)
+
+		// TODO, support other credential types (right now only serviceAccountJSON and TPM)
+		if h.Creds.JSON != nil {
+			credConf, err := google.JWTConfigFromJSON(h.Creds.JSON, emailScope)
+			if err != nil {
+				glog.Errorf("Error parsing serviceAccount JWT:%+v", err)
+				return err
+			}
+
+			if credConf.PrivateKey != nil {
+				block, _ := pem.Decode(credConf.PrivateKey)
+				if block == nil {
+					glog.Errorf("Error reading service account PrivateKey from JSON:%+v", err)
+					return err
+				}
+
+				parsedKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+				if err != nil {
+					glog.Errorf("Error parsing serviceAccount JWT:%+v", err)
+					return err
+				}
+				rsaKey, ok := parsedKey.(*rsa.PrivateKey)
+				if !ok {
+					glog.Errorf("Error parsing serviceAccount JWT:%+v", err)
+					return err
+				}
+
+				derBytes, err := x509.MarshalPKIXPublicKey(&rsaKey.PublicKey)
+				if err != nil {
+					glog.Errorf("Failed to marshal public key: %v", err)
+					return err
+				}
+
+				hasher := sha256.New()
+
+				_, err = hasher.Write(derBytes)
+				if err != nil {
+					log.Fatalf("Failed to write to hasher: %v", err)
+				}
+				publicKeyHash := hasher.Sum(nil)
+				encodedHash := base64.StdEncoding.EncodeToString(publicKeyHash)
+				serviceAccountKeyHash.With(prometheus.Labels{"fingerprint": encodedHash}).Set(1)
+
+				credentialTypeMetric.With(prometheus.Labels{"type": "serviceAccountKey"}).Set(1)
+			}
+
+		} else if h.ServerConfig.UseTPM {
+
+			rwr := transport.FromReadWriter(h.ServerConfig.TPMDevice)
+			rsaKeyPublic, err := tpm2.ReadPublic{
+				ObjectHandle: tpm2.TPMHandle(h.ServerConfig.Handle),
+			}.Execute(rwr)
+			if err != nil {
+				glog.Errorf("can't create object TPM: %v", err)
+				return err
+			}
+			pub, err := rsaKeyPublic.OutPublic.Contents()
+			if err != nil {
+				glog.Errorf("Failed to get rsa public: %v", err)
+				return err
+			}
+			rsaDetail, err := pub.Parameters.RSADetail()
+			if err != nil {
+				glog.Errorf("Failed to get rsa details: %v", err)
+				return err
+			}
+			rsaUnique, err := pub.Unique.RSA()
+			if err != nil {
+				glog.Errorf("Failed to get rsa unique: %v", err)
+				return err
+			}
+
+			rsaPub, err := tpm2.RSAPub(rsaDetail, rsaUnique)
+			if err != nil {
+				glog.Errorf("Failed to get rsa public key: %v", err)
+				return err
+			}
+			derBytes, err := x509.MarshalPKIXPublicKey(rsaPub)
+			if err != nil {
+				glog.Errorf("Failed to marshal public key: %v", err)
+				return err
+			}
+
+			hasher := sha256.New()
+
+			_, err = hasher.Write(derBytes)
+			if err != nil {
+				log.Fatalf("Failed to write to hasher: %v", err)
+			}
+			publicKeyHash := hasher.Sum(nil)
+			encodedHash := base64.StdEncoding.EncodeToString(publicKeyHash)
+			serviceAccountKeyHash.With(prometheus.Labels{"fingerprint": encodedHash}).Set(1)
+
+			credentialTypeMetric.With(prometheus.Labels{"type": "TPM"}).Set(1)
+		}
+
 		go func() {
 			http.Handle(h.ServerConfig.MetricsPath, promhttp.Handler())
 			glog.Error(http.ListenAndServe(fmt.Sprintf("%s:%s", h.ServerConfig.MetricsInterface, h.ServerConfig.MetricsPort), nil))

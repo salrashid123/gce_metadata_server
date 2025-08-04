@@ -1417,6 +1417,27 @@ Once enabled, path latency is recorded at the default prometheus endpoint  [http
 
 Apart from latency, any dynamic field for access or identity tokens also has a counter and status metric surfaced.
 
+In addition to counter and latency metrics, you can also view the metadata server release verion, type of credential used if serviceAccountJSON or TPM, the service account's email as well the hash of the DER public key associated with the service account private key (i.e, fingerprint).
+
+Note, you can use the fingerprint to determine if key rotation is necessary or has been applied to any fleet of metadata servers you're running.
+
+```bash
+# HELP metadata_server_version The current running version of the MetadataServer
+# TYPE metadata_server_version gauge
+metadata_server_version{version="v4.1.0"} 1
+
+# HELP credential_type Type of credentials being used [serviceAccountKey | TPM | Federated | Impersonated]
+# TYPE credential_type gauge
+credential_type{type="serviceAccountKey"} 1
+
+# HELP service_account_hash The hash of the serviceAccount Public Key
+# TYPE service_account_hash gauge
+service_account_hash{fingerprint="VTxSPKUJhms607022xiWQkOTl7pT/2wWowCsIPraBFs="} 1
+
+# HELP service_account_name The current name of the serviceAccount email
+# TYPE service_account_name gauge
+service_account_name{email="metadata-sa@$PROJECT.iam.gserviceaccount.com"} 1
+```
 ## Testing
 
 a lot todo here, right...thats just life

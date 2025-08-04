@@ -529,6 +529,7 @@ func run() int {
 		RootCAmTLS:       *rootCAmTLS,
 		ServerCert:       *serverCert,
 		ServerKey:        *serverKey,
+		Tag:              Tag,
 	}
 
 	f, err := mds.NewMetadataServer(ctx, serverConfig, creds, claims)

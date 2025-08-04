@@ -596,7 +596,8 @@ tpmcopy --mode publickey --parentKeyType=rsa -tpmPublicKeyFile=/tmp/public.pem -
 
 ## or extract the public key from the EKCert x509: 
 ## tpm2_getekcertificate -X -o EKCert.bin
-## openssl x509 -in EKCert.bin -inform DER -noout -text
+## openssl x509 -in EKCert.bin -inform DER -outform PEM -out EKCert.pem
+## openssl x509 -pubkey -noout -in EKCert.pem  -out public.pem
 
 ### copy public.pem to TPM-A
 

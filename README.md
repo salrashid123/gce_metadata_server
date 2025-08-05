@@ -1426,6 +1426,11 @@ Note, you can use the fingerprint to determine if key rotation is necessary or h
 # TYPE metadata_server_version gauge
 metadata_server_version{version="v4.1.0"} 1
 
+# HELP metadata_endpoint_path_requests backend status, partitioned by status code and path.
+# TYPE metadata_endpoint_path_requests counter
+metadata_endpoint_path_requests{code="OK",path="/computeMetadata/v1/instance/service-accounts/default/identity"} 3
+metadata_endpoint_path_requests{code="OK",path="/computeMetadata/v1/instance/service-accounts/default/token"} 5
+
 # HELP credential_type Type of credentials being used [serviceAccountKey | TPM | Federated | Impersonated]
 # TYPE credential_type gauge
 credential_type{type="serviceAccountKey"} 1
@@ -1437,7 +1442,33 @@ service_account_hash{fingerprint="VTxSPKUJhms607022xiWQkOTl7pT/2wWowCsIPraBFs="}
 # HELP service_account_name The current name of the serviceAccount email
 # TYPE service_account_name gauge
 service_account_name{email="metadata-sa@$PROJECT.iam.gserviceaccount.com"} 1
+
+# HELP metadata_endpoint_latency_seconds Duration of HTTP requests.
+# TYPE metadata_endpoint_latency_seconds histogram
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/id",le="0.005"} 3
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/id",le="0.01"} 3
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/id",le="0.025"} 3
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/id",le="0.05"} 3
+
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://bar.foo",le="0.005"} 0
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://bar.foo",le="0.01"} 0
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://bar.foo",le="0.025"} 0
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://bar.foo",le="0.05"} 1
+metadata_endpoint_latency_seconds_count{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://bar.foo"} 2
+
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://foo.bar",le="0.005"} 0
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://foo.bar",le="0.01"} 0
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://foo.bar",le="0.025"} 0
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://foo.bar",le="0.05"} 0
+
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/token",le="0.005"} 4
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/token",le="0.01"} 4
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/token",le="0.025"} 4
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/token",le="0.05"} 5
 ```
+
+Note, each endpoint and url query is also measured in latency (which should be ok unless you request many different audiences)
+
 ## Testing
 
 a lot todo here, right...thats just life

@@ -1,6 +1,6 @@
 module(
     name = "com_github_salrashid123_gce_metadata_server",
-    version = "3.94.0",
+    version = "4.1.1",
 )
 
 bazel_dep(name = "rules_go", version = "0.52.0")

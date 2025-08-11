@@ -1767,6 +1767,10 @@ func (h *MetadataServer) Start() error {
 			serviceAccountKeyHash.With(prometheus.Labels{"fingerprint": encodedHash}).Set(1)
 
 			credentialTypeMetric.With(prometheus.Labels{"type": "TPM"}).Set(1)
+		} else if h.ServerConfig.Impersonate {
+			credentialTypeMetric.With(prometheus.Labels{"type": "Impersonated"}).Set(1)
+		} else if h.ServerConfig.Federate {
+			credentialTypeMetric.With(prometheus.Labels{"type": "Federated"}).Set(1)
 		}
 
 		go func() {

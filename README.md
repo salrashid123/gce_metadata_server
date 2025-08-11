@@ -555,24 +555,48 @@ openssl list --providers -provider tpm2
 
 ## create H2 primary
 printf '\x00\x00' > unique.dat
-tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx \
+    -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
 
 ## create a key
 tpm2_create -G rsa2048:rsassa:null -g sha256 -u key.pub -r key.priv -C primary.ctx
 tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
+
 # tpm2_evictcontrol -C o -c key.ctx 0x81010002
 tpm2_readpublic -c key.ctx -f PEM -o svc_account_tpm_pub.pem
 tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
 
 ## you may need to add a -p if your tpm2 tools is not recent (see https://github.com/tpm2-software/tpm2-tools/issues/3458)
 tpm2_encodeobject -C primary.ctx -u key.pub -r key.priv -o svc_account_tpm.pem
-
-### issue the x509 as self-signed
-openssl req  -provider tpm2  -provider default   -new -x509 -key svc_account_tpm.pem -out ssvc_account_tpm.crt -days 365
-
-### then upload the key
-gcloud  iam service-accounts keys upload svc_account_tpm.pem  --iam-account metadata-sa@$PROJECT.iam.gserviceaccount.com
 ```
+
+Alternatively, you can create a key using openssl
+
+```bash
+openssl genpkey -provider tpm2 -algorithm RSA -pkeyopt rsa_keygen_bits:2048  \
+       -pkeyopt rsa_keygen_pubexp:65537 -out svc_account_tpm.pem
+openssl rsa -provider tpm2  -provider default  -in svc_account_tpm.pem -pubout > svc_account_tpm_pub.pem
+```
+
+once you have the TPM PEM key,  `svc_account_tpm.pem`, create CSR which any external CA can sign:
+
+```bash
+openssl req  -provider tpm2  -provider default  -new -key svc_account_tpm.pem -out svc_account_tpm.csr
+```
+
+Finally, you can also use openssl to self-sign:
+
+```bash
+openssl req  -provider tpm2  -provider default   -new -x509 -key svc_account_tpm.pem -out svc_account_tpm.crt -days 365
+```
+
+Once you have an x509 for the TPM based key, upload it to gcp
+
+```bash
+gcloud  iam service-accounts keys upload svc_account_tpm.crt  --iam-account metadata-sa@$PROJECT.iam.gserviceaccount.com
+```
+
+Note, you cal also use go-tpm to do all these steps.  For example the following utility generates an rsa key  on the tpm with the H2 template: [tpm2genkey](https://github.com/salrashid123/tpm2genkey)
 
 #### Transferred TPM Key
 

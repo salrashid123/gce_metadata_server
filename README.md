@@ -612,7 +612,7 @@ With service account key saved as PEM key file
 
 ```bash
 ### TPM-B
-tpmcopy --mode publickey --parentKeyType=rsa -tpmPublicKeyFile=/tmp/public.pem --tpm-path=$TPMB
+tpmcopy --mode publickey --parentKeyType=rsa_ek -tpmPublicKeyFile=/tmp/public.pem --tpm-path=$TPMB
 
 ### or using tpm2_tools to get the public key
 ## tpm2_createek -c /tmp/ek.ctx -G rsa -u /tmp/ek.pub
@@ -631,7 +631,7 @@ tpmcopy --mode duplicate  --secret=/tmp/key_rsa.pem --keyType=rsa \
 
 ### copy out.json to TPM-B
 ### TPM-B
-tpmcopy --mode import --parentKeyType=rsa --in=/tmp/out.json --out=/tmp/tpmkey.pem --parent=0x81008000 --tpm-path=$TPMB
+tpmcopy --mode import --parentKeyType=rsa_ek --in=/tmp/out.json --out=/tmp/tpmkey.pem --tpm-path=$TPMB
 
 ## optionally evict to persistent handle
 tpmcopy --mode evict \
@@ -667,7 +667,7 @@ With service account key saved as PEM key file
 
 ```bash
 ### TPM-B
-tpmcopy --mode publickey --parentKeyType=rsa -tpmPublicKeyFile=/tmp/public.pem --tpm-path=$TPMB
+tpmcopy --mode publickey --parentKeyType=rsa_ek -tpmPublicKeyFile=/tmp/public.pem --tpm-path=$TPMB
 ### copy public.pem to TPM-A
 
 ### TPM-A
@@ -677,11 +677,11 @@ tpmcopy --mode duplicate --keyType=rsa    --secret=/tmp/key_rsa.pem \
 ### copy out.json to TPM-B
 
 ### TPM-B
-tpmcopy --mode import --parentKeyType=rsa --in=/tmp/out.json --out=/tmp/tpmkey.pem --tpm-path=$TPMB
+tpmcopy --mode import --parentKeyType=rsa_ek --in=/tmp/out.json --out=/tmp/tpmkey.pem --tpm-path=$TPMB
 
 ## optionally evict to persistent handle
 tpmcopy --mode evict \
-    --persistentHandle=0x81008001 \
+    --persistentHandle=0x81008002 \
    --in=/tmp/tpmkey.pem --tpm-path=$TPMB
 
 ### run emulator
@@ -691,7 +691,7 @@ go run cmd/main.go -logtostderr --configFile=config.json \
 
 ### run emulator using persistntHandle
 go run cmd/main.go -logtostderr --configFile=config.json \
-  -alsologtostderr -v 5   -port :8080   --tpm -persistentHandle 0x81008001 \
+  -alsologtostderr -v 5   -port :8080   --tpm -persistentHandle 0x81008002 \
    --useEKParent -pcrs=23  --tpm-path=127.0.0.1:2341      
 ```
 

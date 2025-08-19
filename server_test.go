@@ -911,7 +911,7 @@ func TestTPMAccessTokenCredentialHandler(t *testing.T) {
 
 			var authSession tpmjwt.Session
 			if tc.keyPassword != nil {
-				authSession, err = tpmjwt.NewPasswordSession(rwr, tc.keyPassword)
+				authSession, err = tpmjwt.NewPasswordAuthSession(rwr, tc.keyPassword, 0)
 				if err != nil {
 					t.Errorf("error creating password session %v", err)
 				}

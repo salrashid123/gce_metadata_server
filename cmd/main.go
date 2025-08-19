@@ -201,6 +201,43 @@ func run() int {
 		// configure a session
 		if *pcrs != "" {
 			// parse TPM PCR values (if set)
+
+			// todo, support pcrbanks and expected values
+			//   eg --pcrValues=0:0000000000000000000000000000000000000000000000000000000000000000,23:F5A5FD42D16A20302798EF6ED309979B43003D2320D9F0E8EA9831A92759FB4B
+			// pcrMap := make(map[uint][]byte)
+			// for _, v := range strings.Split(*pcrValues, ",") {
+			// 	entry := strings.Split(v, ":")
+			// 	if len(entry) == 2 {
+			// 		uv, err := strconv.ParseUint(entry[0], 10, 32)
+			// 		if err != nil {
+			// 			glog.Error("Error parsing PCRs %v", err)
+			// 			return -1
+			// 		}
+			// 		hexEncodedPCR, err := hex.DecodeString(strings.ToLower(entry[1]))
+			// 		if err != nil {
+			// 			glog.Error("error decoding pcr Hex values %v", err)
+			// 			return -1
+			// 		}
+			// 		pcrMap[uint(uv)] = hexEncodedPCR
+			// 	}
+			// }
+
+			// // calculate the pcrHash
+			// hsh := sha256.New()
+			// for _, v := range pcrMap {
+			// 	_, err := hsh.Write(v)
+			// 	if err != nil {
+			// 		glog.Error("error calculating hash %v", err)
+			// 		return -1
+			// 	}
+			// }
+			// pcrList := make([]uint, 0, len(pcrMap))
+			// for k := range pcrMap {
+			// 	pcrList = append(pcrList, k)
+			// }
+
+			// pcrHash := hsh.Sum(nil)
+
 			var pcrList = []uint{}
 			strpcrs := strings.Split(*pcrs, ",")
 			for _, i := range strpcrs {
@@ -234,7 +271,7 @@ func run() int {
 						Hash:      tpm2.TPMAlgSHA256,
 						PCRSelect: tpm2.PCClientCompatible.PCRs(pcrList...),
 					}}
-				authSession, err = tpmjwt.NewPCRAndDuplicateSelectSession(rwr, sel, []byte(*keyPass), primaryKey.Name)
+				authSession, err = tpmjwt.NewPCRAndDuplicateSelectSession(rwr, sel, tpm2.TPM2BDigest{}, []byte(*keyPass), primaryKey.Name, encryptionSessionHandle)
 				if err != nil {
 					glog.Error("can't create autsession: %v", err)
 					return -1
@@ -251,7 +288,7 @@ func run() int {
 						Hash:      tpm2.TPMAlgSHA256,
 						PCRSelect: tpm2.PCClientCompatible.PCRs(pcrList...),
 					},
-				})
+				}, tpm2.TPM2BDigest{}, encryptionSessionHandle)
 				if err != nil {
 					glog.Error(os.Stderr, "error creating tpm pcrsession %v\n", err)
 					return -1
@@ -276,7 +313,7 @@ func run() int {
 					_, _ = flushContextCmd.Execute(rwr)
 				}()
 
-				authSession, err = tpmjwt.NewPolicyAuthValueAndDuplicateSelectSession(rwr, []byte(*keyPass), primaryKey.Name)
+				authSession, err = tpmjwt.NewPolicyAuthValueAndDuplicateSelectSession(rwr, []byte(*keyPass), primaryKey.Name, encryptionSessionHandle)
 				if err != nil {
 					glog.Error("can't create autsession: %v", err)
 					return -1
@@ -287,7 +324,7 @@ func run() int {
 				_, _ = flushContextCmd.Execute(rwr)
 
 			} else {
-				authSession, err = tpmjwt.NewPasswordSession(rwr, []byte(*keyPass))
+				authSession, err = tpmjwt.NewPasswordAuthSession(rwr, []byte(*keyPass), encryptionSessionHandle)
 				if err != nil {
 					glog.Error(os.Stderr, "error creating tpm passwordsession%v\n", err)
 					return -1

@@ -546,61 +546,64 @@ The following uses openssl3 with [tpm2-openssl](https://github.com/tpm2-software
 ```bash
 apt install tpm2-openssl tpm2-tools tpm2-abrmd libtss2-tcti-tabrmd0
 
-openssl list --providers -provider tpm2
+### make sure the openssl tpm providder is installed
+$ openssl list --providers -provider tpm2
     Providers:
       tpm2
         name: TPM 2.0 Provider
         version: 
         status: active
 
-## create H2 primary
-printf '\x00\x00' > unique.dat
-tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx \
-    -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
-
-## create a key
-tpm2_create -G rsa2048:rsassa:null -g sha256 -u key.pub -r key.priv -C primary.ctx
-tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
-
-# tpm2_evictcontrol -C o -c key.ctx 0x81010002
-tpm2_readpublic -c key.ctx -f PEM -o svc_account_tpm_pub.pem
-tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
-
-## you may need to add a -p if your tpm2 tools is not recent (see https://github.com/tpm2-software/tpm2-tools/issues/3458)
-tpm2_encodeobject -C primary.ctx -u key.pub -r key.priv -o svc_account_tpm.pem
-```
-
-Alternatively, you can create a key using openssl
-
-```bash
 openssl genpkey -provider tpm2 -algorithm RSA -pkeyopt rsa_keygen_bits:2048  \
        -pkeyopt rsa_keygen_pubexp:65537 -out svc_account_tpm.pem
+
 openssl rsa -provider tpm2  -provider default  -in svc_account_tpm.pem -pubout > svc_account_tpm_pub.pem
+
+### Alternatively, you can create a key using tpm2_tools:
+## create H2 primary
+# printf '\x00\x00' > unique.dat
+# tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx \
+#     -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+
+# ## create a key
+# tpm2_create -G rsa2048:rsassa:null -g sha256 -u key.pub -r key.priv -C primary.ctx
+# tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
+
+# # tpm2_evictcontrol -C o -c key.ctx 0x81010002
+# tpm2_readpublic -c key.ctx -f PEM -o svc_account_tpm_pub.pem
+# tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
+
+# ## you may need to add a -p if your tpm2 tools is not recent (see https://github.com/tpm2-software/tpm2-tools/issues/3458)
+# tpm2_encodeobject -C primary.ctx -u key.pub -r key.priv -o svc_account_tpm.pem
 ```
 
-once you have the TPM PEM key,  `svc_account_tpm.pem`, create CSR which any external CA can sign:
+once you have the TPM PEM key,  `svc_account_tpm.pem`, create `CSR` which any external CA can sign:
 
 ```bash
 openssl req  -provider tpm2  -provider default  -new -key svc_account_tpm.pem -out svc_account_tpm.csr
 ```
 
-Finally, you can also use openssl to self-sign:
+Copy `svc_account_tpm.csr` to any system which has a CA and sign it to issue an x509 `svc_account_tpm.crt `
+
+
+Or skip the CSR and self-sign directly
 
 ```bash
 openssl req  -provider tpm2  -provider default   -new -x509 -key svc_account_tpm.pem -out svc_account_tpm.crt -days 365
 ```
 
-Once you have an x509 for the TPM based key, upload it to gcp
+Anyway, once you have an x509 (`svc_account_tpm.crt `),  upload it to gcp
 
 ```bash
-gcloud  iam service-accounts keys upload svc_account_tpm.crt  --iam-account metadata-sa@$PROJECT.iam.gserviceaccount.com
+gcloud  iam service-accounts keys upload svc_account_tpm.crt  \
+   --iam-account metadata-sa@$PROJECT.iam.gserviceaccount.com
 ```
 
-Note, you cal also use go-tpm to do all these steps.  For example the following utility generates an rsa key  on the tpm with the H2 template: [tpm2genkey](https://github.com/salrashid123/tpm2genkey)
+Note, you can also use go-tpm to do all these steps.  For example the following utility generates an rsa key  on the tpm with the H2 template: [tpm2genkey](https://github.com/salrashid123/tpm2genkey)
 
 #### Transferred TPM Key
 
-If you used option `C` above to transfer the service account key from `TPM-A` to `TPM-B` (tpm-b being the system where you will run the metadata server):
+If you used option `C` above to transfer the service account key from your local system to `TPM-B` (tpm-b being the system where you will run the metadata server):
 
 you can use `tpm2_duplicate` or the  utility here [tpmcopy](https://github.com/salrashid123/tpmcopy) tool.  Note that the 'parent' key is set to `Endorsement RSA` which needs to get initialized on tpm-b first.  Furthermore, the key is bound by `pcr_duplicateselect` policy which must get fulfilled.
 
@@ -623,9 +626,11 @@ tpmcopy --mode publickey --parentKeyType=rsa_ek -tpmPublicKeyFile=/tmp/public.pe
 ## openssl x509 -in EKCert.bin -inform DER -outform PEM -out EKCert.pem
 ## openssl x509 -pubkey -noout -in EKCert.pem  -out public.pem
 
-### copy public.pem to TPM-A
+### copy public.pem to you local system where you have the service account's private key
+#### then extract from the json format 
+cat tpm-svc-account.json | jq -r '.private_key' > /tmp/f.json
+openssl rsa -in /tmp/f.json -out /tmp/key_rsa.pem 
 
-### TPM-A
 tpmcopy --mode duplicate  --secret=/tmp/key_rsa.pem --keyType=rsa \
    --password=bar -tpmPublicKeyFile=/tmp/public.pem -out=/tmp/out.json --tpm-path=$TPMA
 
@@ -731,7 +736,8 @@ go run cmd/main.go --configFile=config.json   -alsologtostderr -v 50 -port :8080
 	tpm2_encodeobject -C primary.ctx -u key.pub -r key.prv -o /tmp/private.pem 
 
 ## run emulator
-go run cmd/main.go --configFile=config.json   -alsologtostderr -v 50 -port :8080 --tpm --keyfile=/tmp/private.pem -pcrs=23
+go run cmd/main.go --configFile=config.json \
+    -alsologtostderr -v 50 -port :8080 --tpm --keyfile=/tmp/private.pem -pcrs=23
 ```
 
 Note that if you are using PCR policy, the metadata server cache's the credential values until it expires (which is typically an hour). If you enable a PCR policy and then change it to invalidate the TPM-based key's usage, the server will return the same token until it needs to referesh it.

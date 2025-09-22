@@ -196,6 +196,7 @@ r.Handle("/")
 * [GCE mTLS](#gce-mtls)
 * [Envoy Authentication Filter](#envoy-authentication-filter)  
 * [Metrics](#metrics)
+* [Running Google Cloud OpsAgent](#running-google-cloud-opsagent)
 * [Testing](#testing)
 
 ---
@@ -1498,6 +1499,11 @@ metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/serv
 ```
 
 Note, each endpoint and url query is also measured in latency (which should be ok unless you request many different audiences)
+
+## Running Google Cloud OpsAgent with GCE MetaData Server Emulator
+
+see [tutorial](https://gist.github.com/salrashid123/eef058e704982e74c0af9c010a8adab8)
+
 
 ## Testing
 

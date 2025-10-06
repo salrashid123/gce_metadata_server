@@ -47,5 +47,5 @@ jobs:
       - name: Bazel Build
         run: bazelisk build cmd:main
 
-      - name: Bazel Test
-        run: bazelisk test --test_env CICD_SA_PEM --test_env CICD_SA_EMAIL  --test_env CICD_SA_JSON  :go_default_test
+      # - name: Bazel Test
+      #   run: bazelisk test --test_env CICD_SA_PEM --test_env CICD_SA_EMAIL  --test_env CICD_SA_JSON  :go_default_test

@@ -310,8 +310,8 @@ def go_repositories():
     go_repository(
         name = "com_github_salrashid123_oauth2_v3",
         importpath = "github.com/salrashid123/oauth2/v3",
-        sum = "h1:o6qpG8wWNCju6AU6nebmK/E1n+2qWzqZs+/mUKG8O+Y=",
-        version = "v3.0.8",
+        sum = "h1:UkpiBylD8JoBZD1h5bEUzVMr5B3b1Xz2PLtw5exATEY=",
+        version = "v3.0.9",
     )
     go_repository(
         name = "com_github_spiffe_go_spiffe_v2",

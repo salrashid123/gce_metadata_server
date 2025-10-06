@@ -71,8 +71,8 @@ github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0t
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
 github.com/salrashid123/golang-jwt-tpm v1.8.97 h1:bux56qLDmFTWStiIkDQhR3j/7UhnbVIP0yr2458mX0U=
 github.com/salrashid123/golang-jwt-tpm v1.8.97/go.mod h1:LBBa8kjaUFXOfJ05/UWykl2dYz/OmzvdrvyrjDeDOVc=
-github.com/salrashid123/oauth2/v3 v3.0.8 h1:o6qpG8wWNCju6AU6nebmK/E1n+2qWzqZs+/mUKG8O+Y=
-github.com/salrashid123/oauth2/v3 v3.0.8/go.mod h1:FMznrRPCCV3g/+18M2Wmr7a74PqDKYCrarbmiofq2B8=
+github.com/salrashid123/oauth2/v3 v3.0.9 h1:UkpiBylD8JoBZD1h5bEUzVMr5B3b1Xz2PLtw5exATEY=
+github.com/salrashid123/oauth2/v3 v3.0.9/go.mod h1:FMznrRPCCV3g/+18M2Wmr7a74PqDKYCrarbmiofq2B8=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=

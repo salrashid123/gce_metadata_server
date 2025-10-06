@@ -38,7 +38,7 @@ jobs:
         run: go test -v ./...
 
       - name: Get Bazel
-        uses: bazel-contrib/setup-bazel@v0.8.1 
+        uses: bazel-contrib/setup-bazel@0.15.0
         with:
           bazelisk-cache: true
           disk-cache: ${{ github.workflow }}

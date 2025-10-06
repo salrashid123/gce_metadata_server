@@ -33,6 +33,19 @@ jobs:
           CICD_SA_EMAIL: ${{ secrets.CICD_SA_EMAIL }}    
           CICD_SA_PEM: ${{ secrets.CICD_SA_PEM }}
           CICD_SA_JSON: ${{ secrets.CICD_SA_JSON }}
+          USE_BAZEL_VERSION: 8.0.1
 
         run: go test -v ./...
 
+      - name: Get Bazel
+        uses: bazel-contrib/setup-bazel@v0.8.1 
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}
+          repository-cache: true
+
+      - name: Bazel Build
+        run: bazelisk build cmd:main
+
+      - name: Bazel Test
+        run: bazelisk test --test_env CICD_SA_PEM --test_env CICD_SA_EMAIL  --test_env CICD_SA_JSON  :go_default_test

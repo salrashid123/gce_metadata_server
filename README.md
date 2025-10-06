@@ -446,15 +446,10 @@ Basically, you can either
 
 - `A` download (import) a Google ServiceAccount's json file and embed the private part to the TPM.
 
-  see [example](https://github.com/salrashid123/oauth2/blob/master/README.md#a-import-service-account-json-to-tpm)
-
 - `B` Generate a Key _on the TPM_ and then [import the public part to GCP](https://cloud.google.com/iam/docs/keys-upload).
-
-  see [example](https://github.com/salrashid123/oauth2/blob/master/README.md#b-generate-key-on-tpm-and-export-public-x509-certificate-to-gcp).  Note that you can [upload atmost 10 keys per service account](https://cloud.google.com/iam/quotas#limits)
 
 - `C` remote seal the service accounts RSA Private key, encrypt it with TPM's `Endorsement Key` and load it securely inside the TPM. 
 
-  see [example](https://github.com/salrashid123/oauth2/blob/master/README.md#c--remotely-transferring-an-encrypted-rsa-key-into-the-tpm) and [tpm2_duplicate](https://github.com/salrashid123/tpm2/tree/master/tpm2_duplicate#transfer-rsa-key-with-password-policy-from-a-b) and [tpmcopy](https://github.com/salrashid123/tpmcopy)
 
 `A` is the easiest for a demo
 
@@ -540,7 +535,9 @@ The TPM based credentials imports a JWT generator library to perform the oauth a
 
 #### Generated TPM Key
 
-If you used option `B` to generate a key on the TPM and issue an `x509`, you can do that in a number of ways described [here](https://github.com/salrashid123/oauth2/blob/master/README.md#b-generate-key-on-tpm-and-export-public-x509-certificate-to-gcp). 
+If you used option `B` to generate a key on the TPM and issue an `x509`.
+
+Note that you can [upload atmost 10 keys per service account](https://cloud.google.com/iam/quotas#limits)
 
 The following uses openssl3 with [tpm2-openssl](https://github.com/tpm2-software/tpm2-openssl) installed and a self-signed cert.  You are ofcourse free to use the TPM-based key to issue a CSR which is signed by an external CA
 

@@ -163,7 +163,8 @@ r.Handle("/")
     - [b) TPM Generated](#generated-tpm-key)
     - [c) Transferred](#transferred-tpm-key)
     - [Key Policies](#key-policies)     
-    - [Session Encryption](#session-encryption)    
+    - [Session Encryption](#session-encryption)
+    - [Workload Federation mTLS with TPM ](#workload-federation-mtls-with-tpm)    
 * [Usage](#usage)      
 * [Startup](#startup)
   - [AccessToken](#accesstoken)
@@ -308,11 +309,11 @@ You can set the following options on usage:
 | **`--tpm-session-encrypt-with-name`** | hex encoded TPM object 'name' to use with an encrypted session |
 | **`--useOauthToken`** | Use oauth2 token instead of jwtAccessToken (default: false)|
 | **`--useEKParent`** | Use endorsement RSAKey as parent (default: false) |
-| **`--useTPMmTLS`** | "Use TPM based workload federation mtls (default: false)" |
-| **`--projectNumber`** | "The ProjectNumber based workload federation mtls (default: read in from config.json)" |
-| **`--poolID`** | "The poolID based workload federation mtls (default: '')" |
-| **`--providerID`** | "The ProviderID based workload federation mtls (default: '')" |
-| **`--pubCert`** | "The x509 Public certificate for workload federation mtls (default: '')" |
+| **`--useTPMmTLS`** | Use TPM based workload federation mtls (default: false) |
+| **`--projectNumber`** | The ProjectNumber based workload federation mtls (default: read in from config.json) |
+| **`--poolID`** | The poolID based workload federation mtls (default: '') |
+| **`--providerID`** | The ProviderID based workload federation mtls (default: '') |
+| **`--pubCert`** | The x509 Public certificate for workload federation mtls (default: '') |
 
 ##### `Monitoring Options`
 | Option | Description |

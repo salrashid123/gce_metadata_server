@@ -24,6 +24,7 @@ use_repo(
     "com_github_prometheus_client_golang",
     "com_github_salrashid123_golang_jwt_tpm",
     "com_github_salrashid123_oauth2_v3",
+    "com_github_salrashid123_mtls_tokensource_tpm",
     "com_google_cloud_go_compute_metadata",
     "com_google_cloud_go_iam",
     "org_golang_google_api",

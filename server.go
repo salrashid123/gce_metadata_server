@@ -52,6 +52,7 @@ import (
 	"golang.org/x/oauth2"
 	"google.golang.org/api/idtoken"
 	"google.golang.org/api/impersonate"
+	"google.golang.org/api/option"
 
 	"github.com/gorilla/mux"
 	"golang.org/x/oauth2/google"
@@ -59,7 +60,9 @@ import (
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpm2/transport"
 
+	credentials "cloud.google.com/go/iam/credentials/apiv1"
 	iamcredentials "cloud.google.com/go/iam/credentials/apiv1"
+	"cloud.google.com/go/iam/credentials/apiv1/credentialspb"
 	iamcredentialspb "cloud.google.com/go/iam/credentials/apiv1/credentialspb"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -116,7 +119,7 @@ var (
 	credentialTypeMetric = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "credential_type",
-			Help: "Type of credentials being used [serviceAccountKey | TPM | Federated | Impersonated]",
+			Help: "Type of credentials being used [serviceAccountKey | TPM | Federated | Impersonated | TPMFederated ]",
 		},
 		[]string{"type"},
 	)
@@ -178,6 +181,7 @@ type ServerConfig struct {
 	Handle           tpm2.TPMHandle     // initialized  handle to the key
 	AuthSession      tpmjwt.Session     // auth session to use
 	EncryptionHandle tpm2.TPMHandle     // (optional) handle to use for transit encryption
+	UseTPMmTLS       bool               // use workload federation mTLS with TPM
 
 	UsemTLS    bool   // toggle if mtls is used (default: false)
 	RootCAmTLS string // ca to validate client certs (default "")
@@ -671,6 +675,8 @@ func (h *MetadataServer) getServiceAccountHandler(w http.ResponseWriter, r *http
 		if ok {
 			scopes = strings.Split(k[0], ",")
 			glog.V(20).Infof("access_token requested with scopes: [%s]", scopes)
+		} else {
+			scopes = h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts[acct].Scopes
 		}
 		tok, err := h.getAccessToken(scopes, acct)
 		if err != nil {
@@ -725,10 +731,40 @@ func (h *MetadataServer) getAccessToken(scopes []string, acct string) (*metadata
 		ts = h.Creds.TokenSource
 	}
 
-	tok, err := ts.Token()
-	if err != nil {
-		glog.Errorf("ERROR:  could not get Token: %v", err)
-		return nil, err
+	var tok *oauth2.Token
+
+	if h.ServerConfig.UseTPMmTLS {
+		glog.V(40).Infof("using tpm MLTLSservice account context for access_token: [%s] with scopes [%s]", h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts[acct].Email, scopes)
+		ctx := context.Background()
+		c, err := credentials.NewIamCredentialsClient(ctx, option.WithTokenSource(ts))
+		if err != nil {
+			glog.Errorf("ERROR:  error  creatubg IAM Client: %v", err)
+			return nil, err
+		}
+		defer c.Close()
+
+		atreq := &credentialspb.GenerateAccessTokenRequest{
+			Name:  fmt.Sprintf("projects/-/serviceAccounts/%s", h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts[acct].Email),
+			Scope: scopes,
+		}
+		atresp, err := c.GenerateAccessToken(ctx, atreq)
+		if err != nil {
+			glog.Errorf("ERROR:   error  getting access_token: %v", err)
+			return nil, err
+		}
+
+		tok = &oauth2.Token{
+			AccessToken: atresp.AccessToken,
+			Expiry:      atresp.ExpireTime.AsTime(),
+			TokenType:   "Bearer",
+		}
+	} else {
+		var err error
+		tok, err = ts.Token()
+		if err != nil {
+			glog.Errorf("ERROR:  could not get Token: %v", err)
+			return nil, err
+		}
 	}
 	now := time.Now().UTC()
 	diff := tok.Expiry.Sub(now)
@@ -787,19 +823,56 @@ func (h *MetadataServer) getIDToken(targetAudience string, acct string) (string,
 			AccessToken: resp.Token,
 		})
 	} else if h.ServerConfig.UseTPM {
-		idTokenSource, err = tpmoauth.TpmTokenSource(&tpmoauth.TpmTokenConfig{
-			TPMDevice:        h.ServerConfig.TPMDevice,
-			Handle:           h.ServerConfig.Handle,
-			Email:            h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts[acct].Email,
-			AuthSession:      h.ServerConfig.AuthSession,
-			IdentityToken:    true,
-			Audience:         targetAudience,
-			EncryptionHandle: h.ServerConfig.EncryptionHandle,
-		})
-		if err != nil {
-			glog.Errorf("Error getting id_token %v\n", err)
-			return "", fmt.Errorf("could not get id_token %v", err)
+
+		if h.ServerConfig.UseTPMmTLS {
+			ctx := context.Background()
+			glog.V(40).Infof("using tpm MLTLSservice account context for id_token: [%s]", h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts[acct].Email)
+
+			ts := h.Creds.TokenSource
+
+			c, err := credentials.NewIamCredentialsClient(ctx, option.WithTokenSource(ts))
+			if err != nil {
+				glog.Errorf("ERROR:  error  creatubg IAM Client: %v", err)
+				return "", err
+			}
+			defer c.Close()
+
+			if targetAudience == "" {
+				glog.Errorf("ERROR:    Audience must be specified for id_tokens")
+				return "", err
+			}
+
+			idreq := &credentialspb.GenerateIdTokenRequest{
+				Name:         fmt.Sprintf("projects/-/serviceAccounts/%s", h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts[acct].Email),
+				Audience:     targetAudience,
+				IncludeEmail: true,
+			}
+			idresp, err := c.GenerateIdToken(ctx, idreq)
+			if err != nil {
+				glog.Errorf("ERROR:  error  getting id_token: %v", err)
+				return "", err
+			}
+			idTokenSource = oauth2.StaticTokenSource(
+				&oauth2.Token{
+					AccessToken: idresp.Token,
+				},
+			)
+		} else {
+			idTokenSource, err = tpmoauth.TpmTokenSource(&tpmoauth.TpmTokenConfig{
+				TPMDevice:        h.ServerConfig.TPMDevice,
+				Handle:           h.ServerConfig.Handle,
+				Email:            h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts[acct].Email,
+				AuthSession:      h.ServerConfig.AuthSession,
+				IdentityToken:    true,
+				Audience:         targetAudience,
+				EncryptionHandle: h.ServerConfig.EncryptionHandle,
+			})
+			if err != nil {
+				glog.Errorf("Error getting id_token %v\n", err)
+				return "", fmt.Errorf("could not get id_token %v", err)
+			}
 		}
+
 	} else {
 		idTokenSource, err = idtoken.NewTokenSource(ctx, targetAudience, idtoken.WithCredentialsJSON(h.Creds.JSON))
 		if err != nil {
@@ -1766,7 +1839,11 @@ func (h *MetadataServer) Start() error {
 			encodedHash := base64.StdEncoding.EncodeToString(publicKeyHash)
 			serviceAccountKeyHash.With(prometheus.Labels{"fingerprint": encodedHash}).Set(1)
 
-			credentialTypeMetric.With(prometheus.Labels{"type": "TPM"}).Set(1)
+			if h.ServerConfig.UseTPMmTLS {
+				credentialTypeMetric.With(prometheus.Labels{"type": "TPMFederated"}).Set(1)
+			} else {
+				credentialTypeMetric.With(prometheus.Labels{"type": "TPM"}).Set(1)
+			}
 		} else if h.ServerConfig.Impersonate {
 			credentialTypeMetric.With(prometheus.Labels{"type": "Impersonated"}).Set(1)
 		} else if h.ServerConfig.Federate {

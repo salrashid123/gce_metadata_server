@@ -308,6 +308,11 @@ You can set the following options on usage:
 | **`--tpm-session-encrypt-with-name`** | hex encoded TPM object 'name' to use with an encrypted session |
 | **`--useOauthToken`** | Use oauth2 token instead of jwtAccessToken (default: false)|
 | **`--useEKParent`** | Use endorsement RSAKey as parent (default: false) |
+| **`--useTPMmTLS`** | "Use TPM based workload federation mtls (default: false)" |
+| **`--projectNumber`** | "The ProjectNumber based workload federation mtls (default: read in from config.json)" |
+| **`--poolID`** | "The poolID based workload federation mtls (default: '')" |
+| **`--providerID`** | "The ProviderID based workload federation mtls (default: '')" |
+| **`--pubCert`** | "The x509 Public certificate for workload federation mtls (default: '')" |
 
 ##### `Monitoring Options`
 | Option | Description |
@@ -762,6 +767,37 @@ For example:
 ```
 
 You can also derive the "name" from a public key of a known template.  see [go-tpm.tpm2_get_name](https://github.com/salrashid123/tpm2/tree/master/tpm2_get_name)
+
+#### Workload Federation mTLS with TPM 
+
+GCP Workload Federation supports mTLS which can also be extended where the mTLS key is embedded inside a TPM:
+
+* [GCP Workload Identity Federation using x509 certificates](https://github.com/salrashid123/mtls-tokensource)
+* [mTLS Workload Identify Federation](https://github.com/salrashid123/gcp-adc-tpm?tab=readme-ov-file#mtls-workload-identify-federation)
+
+This repo supports this mode but the way you enable it requires several additional setps:
+
+1. configure workload federation mtls
+2. either generate a key on the TPM and issue an x509 or import the private key to the TPM (eg, `mtls.crt` `mtlstpm.key`)
+3. Configure impersonation for the workload federation `principal://` with an actual service account
+
+For example, if you configured workload federation where the workload is identified by `WORKLOAD_CN`, then configure impersonation
+
+```bash
+gcloud iam service-accounts \
+  add-iam-policy-binding "tpm-sa@$PROJECT_ID.iam.gserviceaccount.com" \
+  --member=serviceAccount:"principal://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL_ID/subject/$WORKLOAD_CN" \
+  --role=roles/iam.serviceAccountTokenCreator
+```
+
+Then run the metadata server with these flags:
+
+```bash
+go run cmd/main.go --configFile=config.json   -alsologtostderr -v 500 -port :8080 \
+    --tpm -useTPMmTLS  --pubCert=/path/to/mtls.crt --keyfile=/path/tp/mtlstpm.key  \
+     --poolID=c$POOL_ID --providerID=$$PROVIDER_ID
+```
+
 
 A TODO enhancement could be to add on support for `PKCS-11` systems:  eg [salrashid123/golang-jwt-pkcs11](https://github.com/salrashid123/golang-jwt-pkcs11)
 

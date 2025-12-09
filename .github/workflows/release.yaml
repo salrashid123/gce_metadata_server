@@ -34,7 +34,13 @@ jobs:
         env:
           CICD_SA_EMAIL: ${{ secrets.CICD_SA_EMAIL }}    
           CICD_SA_PEM: ${{ secrets.CICD_SA_PEM }}
-          CICD_SA_JSON: ${{ secrets.CICD_SA_JSON }}      
+          CICD_SA_JSON: ${{ secrets.CICD_SA_JSON }}   
+          CICD_MTLS_CERT_PEM: ${{ secrets.CICD_MTLS_CERT_PEM }}    
+          CICD_MTLS_KEY_PEM: ${{ secrets.CICD_MTLS_KEY_PEM }}  
+          CICD_PROJECT_NUMBER: ${{ secrets.CICD_PROJECT_NUMBER }}    
+          CICD_POOL_ID: ${{ secrets.CICD_POOL_ID }}    
+          CICD_PROVIDER_ID: ${{ secrets.CICD_PROVIDER_ID }}
+
         run: go test -v ./...
 
   release:

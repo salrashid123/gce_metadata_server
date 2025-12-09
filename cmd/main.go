@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"flag"
 	"fmt"
 	"io"
@@ -25,6 +27,7 @@ import (
 	"github.com/google/go-tpm/tpmutil"
 	mds "github.com/salrashid123/gce_metadata_server"
 	tpmjwt "github.com/salrashid123/golang-jwt-tpm"
+	tpmmtls "github.com/salrashid123/mtls-tokensource/tpm"
 	tpmoauth "github.com/salrashid123/oauth2/v3"
 
 	"golang.org/x/oauth2"
@@ -56,6 +59,11 @@ var (
 	sessionEncryptionName = flag.String("tpm-session-encrypt-with-name", "", "hex encoded TPM object 'name' to use with an encrypted session")
 	useOauthToken         = flag.Bool("useOauthToken", false, "Use oauth2 token instead of jwtAccessToken (default: false)")
 	useEKParent           = flag.Bool("useEKParent", false, "Use endorsement RSAKey as parent (not h2) (default: false)")
+	useTPMmTLS            = flag.Bool("useTPMmTLS", false, "Use TPM based workload federation mtls (default: false)")
+	projectNumber         = flag.String("projectNumber", "", "Project Number for mTLS (default: )")
+	poolID                = flag.String("poolID", "", "workload identity pool id for mTLS (default: )")
+	providerID            = flag.String("providerID", "", "workload identity pool id for mTLS (default: )")
+	pubCert               = flag.String("pubCert", "", "workload identity public certificate for mTLS (default: )")
 
 	usemTLS           = flag.Bool("usemTLS", false, "Use mTLS")
 	rootCAmTLS        = flag.String("rootCAmTLS", "certs/root.crt", "rootCA to validate client certs ")
@@ -475,23 +483,74 @@ func run() int {
 		}
 		glog.V(40).Infof("TPM credentials name %s", hex.EncodeToString(pub.Name.Buffer))
 
-		ts, err = tpmoauth.TpmTokenSource(&tpmoauth.TpmTokenConfig{
-			TPMDevice:        rwc,
-			Handle:           handle,
-			AuthSession:      authSession,
-			Email:            claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
-			Scopes:           claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
-			EncryptionHandle: encryptionSessionHandle,
-			UseOauthToken:    *useOauthToken,
-		})
-		if err != nil {
-			glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
-			return -1
+		if *useTPMmTLS {
+			if *poolID == "" || *providerID == "" || *pubCert == "" {
+				glog.Error(os.Stderr, " both ProjectNumber, ProviderID PoolID must be specified for mtls")
+				return -1
+			}
+
+			glog.Infoln("Using TPM with mTLS Workload Identity Federation for credentials")
+
+			numericprojectID := strconv.FormatInt(claims.ComputeMetadata.V1.Project.NumericProjectID, 10)
+
+			if *projectNumber != "" {
+				numericprojectID = *projectNumber
+			}
+
+			certPEMBlock, err := os.ReadFile(*pubCert)
+			if err != nil {
+				glog.Error(os.Stderr, "failed to read certificate file: %v", err)
+				return -1
+			}
+
+			// Decode the PEM block
+			block, _ := pem.Decode(certPEMBlock)
+			if block == nil || block.Type != "CERTIFICATE" {
+				glog.Error(os.Stderr, " failed to decode PEM block as certificate")
+				return -1
+			}
+
+			// Parse the X.509 certificate
+			cert, err := x509.ParseCertificate(block.Bytes)
+			if err != nil {
+				glog.Error(os.Stderr, " failed to parse certificate: %v", err)
+				return -1
+			}
+
+			ts, err = tpmmtls.TpmMTLSTokenSource(&tpmmtls.TpmMtlsTokenConfig{
+				TPMDevice:       rwc,
+				Handle:          handle,
+				Audience:        fmt.Sprintf("//iam.googleapis.com/projects/%s/locations/global/workloadIdentityPools/%s/providers/%s", numericprojectID, *poolID, *providerID),
+				X509Certificate: cert,
+			})
+			if err != nil {
+				glog.Error(os.Stderr, "error creating tpm tokensource %v\n", err)
+				return -1
+			}
+			creds = &google.Credentials{
+				ProjectID:   claims.ComputeMetadata.V1.Project.ProjectID,
+				TokenSource: ts,
+			}
+		} else {
+			ts, err = tpmoauth.TpmTokenSource(&tpmoauth.TpmTokenConfig{
+				TPMDevice:        rwc,
+				Handle:           handle,
+				AuthSession:      authSession,
+				Email:            claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
+				Scopes:           claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
+				EncryptionHandle: encryptionSessionHandle,
+				UseOauthToken:    *useOauthToken,
+			})
+			if err != nil {
+				glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
+				return -1
+			}
+			creds = &google.Credentials{
+				ProjectID:   claims.ComputeMetadata.V1.Project.ProjectID,
+				TokenSource: ts,
+			}
 		}
-		creds = &google.Credentials{
-			ProjectID:   claims.ComputeMetadata.V1.Project.ProjectID,
-			TokenSource: ts,
-		}
+
 	} else if *serviceAccountFile != "" {
 
 		glog.Infoln("Using serviceAccountFile for credentials")
@@ -555,6 +614,7 @@ func run() int {
 		Federate:         *useFederate,
 		DomainSocket:     *useDomainSocket,
 		UseTPM:           *useTPM,
+		UseTPMmTLS:       *useTPMmTLS,
 		TPMDevice:        rwc,
 		Handle:           handle,
 		AuthSession:      authSession,

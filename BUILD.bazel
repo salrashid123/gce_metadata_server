@@ -27,6 +27,7 @@ go_library(
         "@com_google_cloud_go_iam//credentials/apiv1/credentialspb:go_default_library",
         "@org_golang_google_api//idtoken:go_default_library",
         "@org_golang_google_api//impersonate:go_default_library",
+        "@org_golang_google_api//option:go_default_library",        
         "@org_golang_x_oauth2//:go_default_library",
         "@org_golang_x_oauth2//google:go_default_library",
     ],

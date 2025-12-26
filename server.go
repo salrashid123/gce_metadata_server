@@ -32,7 +32,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"io"
-	"log"
 	"net"
 	"reflect"
 	"strconv"
@@ -1783,7 +1782,8 @@ func (h *MetadataServer) Start() error {
 
 				_, err = hasher.Write(derBytes)
 				if err != nil {
-					log.Fatalf("Failed to write to hasher: %v", err)
+					glog.Errorf("Failed to write to hasher: %v", err)
+					return err
 				}
 				publicKeyHash := hasher.Sum(nil)
 				encodedHash := base64.StdEncoding.EncodeToString(publicKeyHash)
@@ -1833,7 +1833,8 @@ func (h *MetadataServer) Start() error {
 
 			_, err = hasher.Write(derBytes)
 			if err != nil {
-				log.Fatalf("Failed to write to hasher: %v", err)
+				glog.Errorf("Failed to write to hasher: %v", err)
+				return err
 			}
 			publicKeyHash := hasher.Sum(nil)
 			encodedHash := base64.StdEncoding.EncodeToString(publicKeyHash)

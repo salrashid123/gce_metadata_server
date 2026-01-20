@@ -9,8 +9,7 @@ For example, you can call `ADC` using default credentials or specifically with `
 To use, first run the emulator:
 
 ```bash
-./gce_metadata_server -logtostderr --configFile=config.json \
-  -alsologtostderr -v 5 \
+./gce_metadata_server --configFile=config.json \
   -port :8080 \
   --serviceAccountFile certs/metadata-sa.json 
 ```
@@ -21,7 +20,7 @@ Then in a new window, export some env vars google SDK's understands
 
 ```bash
 export GCE_METADATA_HOST=localhost:8080
-export GCE_METADATA_IP=127.0.0.1:8080
+export GCE_METADATA_IP=127.0.0.1:8080  # for python only
 ```
 
 and run any application using ADC:
@@ -176,7 +175,9 @@ r.Handle("/")
   - [golang](#golang)
   - [nodejs](#nodejs) 
   - [dotnet](#dotnet)  
-  - [gcloud](#gcloud)      
+  - [gcloud](#gcloud)
+* [Metrics](#metrics)
+* [Logging](#logging)        
 * [Other Runtimes](#other-runtimes)
     - [Run emulator as container](#run-emulator-as-container)    
     - [Run with containers](#run-with-containers)
@@ -185,7 +186,6 @@ r.Handle("/")
 * [Dynamic Configuration File Updates](#dynamic-configuration-file-updates)
 * [ETag](#etag)   
 * [Wait For Change](#wait-for-change) 
-* [Extending the sample](#extending-the-sample)
 * [Using link-local address](#using-link-local-address)
 * [Restricting Connections using iptables](#restricting-connections-using-iptables)
 * [Using domain sockets](#using-domain-sockets)
@@ -196,7 +196,6 @@ r.Handle("/")
 * [Verify Container Image Signature](#verify-container-image-signature)
 * [GCE mTLS](#gce-mtls)
 * [Envoy Authentication Filter](#envoy-authentication-filter)  
-* [Metrics](#metrics)
 * [Running Google Cloud OpsAgent](#running-google-cloud-opsagent)
 * [Testing](#testing)
 
@@ -323,6 +322,13 @@ You can set the following options on usage:
 | **`-metricsPort`** | Prometheus metrics port (default: 9000) |
 | **`-metricsPath`** | Prometheus metrics path (default: /metrics) |
 
+##### `Logging Options`
+| Option | Description |
+|:------------|-------------|
+| **`-logTarget`** | output logs (default `stdout`) |
+| **`-jsonLog`** | enable json logging (default `false`) |
+| **`-debug`** | enable debug log level (default `false`) |
+
 ##### `Misc Options`
 | Option | Description |
 |:------------|-------------|
@@ -331,10 +337,6 @@ You can set the following options on usage:
 | **`-rootCAmTLS`** | Root CA for mtls client validation (default: `certs/root.crt`) |
 | **`-serverCert`** | Server certificate for mtls (default: `certs/server.crt`) |
 | **`-serverKey`** | Server key for mtls (default: `certs/server.key`) |
-
-##### `Logging Options`
-
-Metadata uses [glog logging flags](https://pkg.go.dev/github.com/golang/glog) flags (suggest `-alsologtostderr -v=10`)
 
 
 ### With JSON ServiceAccount file
@@ -361,8 +363,7 @@ You can assign IAM permissions now to the service account for whatever resources
 mkdir certs/
 mv metadata-sa.json certs
 
-./gce_metadata_server -logtostderr --configFile=config.json \
-  -alsologtostderr -v 5 \
+./gce_metadata_server  --configFile=config.json \
   -port :8080 \
   --serviceAccountFile certs/metadata-sa.json 
 ```
@@ -383,8 +384,8 @@ gcloud iam service-accounts \
 then,
 
 ```bash
-./gce_metadata_server -logtostderr \
-     -alsologtostderr -v 5  -port :8080 \
+./gce_metadata_server  \
+     -port :8080 \
      --impersonate --configFile=config.json
 ```
 
@@ -396,8 +397,7 @@ then just use the default env-var and run:
 
 ```bash
 export GOOGLE_APPLICATION_CREDENTIALS=`pwd`/sts-creds.json
-./gce_metadata_server -logtostderr --configFile=config.json \
-  -alsologtostderr -v 5 \
+./gce_metadata_server  --configFile=config.json \
   -port :8080 --federate 
 ```
 
@@ -518,8 +518,7 @@ Q9jCmwuljqFRG7afs6js5CWfXn+z6bKIewa9mTIkjXa7GhDCHBTRO5LVn68L5dFS
 After that, run
 
 ```bash
-./gce_metadata_server -logtostderr --configFile=config.json \
-  -alsologtostderr -v 5 \
+./gce_metadata_server  --configFile=config.json \
   -port :8080 \
   --tpm --persistentHandle=0x81010002 
 ```
@@ -527,8 +526,7 @@ After that, run
 or with files
 
 ```bash
-./gce_metadata_server -logtostderr --configFile=config.json \
-  -alsologtostderr -v 5 \
+./gce_metadata_server  --configFile=config.json \
   -port :8080 \
   --tpm --keyfile=/path/to/private.pem 
 ```
@@ -648,13 +646,13 @@ tpmcopy --mode evict \
    --in=/tmp/tpmkey.pem --tpm-path=$TPMB
 
 ### run emulator using key file
-go run cmd/main.go -logtostderr --configFile=config.json \
-  -alsologtostderr -v 5   -port :8080   --tpm --keyfile /tmp/tpmkey.pem \
+go run cmd/main.go  --configFile=config.json \
+   -port :8080   --tpm --keyfile /tmp/tpmkey.pem \
    --useEKParent --keyPass=bar --tpm-path=127.0.0.1:2341
 
 ### run emulator using persistntHandle
-go run cmd/main.go -logtostderr --configFile=config.json \
-  -alsologtostderr -v 5   -port :8080   --tpm -persistentHandle 0x81008001 \
+go run cmd/main.go  --configFile=config.json \
+  -port :8080   --tpm -persistentHandle 0x81008001 \
    --useEKParent --keyPass=bar --tpm-path=127.0.0.1:2341   
 ```
 
@@ -694,13 +692,13 @@ tpmcopy --mode evict \
    --in=/tmp/tpmkey.pem --tpm-path=$TPMB
 
 ### run emulator
-go run cmd/main.go -logtostderr --configFile=config.json \
-  -alsologtostderr -v 5   -port :8080   --tpm --keyfile /tmp/tpmkey.pem \
+go run cmd/main.go  --configFile=config.json \
+  -port :8080   --tpm --keyfile /tmp/tpmkey.pem \
    --useEKParent -pcrs=23 --tpm-path=127.0.0.1:2341
 
 ### run emulator using persistntHandle
-go run cmd/main.go -logtostderr --configFile=config.json \
-  -alsologtostderr -v 5   -port :8080   --tpm -persistentHandle 0x81008002 \
+go run cmd/main.go  --configFile=config.json \
+  -port :8080   --tpm -persistentHandle 0x81008002 \
    --useEKParent -pcrs=23  --tpm-path=127.0.0.1:2341      
 ```
 
@@ -721,7 +719,7 @@ Specifically for option `(a)` here (there are corresponding encodings for `(b)` 
 	tpm2_encodeobject -C primary.ctx -u key.pub -r key.prv -o  /tmp/private.pem
 
 ## run emulator
-go run cmd/main.go --configFile=config.json   -alsologtostderr -v 50 -port :8080 --tpm --keyfile=/tmp/private.pem --keyPass pass1
+go run cmd/main.go --configFile=config.json  -port :8080 --tpm --keyfile=/tmp/private.pem --keyPass pass1
 ```
 
 ```bash
@@ -741,7 +739,7 @@ go run cmd/main.go --configFile=config.json   -alsologtostderr -v 50 -port :8080
 
 ## run emulator
 go run cmd/main.go --configFile=config.json \
-    -alsologtostderr -v 50 -port :8080 --tpm --keyfile=/tmp/private.pem -pcrs=23
+    -port :8080 --tpm --keyfile=/tmp/private.pem -pcrs=23
 ```
 
 Note that if you are using PCR policy, the metadata server cache's the credential values until it expires (which is typically an hour). If you enable a PCR policy and then change it to invalidate the TPM-based key's usage, the server will return the same token until it needs to referesh it.
@@ -794,7 +792,7 @@ gcloud iam service-accounts \
 Then run the metadata server with these flags:
 
 ```bash
-go run cmd/main.go --configFile=config.json   -alsologtostderr -v 500 -port :8080 \
+go run cmd/main.go --configFile=config.json    -port :8080 \
     --tpm -useTPMmTLS  --pubCert=/path/to/mtls.crt --keyfile=/path/tp/mtlstpm.key  \
      --poolID=c$POOL_ID --providerID=$$PROVIDER_ID
 ```
@@ -812,8 +810,7 @@ also see:
 Use any of the credential initializations described above and on startup, you will see something like:
 
 ```bash
-./gce_metadata_server -logtostderr --configFile=config.json \
-  -alsologtostderr -v 5 \
+./gce_metadata_server  --configFile=config.json \
   -port :8080 \
   --serviceAccountFile certs/metadata-sa.json 
 ```
@@ -996,6 +993,73 @@ project = mineral-minutia-820
 `gcloud` uses a different env-var but if you want to use `gcloud auth application-default print-access-token`, you need to _also_ use `GCE_METADATA_HOST` and `GCE_METADATA_IP`
 
 
+## Metrics
+
+Basic latency and counter Prometheus metrics are enabled using the `--metrisEnabled` flag.
+
+Once enabled, path latency is recorded at the default prometheus endpoint  [http://localhost:9000/metrics](http://localhost:9000/metrics).
+
+Apart from latency, any dynamic field for access or identity tokens also has a counter and status metric surfaced.
+
+In addition to counter and latency metrics, you can also view the metadata server release verion, type of credential used if serviceAccountJSON or TPM, the service account's email as well the hash of the DER public key associated with the service account private key (i.e, fingerprint).
+
+Note, you can use the fingerprint to determine if key rotation is necessary or has been applied to any fleet of metadata servers you're running.
+
+```bash
+# HELP metadata_server_version The current running version of the MetadataServer
+# TYPE metadata_server_version gauge
+metadata_server_version{version="v4.1.0"} 1
+
+# HELP metadata_endpoint_path_requests backend status, partitioned by status code and path.
+# TYPE metadata_endpoint_path_requests counter
+metadata_endpoint_path_requests{code="OK",path="/computeMetadata/v1/instance/service-accounts/default/identity"} 3
+metadata_endpoint_path_requests{code="OK",path="/computeMetadata/v1/instance/service-accounts/default/token"} 5
+
+# HELP credential_type Type of credentials being used [serviceAccountKey | TPM | Federated | Impersonated]
+# TYPE credential_type gauge
+credential_type{type="serviceAccountKey"} 1
+
+# HELP service_account_hash The hash of the serviceAccount Public Key
+# TYPE service_account_hash gauge
+service_account_hash{fingerprint="VTxSPKUJhms607022xiWQkOTl7pT/2wWowCsIPraBFs="} 1
+
+# HELP service_account_name The current name of the serviceAccount email
+# TYPE service_account_name gauge
+service_account_name{email="metadata-sa@$PROJECT.iam.gserviceaccount.com"} 1
+
+# HELP metadata_endpoint_latency_seconds Duration of HTTP requests.
+# TYPE metadata_endpoint_latency_seconds histogram
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/id",le="0.005"} 3
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/id",le="0.01"} 3
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/id",le="0.025"} 3
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/id",le="0.05"} 3
+
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://bar.foo",le="0.005"} 0
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://bar.foo",le="0.01"} 0
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://bar.foo",le="0.025"} 0
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://bar.foo",le="0.05"} 1
+metadata_endpoint_latency_seconds_count{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://bar.foo"} 2
+
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://foo.bar",le="0.005"} 0
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://foo.bar",le="0.01"} 0
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://foo.bar",le="0.025"} 0
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://foo.bar",le="0.05"} 0
+
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/token",le="0.005"} 4
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/token",le="0.01"} 4
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/token",le="0.025"} 4
+metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/token",le="0.05"} 5
+```
+
+Note, each endpoint and url query is also measured in latency (which should be ok unless you request many different audiences)
+
+## Logging
+
+Metadata uses [slog logging flags](https://pkg.go.dev/log/slog) (previously it used [glog](https://github.com/golang/glog)).  
+
+The default output is at Info level as text.  If you want to enable debug, use `--debug` flag and for json, use `--jsonLog`
+
+
 ## Other Runtimes
 
 ### Run emulator as container
@@ -1026,7 +1090,6 @@ docker run \
   -t salrashid123/gcemetadataserver  \
       -serviceAccountFile /certs/metadata-sa.json \
       --configFile=/config.json \
-      -logtostderr -alsologtostderr -v 5 \
       -interface 0.0.0.0 -port :8080
 ```
 
@@ -1130,8 +1193,7 @@ export GOOGLE_ACCESS_TOKEN="some_static_token"
 export GOOGLE_ID_TOKEN="some_id_token"
 export GOOGLE_SERVICE_ACCOUNT="metadata-sa@PROJECT.iam.gserviceaccount.com"
 
-./gce_metadata_server -logtostderr  \
-   -alsologtostderr -v 5 \
+./gce_metadata_server   \
    -port :8080 --configFile=`pwd`/config.json
 ```
 
@@ -1148,7 +1210,7 @@ docker run \
   -v `pwd`/config.json:/config.json \
   -t salrashid123/gcemetadataserver \
   -port :8080 --configFile=/config.json \
-  --interface=0.0.0.0 -logtostderr -alsologtostderr -v 5
+  --interface=0.0.0.0 
 ```
 
 ```bash
@@ -1158,11 +1220,6 @@ curl -v -H "Metadata-Flavor: Google" \
 
 some_static_token
 ```
-
-#### Extending the sample
-
-You can extend this sample for any arbitrary metadata you are interested in emulating (eg, disks, hostname, etc).
-Simply add the routes to the webserver and handle the responses accordingly.  It is recommended to view the request-response format directly on the metadata server to compare against.
 
 #### Using Link-Local address
 
@@ -1269,7 +1326,7 @@ $ bazel version
 # bazel run :gazelle -- update-repos -from_file=go.mod -prune=true -to_macro=repositories.bzl%go_repositories
 
 ## run
-bazel run cmd:main -- --configFile=`pwd`/config.json   -alsologtostderr -v 5 -port :8080 --serviceAccountFile=`pwd`/certs/metadata-sa.json 
+bazel run cmd:main -- --configFile=`pwd`/config.json  -port :8080 --serviceAccountFile=`pwd`/certs/metadata-sa.json 
 
 ## to build the oci image tar
 # bazel build cmd:tar-oci-index
@@ -1374,8 +1431,7 @@ GCE metadata server also supports a mode where [mTLS is used](https://cloud.goog
 You can enable this mode with the following flags but be aware, no client library supports it afaik. 
 
 ```bash
-./gce_metadata_server -logtostderr --configFile=config.json \
-  -alsologtostderr -v 5 \
+./gce_metadata_server  --configFile=config.json \
   -port :8080 --usemTLS \
   --serverCert certs/server.crt \
   --serverKey certs/server.key --rootCAmTLS certs/root.crt  \
@@ -1473,66 +1529,6 @@ the token has the audience set to the envoy configuration file
   "sub": "100890260483227123111"
 }
 ```
-
-## Metrics
-
-Basic latency and counter Prometheus metrics are enabled using the `--metrisEnabled` flag.
-
-Once enabled, path latency is recorded at the default prometheus endpoint  [http://localhost:9000/metrics](http://localhost:9000/metrics).
-
-Apart from latency, any dynamic field for access or identity tokens also has a counter and status metric surfaced.
-
-In addition to counter and latency metrics, you can also view the metadata server release verion, type of credential used if serviceAccountJSON or TPM, the service account's email as well the hash of the DER public key associated with the service account private key (i.e, fingerprint).
-
-Note, you can use the fingerprint to determine if key rotation is necessary or has been applied to any fleet of metadata servers you're running.
-
-```bash
-# HELP metadata_server_version The current running version of the MetadataServer
-# TYPE metadata_server_version gauge
-metadata_server_version{version="v4.1.0"} 1
-
-# HELP metadata_endpoint_path_requests backend status, partitioned by status code and path.
-# TYPE metadata_endpoint_path_requests counter
-metadata_endpoint_path_requests{code="OK",path="/computeMetadata/v1/instance/service-accounts/default/identity"} 3
-metadata_endpoint_path_requests{code="OK",path="/computeMetadata/v1/instance/service-accounts/default/token"} 5
-
-# HELP credential_type Type of credentials being used [serviceAccountKey | TPM | Federated | Impersonated]
-# TYPE credential_type gauge
-credential_type{type="serviceAccountKey"} 1
-
-# HELP service_account_hash The hash of the serviceAccount Public Key
-# TYPE service_account_hash gauge
-service_account_hash{fingerprint="VTxSPKUJhms607022xiWQkOTl7pT/2wWowCsIPraBFs="} 1
-
-# HELP service_account_name The current name of the serviceAccount email
-# TYPE service_account_name gauge
-service_account_name{email="metadata-sa@$PROJECT.iam.gserviceaccount.com"} 1
-
-# HELP metadata_endpoint_latency_seconds Duration of HTTP requests.
-# TYPE metadata_endpoint_latency_seconds histogram
-metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/id",le="0.005"} 3
-metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/id",le="0.01"} 3
-metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/id",le="0.025"} 3
-metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/id",le="0.05"} 3
-
-metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://bar.foo",le="0.005"} 0
-metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://bar.foo",le="0.01"} 0
-metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://bar.foo",le="0.025"} 0
-metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://bar.foo",le="0.05"} 1
-metadata_endpoint_latency_seconds_count{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://bar.foo"} 2
-
-metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://foo.bar",le="0.005"} 0
-metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://foo.bar",le="0.01"} 0
-metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://foo.bar",le="0.025"} 0
-metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/identity?audience=https://foo.bar",le="0.05"} 0
-
-metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/token",le="0.005"} 4
-metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/token",le="0.01"} 4
-metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/token",le="0.025"} 4
-metadata_endpoint_latency_seconds_bucket{path="/computeMetadata/v1/instance/service-accounts/default/token",le="0.05"} 5
-```
-
-Note, each endpoint and url query is also measured in latency (which should be ok unless you request many different audiences)
 
 ## Running Google Cloud OpsAgent
 

@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -65,7 +66,22 @@ func verifyResponseHeaders(resp http.Response) error {
 
 func TestBasePathRedirectHandler(t *testing.T) {
 
-	h := &MetadataServer{}
+	p, err := getFreePort()
+	if err != nil {
+		t.Errorf("error getting emulator port %v", err)
+	}
+
+	sc := &ServerConfig{
+		Port: fmt.Sprintf(":%d", p),
+		Logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelError,
+		})),
+	}
+
+	h, err := NewMetadataServer(context.Background(), sc, &google.Credentials{}, &Claims{})
+	if err != nil {
+		t.Errorf("error creating emulator %v", err)
+	}
 
 	req, err := http.NewRequest(http.MethodGet, "/", nil)
 	if err != nil {
@@ -95,17 +111,31 @@ func TestBasePathRedirectHandler(t *testing.T) {
 // TODO:  test all other endpoints.
 func TestProjectIDHandler(t *testing.T) {
 	expectedProjectID := "some-project-id"
-	h := &MetadataServer{
-		Claims: Claims{
-			ComputeMetadata: ComputeMetadata{
-				V1: V1{
-					Project: Project{
-						ProjectID: expectedProjectID,
-					},
+	p, err := getFreePort()
+	if err != nil {
+		t.Errorf("error getting emulator port %v", err)
+	}
+
+	sc := &ServerConfig{
+		Port: fmt.Sprintf(":%d", p),
+		Logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelError,
+		})),
+	}
+
+	h, err := NewMetadataServer(context.Background(), sc, &google.Credentials{}, &Claims{
+		ComputeMetadata: ComputeMetadata{
+			V1: V1{
+				Project: Project{
+					ProjectID: expectedProjectID,
 				},
 			},
 		},
+	})
+	if err != nil {
+		t.Errorf("error creating emulator %v", err)
 	}
+
 	req, err := http.NewRequest(http.MethodGet, "/computeMetadata/v1/project/project-id", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -135,15 +165,29 @@ func TestProjectIDHandler(t *testing.T) {
 func TestAccessTokenHandler(t *testing.T) {
 	expectedToken := "foo"
 	expireInSeconds := 60
-	h := &MetadataServer{
-		Creds: &google.Credentials{
-			ProjectID: "bar",
-			TokenSource: oauth2.StaticTokenSource(&oauth2.Token{
-				AccessToken: expectedToken,
-				Expiry:      time.Now().Add(time.Second * time.Duration(expireInSeconds)),
-				TokenType:   "Bearer",
-			}),
-		},
+
+	p, err := getFreePort()
+	if err != nil {
+		t.Errorf("error getting emulator port %v", err)
+	}
+
+	sc := &ServerConfig{
+		Port: fmt.Sprintf(":%d", p),
+		Logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelError,
+		})),
+	}
+
+	h, err := NewMetadataServer(context.Background(), sc, &google.Credentials{
+		ProjectID: "bar",
+		TokenSource: oauth2.StaticTokenSource(&oauth2.Token{
+			AccessToken: expectedToken,
+			Expiry:      time.Now().Add(time.Second * time.Duration(expireInSeconds)),
+			TokenType:   "Bearer",
+		}),
+	}, &Claims{})
+	if err != nil {
+		t.Errorf("error creating emulator %v", err)
 	}
 
 	req, err := http.NewRequest(http.MethodGet, "/computeMetadata/v1/instance/service-accounts/{acct}/{key}", nil)
@@ -198,6 +242,9 @@ func TestAccessTokenDefaultCredentialHandler(t *testing.T) {
 	}
 	sc := &ServerConfig{
 		Port: fmt.Sprintf(":%d", p),
+		Logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelError,
+		})),
 	}
 
 	h, err := NewMetadataServer(context.Background(), sc, creds, &Claims{})
@@ -247,6 +294,9 @@ func TestAccessTokenComputeCredentialHandler(t *testing.T) {
 	}
 	sc := &ServerConfig{
 		Port: fmt.Sprintf(":%d", p),
+		Logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelError,
+		})),
 	}
 
 	h, err := NewMetadataServer(context.Background(), sc, creds, &Claims{})
@@ -285,6 +335,9 @@ func TestAccessTokenEnvironmentCredentialHandler(t *testing.T) {
 	}
 	sc := &ServerConfig{
 		Port: fmt.Sprintf(":%d", p),
+		Logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelError,
+		})),
 	}
 
 	t.Setenv("GOOGLE_ACCESS_TOKEN", expectedToken)
@@ -326,6 +379,9 @@ func TestOnGCEHandler(t *testing.T) {
 	}
 	sc := &ServerConfig{
 		Port: fmt.Sprintf(":%d", p),
+		Logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelError,
+		})),
 	}
 
 	h, err := NewMetadataServer(context.Background(), sc, &google.Credentials{}, &Claims{})
@@ -362,6 +418,9 @@ func TestProjectNumberHandler(t *testing.T) {
 	}
 	sc := &ServerConfig{
 		Port: fmt.Sprintf(":%d", p),
+		Logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelError,
+		})),
 	}
 
 	h, err := NewMetadataServer(context.Background(), sc, &google.Credentials{}, cc)
@@ -404,6 +463,9 @@ func TestInstanceIDHandler(t *testing.T) {
 	}
 	sc := &ServerConfig{
 		Port: fmt.Sprintf(":%d", p),
+		Logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelError,
+		})),
 	}
 
 	h, err := NewMetadataServer(context.Background(), sc, &google.Credentials{}, cc)
@@ -448,6 +510,9 @@ func TestMaintenanceEventWaitForChange(t *testing.T) {
 	}
 	sc := &ServerConfig{
 		Port: fmt.Sprintf(":%d", p),
+		Logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelError,
+		})),
 	}
 
 	h, err := NewMetadataServer(context.Background(), sc, &google.Credentials{}, cc)
@@ -518,6 +583,9 @@ func TestAttributeWaitForChange(t *testing.T) {
 	}
 	sc := &ServerConfig{
 		Port: fmt.Sprintf(":%d", p),
+		Logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelError,
+		})),
 	}
 
 	h, err := NewMetadataServer(context.Background(), sc, &google.Credentials{}, cc)
@@ -585,6 +653,9 @@ func TestRealAccessToken(t *testing.T) {
 	}
 	sc := &ServerConfig{
 		Port: fmt.Sprintf(":%d", p),
+		Logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelError,
+		})),
 	}
 
 	cl := &Claims{
@@ -595,7 +666,7 @@ func TestRealAccessToken(t *testing.T) {
 				},
 				Instance: Instance{
 					ServiceAccounts: map[string]serviceAccountDetails{
-						"default": serviceAccountDetails{
+						"default": {
 							Aliases: []string{"default"},
 							Email:   saEmail,
 							Scopes:  []string{cloudPlatformScope},
@@ -646,6 +717,9 @@ func TestRealIdToken(t *testing.T) {
 	}
 	sc := &ServerConfig{
 		Port: fmt.Sprintf(":%d", p),
+		Logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelError,
+		})),
 	}
 
 	cl := &Claims{
@@ -656,7 +730,7 @@ func TestRealIdToken(t *testing.T) {
 				},
 				Instance: Instance{
 					ServiceAccounts: map[string]serviceAccountDetails{
-						"default": serviceAccountDetails{
+						"default": {
 							Aliases: []string{"default"},
 							Email:   saEmail,
 							Scopes:  []string{cloudPlatformScope},
@@ -938,6 +1012,9 @@ func TestTPMAccessTokenCredentialHandler(t *testing.T) {
 				Port:   fmt.Sprintf(":%d", p),
 				UseTPM: true,
 				Handle: k,
+				Logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+					Level: slog.LevelError,
+				})),
 			}
 
 			cl := &Claims{
@@ -948,7 +1025,7 @@ func TestTPMAccessTokenCredentialHandler(t *testing.T) {
 						},
 						Instance: Instance{
 							ServiceAccounts: map[string]serviceAccountDetails{
-								"default": serviceAccountDetails{
+								"default": {
 									Aliases: []string{"default"},
 									Email:   saEmail,
 									Scopes:  []string{cloudPlatformScope},
@@ -1051,6 +1128,9 @@ func TestTPMIdTokenHandler(t *testing.T) {
 		TPMDevice: tpmDevice,
 		UseTPM:    true,
 		Handle:    k,
+		Logger: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelError,
+		})),
 	}
 
 	cl := &Claims{
@@ -1061,7 +1141,7 @@ func TestTPMIdTokenHandler(t *testing.T) {
 				},
 				Instance: Instance{
 					ServiceAccounts: map[string]serviceAccountDetails{
-						"default": serviceAccountDetails{
+						"default": {
 							Aliases: []string{"default"},
 							Email:   saEmail,
 							Scopes:  []string{cloudPlatformScope},

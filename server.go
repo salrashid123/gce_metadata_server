@@ -32,6 +32,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"reflect"
 	"strconv"
@@ -45,7 +46,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/golang/glog"
 	tpmjwt "github.com/salrashid123/golang-jwt-tpm"
 	tpmoauth "github.com/salrashid123/oauth2/v3"
 	"golang.org/x/oauth2"
@@ -130,6 +130,8 @@ var (
 		},
 		[]string{"fingerprint"},
 	)
+
+	logger *slog.Logger
 )
 
 const (
@@ -186,6 +188,8 @@ type ServerConfig struct {
 	RootCAmTLS string // ca to validate client certs (default "")
 	ServerCert string // server certificate for mtls (default: "")
 	ServerKey  string // server key for mtls (default: "")
+
+	Logger *slog.Logger // structured logger
 
 	Tag string // build tag
 }
@@ -366,7 +370,7 @@ type Project struct {
 func (h *MetadataServer) checkMetadataHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-		glog.V(10).Infof("Got Request: path[%s] query[%s]", r.URL.Path, r.URL.RawQuery)
+		logger.Debug("request", slog.String("path", r.URL.Path), slog.String("query", r.URL.RawQuery))
 
 		ctx := r.Context()
 		event := &event{
@@ -376,19 +380,19 @@ func (h *MetadataServer) checkMetadataHeaders(next http.Handler) http.Handler {
 			json:          false,
 		}
 
-		for k, v := range r.Header {
-			glog.V(50).Infof("%s: %s", k, v)
-		}
+		// for k, v := range r.Header {
+		// 	logger.Debug("Header", slog.String(k, strings.Join(v, " ")))
+		// }
 
 		if r.URL.Query().Has("recursive") {
 			if strings.ToLower(r.URL.Query().Get("recursive")) == "true" {
-				glog.Warning("WARNING: ?recursive=true has limited depth support; check handler implementation")
+				logger.Warn("?recursive=true has limited depth support; check handler implementation")
 				event.recursive = true
 			}
 		}
 
 		if r.URL.Query().Has("alt") {
-			glog.Warning("WARNING: ?alt=text|json has limited support; check handler implementation")
+			logger.Warn("?alt=text|json has limited support; check handler implementation")
 			if strings.ToLower(r.URL.Query().Get("alt")) == "json" {
 				event.json = true
 			}
@@ -396,7 +400,7 @@ func (h *MetadataServer) checkMetadataHeaders(next http.Handler) http.Handler {
 
 		if r.URL.Query().Has("wait_for_change") {
 			if strings.ToLower(r.URL.Query().Get("wait_for_change")) == "true" {
-				glog.Warning("WARNING: ?wait_for_change=true has limited support; check handler implementation")
+				logger.Warn("?wait_for_change=true has limited support; check handler implementation")
 				event.waitForChange = true
 
 				if r.URL.Query().Has("timeout_sec") {
@@ -433,7 +437,7 @@ func (h *MetadataServer) checkMetadataHeaders(next http.Handler) http.Handler {
 			return
 		}
 		if flavor != "Google" && r.RequestURI != "/" {
-			glog.Errorf("Incorrect metadata flavor provided %s", flavor)
+			logger.Error(fmt.Sprintf("Incorrect metadata flavor provided %s", flavor))
 			h.notFound(w, r)
 			return
 		}
@@ -478,7 +482,7 @@ func (h *MetadataServer) rootHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MetadataServer) notFound(w http.ResponseWriter, r *http.Request) {
-	glog.Warningf("%s called but is not implemented", r.URL.Path)
+	logger.Warn("called but is not implemented", slog.String("path", r.URL.Path))
 	httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 }
 
@@ -564,7 +568,7 @@ func (h *MetadataServer) handleRecursion(w http.ResponseWriter, r *http.Request,
 		if strings.ToLower(r.URL.Query().Get("recursive")) == "true" {
 			jsonResponse, err := json.Marshal(s)
 			if err != nil {
-				glog.Errorf("Error marshalling json: %v\n", err)
+				logger.Error("Error marshalling json: ", slog.String("raw_error", err.Error()))
 				httpError(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError, "text/html; charset=UTF-8")
 				return true
 			}
@@ -622,7 +626,7 @@ func (h *MetadataServer) getServiceAccountHandler(w http.ResponseWriter, r *http
 	vars := mux.Vars(r)
 
 	acct := vars["acct"]
-	glog.V(40).Infof("using service account context: [%s]", acct)
+	logger.Debug(fmt.Sprintf("using service account context: [%s]", acct))
 
 	switch vars["key"] {
 
@@ -651,6 +655,7 @@ func (h *MetadataServer) getServiceAccountHandler(w http.ResponseWriter, r *http
 			if h.ServerConfig.MetricsEnabled {
 				defer pathReqs.WithLabelValues(http.StatusText(http.StatusInternalServerError), r.URL.Path).Inc()
 			}
+			logger.Error("Error getting id_token ", slog.String("raw_error", err.Error()))
 			httpError(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError, "text/html")
 			return
 		}
@@ -673,7 +678,7 @@ func (h *MetadataServer) getServiceAccountHandler(w http.ResponseWriter, r *http
 		k, ok := r.URL.Query()["scopes"]
 		if ok {
 			scopes = strings.Split(k[0], ",")
-			glog.V(20).Infof("access_token requested with scopes: [%s]", scopes)
+			logger.Debug(fmt.Sprintf("access_token requested with scopes: %s", strings.Join(scopes, " ")))
 		} else {
 			scopes = h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts[acct].Scopes
 		}
@@ -682,7 +687,7 @@ func (h *MetadataServer) getServiceAccountHandler(w http.ResponseWriter, r *http
 			if h.ServerConfig.MetricsEnabled {
 				defer pathReqs.WithLabelValues(http.StatusText(http.StatusInternalServerError), r.URL.Path).Inc()
 			}
-			glog.Errorf("Error getting Token %v\n", err)
+			logger.Error("Error getting access_token ", slog.String("raw_error", err.Error()))
 			httpError(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError, "application/text")
 			return
 		}
@@ -691,7 +696,7 @@ func (h *MetadataServer) getServiceAccountHandler(w http.ResponseWriter, r *http
 			if h.ServerConfig.MetricsEnabled {
 				defer pathReqs.WithLabelValues(http.StatusText(http.StatusInternalServerError), r.URL.Path).Inc()
 			}
-			glog.Errorf("Error unmarshalling Token %v\n", err)
+			logger.Error("Error unmarshalling Token ", slog.String("raw_error", err.Error()))
 			httpError(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError, "application/text")
 			return
 		}
@@ -703,6 +708,7 @@ func (h *MetadataServer) getServiceAccountHandler(w http.ResponseWriter, r *http
 		return
 
 	default:
+		logger.Error("path value not found ", slog.String("path", r.URL.Path))
 		httpError(w, notFoundErrorHandler(r.URL.Path), http.StatusNotFound, "text/html; charset=UTF-8")
 		return
 	}
@@ -733,11 +739,10 @@ func (h *MetadataServer) getAccessToken(scopes []string, acct string) (*metadata
 	var tok *oauth2.Token
 
 	if h.ServerConfig.UseTPMmTLS {
-		glog.V(40).Infof("using tpm MLTLSservice account context for access_token: [%s] with scopes [%s]", h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts[acct].Email, scopes)
+		logger.Debug("using tpm MLTLSservice account context for access_token", slog.String("email", h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts[acct].Email), slog.String("email", strings.Join(scopes, " ")))
 		ctx := context.Background()
 		c, err := credentials.NewIamCredentialsClient(ctx, option.WithTokenSource(ts))
 		if err != nil {
-			glog.Errorf("ERROR:  error  creatubg IAM Client: %v", err)
 			return nil, err
 		}
 		defer c.Close()
@@ -748,7 +753,6 @@ func (h *MetadataServer) getAccessToken(scopes []string, acct string) (*metadata
 		}
 		atresp, err := c.GenerateAccessToken(ctx, atreq)
 		if err != nil {
-			glog.Errorf("ERROR:   error  getting access_token: %v", err)
 			return nil, err
 		}
 
@@ -761,7 +765,6 @@ func (h *MetadataServer) getAccessToken(scopes []string, acct string) (*metadata
 		var err error
 		tok, err = ts.Token()
 		if err != nil {
-			glog.Errorf("ERROR:  could not get Token: %v", err)
 			return nil, err
 		}
 	}
@@ -796,8 +799,7 @@ func (h *MetadataServer) getIDToken(targetAudience string, acct string) (string,
 			},
 		)
 		if err != nil {
-			glog.Errorln(err)
-			return "", fmt.Errorf("could not generateID Token %v", err)
+			return "", err
 		}
 	} else if h.ServerConfig.Federate {
 
@@ -814,8 +816,7 @@ func (h *MetadataServer) getIDToken(targetAudience string, acct string) (string,
 		}
 		resp, err := cr.GenerateIdToken(ctx, req)
 		if err != nil {
-			glog.Errorln(err)
-			return "", fmt.Errorf("could not generateID Token %v", err)
+			return "", err
 		}
 
 		idTokenSource = oauth2.StaticTokenSource(&oauth2.Token{
@@ -825,19 +826,17 @@ func (h *MetadataServer) getIDToken(targetAudience string, acct string) (string,
 
 		if h.ServerConfig.UseTPMmTLS {
 			ctx := context.Background()
-			glog.V(40).Infof("using tpm MLTLSservice account context for id_token: [%s]", h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts[acct].Email)
+			logger.Debug("using tpm MLTLSservice account context for id_token", slog.String("email", h.Claims.ComputeMetadata.V1.Instance.ServiceAccounts[acct].Email))
 
 			ts := h.Creds.TokenSource
 
 			c, err := credentials.NewIamCredentialsClient(ctx, option.WithTokenSource(ts))
 			if err != nil {
-				glog.Errorf("ERROR:  error  creatubg IAM Client: %v", err)
 				return "", err
 			}
 			defer c.Close()
 
 			if targetAudience == "" {
-				glog.Errorf("ERROR:    Audience must be specified for id_tokens")
 				return "", err
 			}
 
@@ -848,7 +847,6 @@ func (h *MetadataServer) getIDToken(targetAudience string, acct string) (string,
 			}
 			idresp, err := c.GenerateIdToken(ctx, idreq)
 			if err != nil {
-				glog.Errorf("ERROR:  error  getting id_token: %v", err)
 				return "", err
 			}
 			idTokenSource = oauth2.StaticTokenSource(
@@ -867,21 +865,18 @@ func (h *MetadataServer) getIDToken(targetAudience string, acct string) (string,
 				EncryptionHandle: h.ServerConfig.EncryptionHandle,
 			})
 			if err != nil {
-				glog.Errorf("Error getting id_token %v\n", err)
-				return "", fmt.Errorf("could not get id_token %v", err)
+				return "", err
 			}
 		}
 
 	} else {
 		idTokenSource, err = idtoken.NewTokenSource(ctx, targetAudience, idtoken.WithCredentialsJSON(h.Creds.JSON))
 		if err != nil {
-			glog.Errorf("Error getting tokenSource %v\n")
-			return "", fmt.Errorf("could not get id_token %v", err)
+			return "", err
 		}
 	}
 	tok, err := idTokenSource.Token()
 	if err != nil {
-		glog.Error(err)
 		return "", err
 	}
 	return tok.AccessToken, nil
@@ -983,7 +978,7 @@ func (h *MetadataServer) computeMetadatav1InstanceKeyHandler(w http.ResponseWrit
 	case "tags":
 		res, err = json.Marshal(h.Claims.ComputeMetadata.V1.Instance.Tags)
 		if err != nil {
-			glog.Errorf("Error converting value to JSON %v\n", err)
+			logger.Error("Error converting value to JSON ", slog.String("raw_error", err.Error()))
 			httpError(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError, "text/plain; charset=UTF-8")
 			return
 		}
@@ -1656,16 +1651,16 @@ func (h *MetadataServer) Start() error {
 	}
 
 	if h.ServerConfig.DomainSocket != "" {
-		glog.Infof("domain socket specified, ignoring TCP listers, %s", h.ServerConfig.DomainSocket)
+		logger.Info(fmt.Sprintf("domain socket specified, ignoring TCP listers, %s", h.ServerConfig.DomainSocket))
 		l, err = net.Listen("unix", h.ServerConfig.DomainSocket)
 		if err != nil {
-			glog.Errorf("Error listening to domain socket: %v\n", err)
+			logger.Error("Error listening to domain socket: ", slog.String("raw_error", err.Error()))
 			return err
 		}
 	} else if h.ServerConfig.UsemTLS {
 		clientCaCert, err := os.ReadFile(h.ServerConfig.RootCAmTLS)
 		if err != nil {
-			glog.Errorf("Error reading mtls ca: %v\n", err)
+			logger.Error("Error reading mtls ca: ", slog.String("raw_error", err.Error()))
 			return err
 		}
 		clientCaCertPool := x509.NewCertPool()
@@ -1673,7 +1668,7 @@ func (h *MetadataServer) Start() error {
 
 		serverCertBytes, err := os.ReadFile(h.ServerConfig.ServerCert)
 		if err != nil {
-			glog.Errorf("ERROR:  Failed to  parse server certificate: %s", err)
+			logger.Error("ERROR:  Failed to  parse server certificate: %s", slog.String("raw_error", err.Error()))
 			return err
 		}
 
@@ -1681,13 +1676,13 @@ func (h *MetadataServer) Start() error {
 
 		clientCertificate, err := x509.ParseCertificate(blockpulic.Bytes)
 		if err != nil {
-			glog.Errorf("ERROR:  Failed to  parse certificate: %s", err)
+			logger.Error("ERROR:  Failed to  parse certificate: %s", slog.String("raw_error", err.Error()))
 			return err
 		}
 
 		serverKeyBytes, err := os.ReadFile(h.ServerConfig.ServerKey)
 		if err != nil {
-			glog.Errorf("ERROR:  Failed to  parse server key: %s", err)
+			logger.Error("ERROR:  Failed to  parse server key:", slog.String("raw_error", err.Error()))
 			return err
 		}
 
@@ -1695,7 +1690,7 @@ func (h *MetadataServer) Start() error {
 
 		clientKey, err := x509.ParsePKCS8PrivateKey(blockKey.Bytes)
 		if err != nil {
-			glog.Errorf("ERROR:  Failed to  parse ec key: %s", err)
+			logger.Error("ERROR:  Failed to  parse ec key", slog.String("raw_error", err.Error()))
 			return err
 		}
 
@@ -1711,17 +1706,17 @@ func (h *MetadataServer) Start() error {
 			Certificates: []tls.Certificate{tlsCrt},
 		}
 
-		glog.Infof("tcp TLS socket specified %s", fmt.Sprintf("%s%s", h.ServerConfig.BindInterface, h.ServerConfig.Port))
+		logger.Info(fmt.Sprintf("tcp TLS socket specified %s%s", h.ServerConfig.BindInterface, h.ServerConfig.Port))
 		l, err = tls.Listen("tcp", fmt.Sprintf("%s%s", h.ServerConfig.BindInterface, h.ServerConfig.Port), tc)
 		if err != nil {
-			glog.Errorf("Error listening to tcp socket: %v\n", err)
+			logger.Error("Error listening to tcp socket: ", slog.String("raw_error", err.Error()))
 			return err
 		}
 	} else {
-		glog.Infof("tcp socket specified %s", fmt.Sprintf("%s%s", h.ServerConfig.BindInterface, h.ServerConfig.Port))
+		logger.Info("tcp socket specified", slog.String("interface", h.ServerConfig.BindInterface), slog.String("port", h.ServerConfig.Port))
 		l, err = net.Listen("tcp", fmt.Sprintf("%s%s", h.ServerConfig.BindInterface, h.ServerConfig.Port))
 		if err != nil {
-			glog.Errorf("Error listening to tcp socket: %v\n", err)
+			logger.Error("Error listening to tcp socket: ", slog.String("raw_error", err.Error()))
 			return err
 		}
 	}
@@ -1750,31 +1745,31 @@ func (h *MetadataServer) Start() error {
 		if h.Creds.JSON != nil {
 			credConf, err := google.JWTConfigFromJSON(h.Creds.JSON, emailScope)
 			if err != nil {
-				glog.Errorf("Error parsing serviceAccount JWT:%+v", err)
+				logger.Error("Error parsing serviceAccount JWT ", slog.String("raw_error", err.Error()))
 				return err
 			}
 
 			if credConf.PrivateKey != nil {
 				block, _ := pem.Decode(credConf.PrivateKey)
 				if block == nil {
-					glog.Errorf("Error reading service account PrivateKey from JSON:%+v", err)
+					logger.Error("Error reading service account PrivateKey from JSON", slog.String("raw_error", err.Error()))
 					return err
 				}
 
 				parsedKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 				if err != nil {
-					glog.Errorf("Error parsing serviceAccount JWT:%+v", err)
+					logger.Error("Error parsing serviceAccount JWT", slog.String("raw_error", err.Error()))
 					return err
 				}
 				rsaKey, ok := parsedKey.(*rsa.PrivateKey)
 				if !ok {
-					glog.Errorf("Error parsing serviceAccount JWT:%+v", err)
+					logger.Error("Error parsing serviceAccount as private key", slog.String("raw_error", err.Error()))
 					return err
 				}
 
 				derBytes, err := x509.MarshalPKIXPublicKey(&rsaKey.PublicKey)
 				if err != nil {
-					glog.Errorf("Failed to marshal public key: %v", err)
+					logger.Error("Failed to marshal public key", slog.String("raw_error", err.Error()))
 					return err
 				}
 
@@ -1782,7 +1777,7 @@ func (h *MetadataServer) Start() error {
 
 				_, err = hasher.Write(derBytes)
 				if err != nil {
-					glog.Errorf("Failed to write to hasher: %v", err)
+					logger.Error("Failed to write to hasher", slog.String("raw_error", err.Error()))
 					return err
 				}
 				publicKeyHash := hasher.Sum(nil)
@@ -1799,33 +1794,33 @@ func (h *MetadataServer) Start() error {
 				ObjectHandle: tpm2.TPMHandle(h.ServerConfig.Handle),
 			}.Execute(rwr)
 			if err != nil {
-				glog.Errorf("can't create object TPM: %v", err)
+				logger.Error("can't create object TPM", slog.String("raw_error", err.Error()))
 				return err
 			}
 			pub, err := rsaKeyPublic.OutPublic.Contents()
 			if err != nil {
-				glog.Errorf("Failed to get rsa public: %v", err)
+				logger.Error("Failed to get rsa public", slog.String("raw_error", err.Error()))
 				return err
 			}
 			rsaDetail, err := pub.Parameters.RSADetail()
 			if err != nil {
-				glog.Errorf("Failed to get rsa details: %v", err)
+				logger.Error("Failed to get rsa details", slog.String("raw_error", err.Error()))
 				return err
 			}
 			rsaUnique, err := pub.Unique.RSA()
 			if err != nil {
-				glog.Errorf("Failed to get rsa unique: %v", err)
+				logger.Error("Failed to get rsa unique: %v", slog.String("raw_error", err.Error()))
 				return err
 			}
 
 			rsaPub, err := tpm2.RSAPub(rsaDetail, rsaUnique)
 			if err != nil {
-				glog.Errorf("Failed to get rsa public key: %v", err)
+				logger.Error("Failed to get rsa public key", slog.String("raw_error", err.Error()))
 				return err
 			}
 			derBytes, err := x509.MarshalPKIXPublicKey(rsaPub)
 			if err != nil {
-				glog.Errorf("Failed to marshal public key: %v", err)
+				logger.Error("Failed to marshal public key", slog.String("raw_error", err.Error()))
 				return err
 			}
 
@@ -1833,7 +1828,7 @@ func (h *MetadataServer) Start() error {
 
 			_, err = hasher.Write(derBytes)
 			if err != nil {
-				glog.Errorf("Failed to write to hasher: %v", err)
+				logger.Error("Failed to write to hasher", slog.String("raw_error", err.Error()))
 				return err
 			}
 			publicKeyHash := hasher.Sum(nil)
@@ -1853,14 +1848,13 @@ func (h *MetadataServer) Start() error {
 
 		go func() {
 			http.Handle(h.ServerConfig.MetricsPath, promhttp.Handler())
-			glog.Error(http.ListenAndServe(fmt.Sprintf("%s:%s", h.ServerConfig.MetricsInterface, h.ServerConfig.MetricsPort), nil))
+			logger.Error("error starting server", slog.String("raw_error", http.ListenAndServe(fmt.Sprintf("%s:%s", h.ServerConfig.MetricsInterface, h.ServerConfig.MetricsPort), nil).Error()))
 		}()
 	}
 
 	go func() {
 		if err := h.srv.Serve(l); err != nil && err != http.ErrServerClosed {
-			// probably should use glog.Fatal() or propagate this err back to the main function
-			glog.Errorf("Critical error during Serve: : %s\n", err)
+			logger.Error("Critical error during Server shutdown", slog.String("raw_error", err.Error()))
 			return
 		}
 	}()
@@ -1872,10 +1866,10 @@ func (h *MetadataServer) Start() error {
 func (h *MetadataServer) Shutdown() error {
 	ctx := context.Background()
 	if err := h.srv.Shutdown(ctx); err != nil {
-		glog.Errorf("Server Shutdown Failed:%+v", err)
+		logger.Error("Server Shutdown Failed", slog.String("raw_error", err.Error()))
 		return err
 	}
-	glog.Infoln("Server Exited Properly")
+	logger.Info("Server Exited Properly")
 	return nil
 }
 
@@ -1895,8 +1889,17 @@ func NewMetadataServer(ctx context.Context, serverConfig *ServerConfig, creds *g
 		return nil, errors.New("serverConfig, credential and claims cannot be nil")
 	}
 
-	if serverConfig.UseTPM && &serverConfig.Handle == nil {
+	if serverConfig.UseTPM && serverConfig.Handle == 0 {
 		return nil, errors.New("handle must be set if useTPM is enabled")
+	}
+
+	if serverConfig.Logger == nil {
+		logger = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		}))
+		slog.SetDefault(logger)
+	} else {
+		logger = serverConfig.Logger
 	}
 
 	h := &MetadataServer{

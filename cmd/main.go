@@ -19,9 +19,10 @@ import (
 	"syscall"
 	"time"
 
+	"log/slog"
+
 	keyfile "github.com/foxboron/go-tpm-keyfiles"
 	"github.com/fsnotify/fsnotify"
-	"github.com/golang/glog"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpm2/transport"
 	"github.com/google/go-tpm/tpmutil"
@@ -65,6 +66,10 @@ var (
 	providerID            = flag.String("providerID", "", "workload identity pool id for mTLS (default: )")
 	pubCert               = flag.String("pubCert", "", "workload identity public certificate for mTLS (default: )")
 
+	logTarget = flag.String("logTarget", "", "log to file target (default stdout)")
+	jsonLog   = flag.Bool("jsonLog", false, "enable json logging")
+	debug     = flag.Bool("debug", false, "enable debug logging")
+
 	usemTLS           = flag.Bool("usemTLS", false, "Use mTLS")
 	rootCAmTLS        = flag.String("rootCAmTLS", "certs/root.crt", "rootCA to validate client certs ")
 	serverCert        = flag.String("serverCert", "certs/server.crt", "Server mtls certificate")
@@ -103,18 +108,44 @@ func run() int {
 
 	ctx := context.Background()
 
-	glog.Infof("Starting GCP metadataserver")
+	var logger *slog.Logger
+	mlogTarget := os.Stdout // default
+	if *logTarget != "" {
+		var err error
+		mlogTarget, err = os.OpenFile(*logTarget, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			slog.Error("Failed to open log file", "err", err)
+			return -1
+		}
+	}
+	defer mlogTarget.Close()
+
+	logLevel := slog.LevelInfo
+	if *debug {
+		logLevel = slog.LevelDebug
+	}
+	if *jsonLog {
+		logger = slog.New(slog.NewJSONHandler(mlogTarget, &slog.HandlerOptions{
+			Level: logLevel,
+		}))
+	} else {
+		logger = slog.New(slog.NewTextHandler(mlogTarget, &slog.HandlerOptions{
+			Level: logLevel,
+		}))
+	}
+
+	logger.Info("Starting GCP metadataserver", slog.Group("build", slog.String("version", Tag), slog.String("date", Date), slog.String("commit", Commit)))
 
 	configData, err := os.ReadFile(*configFile)
 	if err != nil {
-		glog.Errorf("Error reading config data file: %v\n", err)
+		logger.Error("error reading config data file", slog.String("raw_error", err.Error()))
 		return -1
 	}
 
 	claims := &mds.Claims{}
 	err = json.Unmarshal(configData, claims)
 	if err != nil {
-		glog.Errorf("Error parsing json: %v\n", err)
+		logger.Error("error parsing config data file", slog.String("raw_error", err.Error()))
 		return -1
 	}
 
@@ -127,52 +158,52 @@ func run() int {
 
 	_, ok := claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"]
 	if !ok {
-		glog.Errorf("default service account must be set")
+		logger.Error("default service account must be set", slog.String("raw_error", ""))
 		return -1
 	}
 
 	if *useImpersonate {
-		glog.Infoln("Using Service Account Impersonation for credentials")
+		logger.Info("Using Service Account Impersonation for credentials")
 
 		ts, err := impersonate.CredentialsTokenSource(ctx, impersonate.CredentialsConfig{
 			TargetPrincipal: claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email,
 			Scopes:          claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes,
 		})
 		if err != nil {
-			glog.Errorf("Unable to create Impersonated TokenSource %v ", err)
+			logger.Error("Unable to create Impersonated TokenSource", slog.String("raw_error", err.Error()))
 			return -1
 		}
-
+		logger.Info("credential_configuration", slog.Group("credential", slog.String("type", "impersonated_credential"), slog.String("target_principal", claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email), slog.String("scopes", strings.Join(claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes, " "))))
 		creds = &google.Credentials{
 			TokenSource: ts,
 		}
 	} else if *useFederate {
-		glog.Infoln("Using Workload Identity Federation for credentials")
+		logger.Info("Using Workload Identity Federation for credentials")
 
 		if os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") == "" {
-			glog.Error("GOOGLE_APPLICATION_CREDENTIAL must be set with --federate")
+			logger.Error("GOOGLE_APPLICATION_CREDENTIAL must be set with --federate", slog.String("raw_error", ""))
 			return -1
 		}
 
-		glog.Infof("Federation path: %s", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+		logger.Info("credential_configuration", slog.Group("credential", "type", "federated_credential", "federation_path", os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")))
 		var err error
 		creds, err = google.FindDefaultCredentials(ctx, claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes...)
 		if err != nil {
-			glog.Errorf("Unable load federated credentials %v", err)
+			logger.Error("Unable load federated credentials", slog.String("raw_error", err.Error()))
 			return -1
 		}
 	} else if *useTPM {
-		glog.Infoln("Using TPM for credentials")
+		logger.Info("Using TPM for credentials")
 
 		// verify we actually have access to the TPM
 		rwc, err = OpenTPM(*tpmPath)
 		if err != nil {
-			glog.Error("can't open TPM %q: %v", *tpmPath, err)
+			logger.Error("can't open TPM", slog.String("raw_error", err.Error()))
 			return -1
 		}
 		defer func() {
 			if err := rwc.Close(); err != nil {
-				glog.Error("can't close TPM %q: %v", *tpmPath, err)
+				logger.Error("can't close TPM", slog.String("raw_error", err.Error()))
 				return
 			}
 		}()
@@ -188,7 +219,7 @@ func run() int {
 			}
 			createEKRsp, err := createEKCmd.Execute(rwr)
 			if err != nil {
-				glog.Error(os.Stderr, "can't acquire acquire ek %v", err)
+				logger.Error("can't acquire acquire ek", slog.String("raw_error", err.Error()))
 				return -1
 			}
 
@@ -201,7 +232,7 @@ func run() int {
 
 			encryptionSessionHandle = createEKRsp.ObjectHandle
 			if *sessionEncryptionName != hex.EncodeToString(createEKRsp.Name.Buffer) {
-				glog.Errorf("session encryption names do not match expected [%s] got [%s]", *sessionEncryptionName, hex.EncodeToString(createEKRsp.Name.Buffer))
+				logger.Error("session encryption names do not match", slog.String("got", *sessionEncryptionName), slog.String("expected", hex.EncodeToString(createEKRsp.Name.Buffer)))
 				return -1
 			}
 		}
@@ -218,12 +249,12 @@ func run() int {
 			// 	if len(entry) == 2 {
 			// 		uv, err := strconv.ParseUint(entry[0], 10, 32)
 			// 		if err != nil {
-			// 			glog.Error("Error parsing PCRs %v", err)
+			// 			logger.Error("Error parsing PCRs", slog.String("raw_error", err.Error()))
 			// 			return -1
 			// 		}
 			// 		hexEncodedPCR, err := hex.DecodeString(strings.ToLower(entry[1]))
 			// 		if err != nil {
-			// 			glog.Error("error decoding pcr Hex values %v", err)
+			// 			logger.Error("error decoding pcr Hex values",slog.String("raw_error", err.Error()))
 			// 			return -1
 			// 		}
 			// 		pcrMap[uint(uv)] = hexEncodedPCR
@@ -235,7 +266,7 @@ func run() int {
 			// for _, v := range pcrMap {
 			// 	_, err := hsh.Write(v)
 			// 	if err != nil {
-			// 		glog.Error("error calculating hash %v", err)
+			// 		logger.Error("error calculating hash",slog.String("raw_error", err.Error()))
 			// 		return -1
 			// 	}
 			// }
@@ -251,7 +282,7 @@ func run() int {
 			for _, i := range strpcrs {
 				j, err := strconv.Atoi(i)
 				if err != nil {
-					glog.Error("ERROR:  could convert pcr value: %v", err)
+					logger.Error("could convert pcr value", slog.String("raw_error", err.Error()))
 					return -1
 				}
 				pcrList = append(pcrList, uint(j))
@@ -263,7 +294,7 @@ func run() int {
 					InPublic:      tpm2.New2B(tpm2.RSAEKTemplate), // TODO: allow ECEKTemplate
 				}.Execute(rwr)
 				if err != nil {
-					glog.Error("can't create pimaryEK: %v", err)
+					logger.Error("can't create pimaryEK", slog.String("raw_error", err.Error()))
 					return -1
 				}
 
@@ -281,7 +312,7 @@ func run() int {
 					}}
 				authSession, err = tpmjwt.NewPCRAndDuplicateSelectSession(rwr, sel, tpm2.TPM2BDigest{}, []byte(*keyPass), primaryKey.Name, encryptionSessionHandle)
 				if err != nil {
-					glog.Error("can't create autsession: %v", err)
+					logger.Error("can't create autsession", slog.String("raw_error", err.Error()))
 					return -1
 				}
 				flushContextCmd := tpm2.FlushContext{
@@ -298,7 +329,7 @@ func run() int {
 					},
 				}, tpm2.TPM2BDigest{}, encryptionSessionHandle)
 				if err != nil {
-					glog.Error(os.Stderr, "error creating tpm pcrsession %v\n", err)
+					logger.Error("error creating tpm pcrsession", slog.String("raw_error", err.Error()))
 					return -1
 				}
 			}
@@ -310,7 +341,7 @@ func run() int {
 					InPublic:      tpm2.New2B(tpm2.RSAEKTemplate),
 				}.Execute(rwr)
 				if err != nil {
-					glog.Error("can't create pimaryEK: %v", err)
+					logger.Error("can't create pimaryEK", slog.String("raw_error", err.Error()))
 					return -1
 				}
 
@@ -323,7 +354,7 @@ func run() int {
 
 				authSession, err = tpmjwt.NewPolicyAuthValueAndDuplicateSelectSession(rwr, []byte(*keyPass), primaryKey.Name, encryptionSessionHandle)
 				if err != nil {
-					glog.Error("can't create autsession: %v", err)
+					logger.Error("can't create autsession", slog.String("raw_error", err.Error()))
 					return -1
 				}
 				flushContextCmd := tpm2.FlushContext{
@@ -334,7 +365,7 @@ func run() int {
 			} else {
 				authSession, err = tpmjwt.NewPasswordAuthSession(rwr, []byte(*keyPass), encryptionSessionHandle)
 				if err != nil {
-					glog.Error(os.Stderr, "error creating tpm passwordsession%v\n", err)
+					logger.Error("error creating tpm passwordsession", slog.String("raw_error", err.Error()))
 					return -1
 				}
 			}
@@ -346,12 +377,12 @@ func run() int {
 
 			c, err := os.ReadFile(*tpmKeyFile)
 			if err != nil {
-				glog.Error("can't load tpmkeyfile: %v", err)
+				logger.Error("can't load tpmkeyfile", slog.String("raw_error", err.Error()))
 				return -1
 			}
 			key, err := keyfile.Decode(c)
 			if err != nil {
-				glog.Error("can't decode tpmkeyfile: %v", err)
+				logger.Error("can't decode tpmkeyfile", slog.String("raw_error", err.Error()))
 				return -1
 			}
 			if *useEKParent {
@@ -361,7 +392,7 @@ func run() int {
 					InPublic:      tpm2.New2B(tpm2.RSAEKTemplate),
 				}.Execute(rwr)
 				if err != nil {
-					glog.Error("can't create pimaryEK: %v", err)
+					logger.Error("can't create pimaryEK", slog.String("raw_error", err.Error()))
 					return -1
 				}
 
@@ -373,7 +404,7 @@ func run() int {
 				}()
 				load_session, load_session_cleanup, err := tpm2.PolicySession(rwr, tpm2.TPMAlgSHA256, 16)
 				if err != nil {
-					glog.Error("can't load policysession : %v", err)
+					logger.Error("can't load policysession", slog.String("raw_error", err.Error()))
 					return -1
 				}
 				defer load_session_cleanup()
@@ -388,7 +419,7 @@ func run() int {
 					NonceTPM:      load_session.NonceTPM(),
 				}.Execute(rwr)
 				if err != nil {
-					glog.Error("can't create policysecret: %v", err)
+					logger.Error("can't create policysecret", slog.String("raw_error", err.Error()))
 					return -1
 				}
 
@@ -402,7 +433,7 @@ func run() int {
 					InPrivate: key.Privkey,
 				}.Execute(rwr)
 				if err != nil {
-					glog.Error("can't load key: %v", err)
+					logger.Error("can't load key", slog.String("raw_error", err.Error()))
 					return -1
 				}
 
@@ -429,7 +460,7 @@ func run() int {
 					InPublic:      tpm2.New2B(keyfile.ECCSRK_H2_Template),
 				}.Execute(rwr)
 				if err != nil {
-					glog.Error("can't create primary: %v", err)
+					logger.Error("can't create primary", slog.String("raw_error", err.Error()))
 					return -1
 				}
 
@@ -451,7 +482,7 @@ func run() int {
 				}.Execute(rwr)
 
 				if err != nil {
-					glog.Error("can't loading key: %v", err)
+					logger.Error("exception loading TPM key", slog.String("raw_error", err.Error()))
 					return -1
 				}
 
@@ -465,12 +496,10 @@ func run() int {
 			}
 
 		} else if *persistentHandle > 0 {
-			glog.V(40).Infof("TPM credentials using using persistent handle 0x%s", strconv.FormatUint(uint64(*persistentHandle), 16))
-
+			logger.Info("credential_configuration", slog.Group("credential", slog.String("type", "tpm_credential"), slog.String("persistent_handle", strconv.FormatUint(uint64(*persistentHandle), 16))))
 			handle = tpm2.TPMHandle(*persistentHandle)
-
 		} else {
-			glog.Error("Must specify either a persistent handle or a keyfile for use with at TPM")
+			logger.Error("Must specify either a persistent handle or a keyfile for use with at TPM", slog.String("raw_error", err.Error()))
 			return -1
 		}
 
@@ -478,18 +507,18 @@ func run() int {
 			ObjectHandle: handle,
 		}.Execute(rwr)
 		if err != nil {
-			glog.Error(os.Stderr, "error reading persistentHandle public from TPM: %v\n", err)
+			logger.Error("error reading persistentHandle public from TPM", slog.String("raw_error", err.Error()))
 			return -1
 		}
-		glog.V(40).Infof("TPM credentials name %s", hex.EncodeToString(pub.Name.Buffer))
+		logger.Info("credential_configuration", slog.Group("credential", slog.String("type", "tpm_credential"), slog.String("service_account_email", claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email), slog.String("tpm_credentials name", hex.EncodeToString(pub.Name.Buffer))))
 
 		if *useTPMmTLS {
 			if *poolID == "" || *providerID == "" || *pubCert == "" {
-				glog.Error(os.Stderr, " both ProjectNumber, ProviderID PoolID must be specified for mtls")
+				logger.Error("both ProjectNumber, ProviderID PoolID must be specified for mtls", slog.String("raw_error", ""))
 				return -1
 			}
 
-			glog.Infoln("Using TPM with mTLS Workload Identity Federation for credentials")
+			logger.Info("Using TPM with mTLS Workload Identity Federation for credentials")
 
 			numericprojectID := strconv.FormatInt(claims.ComputeMetadata.V1.Project.NumericProjectID, 10)
 
@@ -499,34 +528,36 @@ func run() int {
 
 			certPEMBlock, err := os.ReadFile(*pubCert)
 			if err != nil {
-				glog.Error(os.Stderr, "failed to read certificate file: %v", err)
+				logger.Error("failed to read certificate file", slog.String("raw_error", err.Error()))
 				return -1
 			}
 
 			// Decode the PEM block
 			block, _ := pem.Decode(certPEMBlock)
 			if block == nil || block.Type != "CERTIFICATE" {
-				glog.Error(os.Stderr, " failed to decode PEM block as certificate")
+				logger.Error("failed to decode PEM block as certificate", slog.String("raw_error", ""))
 				return -1
 			}
 
 			// Parse the X.509 certificate
 			cert, err := x509.ParseCertificate(block.Bytes)
 			if err != nil {
-				glog.Error(os.Stderr, " failed to parse certificate: %v", err)
+				logger.Error("failed to parse certificate", slog.String("raw_error", err.Error()))
 				return -1
 			}
 
+			audience := fmt.Sprintf("//iam.googleapis.com/projects/%s/locations/global/workloadIdentityPools/%s/providers/%s", numericprojectID, *poolID, *providerID)
 			ts, err = tpmmtls.TpmMTLSTokenSource(&tpmmtls.TpmMtlsTokenConfig{
 				TPMDevice:       rwc,
 				Handle:          handle,
-				Audience:        fmt.Sprintf("//iam.googleapis.com/projects/%s/locations/global/workloadIdentityPools/%s/providers/%s", numericprojectID, *poolID, *providerID),
+				Audience:        audience,
 				X509Certificate: cert,
 			})
 			if err != nil {
-				glog.Error(os.Stderr, "error creating tpm tokensource %v\n", err)
+				logger.Error("exception creating tpm tokensource", slog.String("raw_error", err.Error()))
 				return -1
 			}
+			logger.Info("credential_configuration", slog.Group("credential", slog.String("type", "tpm_mtls_credential"), slog.String("audience", audience)))
 			creds = &google.Credentials{
 				ProjectID:   claims.ComputeMetadata.V1.Project.ProjectID,
 				TokenSource: ts,
@@ -542,7 +573,7 @@ func run() int {
 				UseOauthToken:    *useOauthToken,
 			})
 			if err != nil {
-				glog.Error(os.Stderr, "error creating tpm tokensource%v\n", err)
+				logger.Error("error creating tpm tokensource", slog.String("raw_error", err.Error()))
 				return -1
 			}
 			creds = &google.Credentials{
@@ -553,21 +584,21 @@ func run() int {
 
 	} else if *serviceAccountFile != "" {
 
-		glog.Infoln("Using serviceAccountFile for credentials")
+		logger.Info("Using serviceAccountFile for credentials")
 		var err error
 		data, err := os.ReadFile(*serviceAccountFile)
 		if err != nil {
-			glog.Errorf("Unable to read serviceAccountFile %v", err)
+			logger.Error("Unable to read serviceAccountFile", slog.String("raw_error", err.Error()))
 			return -1
 		}
 		creds, err = google.CredentialsFromJSON(ctx, data, claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes...)
 		if err != nil {
-			glog.Errorf("Unable to parse serviceAccountFile %v ", err)
+			logger.Error("Unable to parse serviceAccountFile", slog.String("raw_error", err.Error()))
 			return -1
 		}
 
 		if creds.ProjectID != claims.ComputeMetadata.V1.Project.ProjectID {
-			glog.Warningf("Warning: ProjectID in config file [%s] does not match project from credentials [%s]", claims.ComputeMetadata.V1.Project.ProjectID, creds.ProjectID)
+			logger.Warn("ProjectID in config file does not match project from credentials", slog.String("from_config_file", claims.ComputeMetadata.V1.Project.ProjectID), slog.String("from_credentials", creds.ProjectID))
 		}
 
 		// compare the svc account email in the cred file vs the config file
@@ -576,17 +607,25 @@ func run() int {
 		credJsonMap := make(map[string](interface{}))
 		err = json.Unmarshal(creds.JSON, &credJsonMap)
 		if err != nil {
-			glog.Errorf("Unable to parse serviceAccountFile as json %v ", err)
+			logger.Error("Unable to parse serviceAccountFile as json", slog.String("raw_error", err.Error()))
 			return -1
 		}
-		credFileEmail := credJsonMap["client_email"]
-		if credFileEmail != claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email {
-			glog.Warningf("Warning: service account email in config file [%s] does not match project from credentials [%s]", claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email, credFileEmail)
+		credFileEmail, ok := credJsonMap["client_email"].(string)
+		if !ok {
+			logger.Error("invalid client_email type; must be string", slog.String("raw_error", ""))
+			return -1
 		}
+
+		if credFileEmail != claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email {
+			logger.Warn("service account email in config file does not match project from credentials", slog.String("from_config_file", claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Email), slog.String("from_credentials", credFileEmail))
+		}
+
+		logger.Info("credential_configuration", slog.Group("credential", slog.String("type", "service_account_credential"), slog.String("path", *serviceAccountFile), slog.String("service_account_email", credFileEmail), slog.String("scopes", strings.Join(claims.ComputeMetadata.V1.Instance.ServiceAccounts["default"].Scopes, " "))))
+
 	} else {
-		glog.Infoln("Using environment variables for credentials")
+		logger.Info("Using environment variables for credentials")
 		if os.Getenv("GOOGLE_ACCESS_TOKEN") == "" || os.Getenv("GOOGLE_ID_TOKEN") == "" || os.Getenv("GOOGLE_PROJECT_ID") == "" || os.Getenv("GOOGLE_NUMERIC_PROJECT_ID") == "" || os.Getenv("GOOGLE_SERVICE_ACCOUNT") == "" {
-			glog.Errorf("Environment variables must be set: GOOGLE_ID_TOKEN,  GOOGLE_ACCESS_TOKEN,  GOOGLE_PROJECT_ID,  GOOGLE_NUMERIC_PROJECT_ID,  GOOGLE_SERVICE_ACCOUNT")
+			logger.Error("Environment variables must be set: GOOGLE_ID_TOKEN,  GOOGLE_ACCESS_TOKEN,  GOOGLE_PROJECT_ID,  GOOGLE_NUMERIC_PROJECT_ID,  GOOGLE_SERVICE_ACCOUNT", slog.String("raw_error", ""))
 			return -1
 		}
 		ts := oauth2.StaticTokenSource(&oauth2.Token{
@@ -594,6 +633,7 @@ func run() int {
 			Expiry:      time.Now().Add(time.Second * 3600),
 			TokenType:   "Bearer",
 		})
+		logger.Info("credential_configuration", slog.Group("credential", slog.String("type", "static_credential"), slog.String("GOOGLE_SERVICE_ACCOUNT", os.Getenv("GOOGLE_SERVICE_ACCOUNT"))))
 		creds = &google.Credentials{
 			ProjectID:   os.Getenv("GOOGLE_PROJECT_ID"),
 			TokenSource: ts,
@@ -602,7 +642,7 @@ func run() int {
 
 	if *usemTLS && (*rootCAmTLS == "" || *serverCert == "" || *serverKey == "") {
 		if err != nil {
-			glog.Errorf("Must specify rootCAmTLS, serverCert and serverKey if useMTLS is set")
+			logger.Error("Must specify rootCAmTLS, serverCert and serverKey if useMTLS is set", slog.String("raw_error", err.Error()))
 			return -1
 		}
 	}
@@ -626,18 +666,19 @@ func run() int {
 		RootCAmTLS:       *rootCAmTLS,
 		ServerCert:       *serverCert,
 		ServerKey:        *serverKey,
+		Logger:           logger,
 		Tag:              Tag,
 	}
 
 	f, err := mds.NewMetadataServer(ctx, serverConfig, creds, claims)
 	if err != nil {
-		glog.Errorf("Error creating metadata server %v\n", err)
+		logger.Error("exception creating metadata server", slog.String("raw_error", err.Error()))
 		return -1
 	}
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		glog.Errorf("Error creating file watcher: %v\n", err)
+		logger.Error("exception creating file watcher", slog.String("raw_error", err.Error()))
 		return -1
 	}
 	defer watcher.Close()
@@ -655,17 +696,17 @@ func run() int {
 						time.Sleep(8 * time.Millisecond) // https://github.com/fsnotify/fsnotify/issues/372
 						configData, err := os.ReadFile(*configFile)
 						if err != nil {
-							glog.Errorf("Error reading configFile: %v\n", err)
+							logger.Error("exception reading configFile", "raw_error", slog.String("raw_error", err.Error()))
 							return
 						}
 
 						claims := &mds.Claims{}
 						err = json.Unmarshal(configData, claims)
 						if err != nil {
-							glog.Errorf("Error parsing json: %v\n", err)
+							slog.Error("exception parsing json", slog.String("raw_error", err.Error()))
 							return
 						}
-						glog.V(10).Infoln("configFile updated")
+						logger.Info("configFile updated")
 						f.Claims = *claims
 					}
 				}
@@ -673,14 +714,14 @@ func run() int {
 				if !ok {
 					return
 				}
-				glog.Errorf("Error on filewatcher %v\n", err)
+				logger.Error("exception on file_watcher", slog.String("raw_error", err.Error()))
 			}
 		}
 	}()
 
 	err = watcher.Add(filepath.Dir(*configFile))
 	if err != nil {
-		glog.Errorf("Error watching configFile: %v\n", err)
+		logger.Error("exception watching configFile", slog.String("raw_error", err.Error()))
 		return -1
 	}
 
@@ -689,13 +730,13 @@ func run() int {
 
 	err = f.Start()
 	if err != nil {
-		glog.Errorf("Error starting %v\n", err)
+		logger.Error("starting server exception", slog.String("raw_error", err.Error()))
 		return -1
 	}
 	<-done
 	err = f.Shutdown()
 	if err != nil {
-		glog.Errorf("Error stopping %v\n", err)
+		logger.Error("stopping server exception", slog.String("raw_error", err.Error()))
 		return -1
 	}
 	return 0

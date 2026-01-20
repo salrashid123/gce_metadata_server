@@ -22,7 +22,7 @@ import (
 /*
 
 ## start metadata server with mtls
-go run cmd/main.go   -logtostderr   -alsologtostderr -v 40   -port :8080 --configFile=`pwd`/config.json \
+go run cmd/main.go   -port :8080 --configFile=`pwd`/config.json \
   --serviceAccountFile certs/metadata-sa.json \
   --usemTLS --serverCert certs/server.crt --serverKey certs/server.key --rootCAmTLS certs/root.crt
 

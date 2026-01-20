@@ -64,16 +64,15 @@ go_library(
         "//:go_default_library",
         "@com_github_foxboron_go_tpm_keyfiles//:go_default_library",
         "@com_github_fsnotify_fsnotify//:go_default_library",
-        "@com_github_golang_glog//:go_default_library",
         "@com_github_google_go_tpm//tpm2:go_default_library",
         "@com_github_google_go_tpm//tpm2/transport:go_default_library",
         "@com_github_google_go_tpm//tpmutil:go_default_library",
         "@com_github_salrashid123_golang_jwt_tpm//:go_default_library",
         "@com_github_salrashid123_oauth2_v3//:go_default_library",
+        "@com_github_salrashid123_mtls_tokensource_tpm//:go_default_library",        
         "@org_golang_google_api//impersonate:go_default_library",
         "@org_golang_x_oauth2//:go_default_library",
-        "@org_golang_x_oauth2//google:go_default_library",
-        "@com_github_salrashid123_mtls_tokensource_tpm//:go_default_library",        
+        "@org_golang_x_oauth2//google:go_default_library",   
     ],
 )
 

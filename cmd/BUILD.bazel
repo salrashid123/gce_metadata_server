@@ -112,6 +112,6 @@ oci_tarball(
 oci_push(
     name = "push-image",
     image = ":index",
-    remote_tags = ["latest"],
+    remote_tags = ["latest", "4.2.2"],
     repository = "index.docker.io/salrashid123/gcemetadataserver",
 )

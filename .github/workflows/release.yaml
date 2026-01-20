@@ -97,8 +97,8 @@ jobs:
           disk-cache: ${{ github.workflow }}
           repository-cache: true
 
-      - name: Bazel Build
-        run: bazelisk build cmd:push-image
+      - name: Bazel Push
+        run: bazelisk run cmd:push-image
 
       - uses: actions/attest-build-provenance@v2
         with:

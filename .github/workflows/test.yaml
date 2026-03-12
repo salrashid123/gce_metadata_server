@@ -45,7 +45,7 @@ jobs:
       - name: Get Bazel
         uses: bazel-contrib/setup-bazel@0.18.0
         with:
-          bazelisk-version: 1.25.1
+          bazelisk-version: 1.25.0
           bazelisk-cache: true
           disk-cache: ${{ github.workflow }}
           repository-cache: true

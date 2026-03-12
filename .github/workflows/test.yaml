@@ -43,8 +43,9 @@ jobs:
         run: go test -v ./...
 
       - name: Get Bazel
-        uses: bazel-contrib/setup-bazel@0.15.0
+        uses: bazel-contrib/setup-bazel@0.18.0
         with:
+          bazelisk-version: 1.25.1
           bazelisk-cache: true
           disk-cache: ${{ github.workflow }}
           repository-cache: true
@@ -53,4 +54,4 @@ jobs:
         run: bazelisk build cmd:main
 
       # - name: Bazel Test
-      #   run: bazelisk test --test_env CICD_SA_PEM --test_env CICD_SA_EMAIL  --test_env CICD_SA_JSON  :go_default_test
+      #   run: bazelisk test --test_env CICD_SA_PEM --test_env CICD_SA_EMAIL  --test_env CICD_SA_JSON  :go_default_testult_test

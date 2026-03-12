@@ -370,7 +370,7 @@ mv metadata-sa.json certs
 
 ### With Impersonation
 
-If you use impersonation, the `serviceAccountEmail` and `scopes` are taken from the config file's default service account.
+If you use impersonation, the `serviceAccountEmail`  and `project` are taken from the config file's default service account.
 
 First setup impersonation for your user account:
 
@@ -384,6 +384,9 @@ gcloud iam service-accounts \
 then,
 
 ```bash
+gcloud auth application-default login
+
+export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.config/gcloud/application_default_credentials.json
 ./gce_metadata_server  \
      -port :8080 \
      --impersonate --configFile=config.json
@@ -1315,24 +1318,25 @@ socat TCP-LISTEN:8080,fork,reuseaddr UNIX-CONNECT:/tmp/metadata.sock
 If you want to build the server using bazel (eg, [deterministic](https://github.com/salrashid123/go-grpc-bazel-docker)),
 
 ```bash
-$ bazel version
-    Build label: 8.0.1
-    Build target: @@//src/main/java/com/google/devtools/build/lib/bazel:BazelServer
-    Build time: Fri Jan 17 19:16:16 2025 (1737141376)
-    Build timestamp: 1737141376
-    Build timestamp as int: 1737141376
+$ bazelisk version
+  Bazelisk version: v1.25.0
+  Build label: 9.0.1
+  Build target: @@//src/main/java/com/google/devtools/build/lib/bazel:BazelServer
+  Build time: Tue Mar 10 16:50:28 2026 (1773161428)
+  Build timestamp: 1773161428
+  Build timestamp as int: 1773161428
 
 ## generate dependencies
-# bazel run :gazelle -- update-repos -from_file=go.mod -prune=true -to_macro=repositories.bzl%go_repositories
+# bazelisk run :gazelle -- update-repos -from_file=go.mod -prune=true -to_macro=repositories.bzl%go_repositories
 
 ## run
-bazel run cmd:main -- --configFile=`pwd`/config.json  -port :8080 --serviceAccountFile=`pwd`/certs/metadata-sa.json 
+bazelisk run cmd:main -- --configFile=`pwd`/config.json  -port :8080 --serviceAccountFile=`pwd`/certs/metadata-sa.json 
 
 ## to build the oci image tar
-# bazel build cmd:tar-oci-index
+# bazelisk build cmd:tar-oci-index
 
 ## to push the image a repo
-bazel run cmd:push-image  
+bazelisk run cmd:push-image  
 ```
 
 #### Building with Kaniko
@@ -1594,15 +1598,11 @@ ok  	github.com/salrashid123/gce_metadata_server	4.408s
 ### if you want to omit using live credentials or a TPM
 
 go test -v  --skip '^(TestReal|TestTPM)'
-
 ```
-
-TODO: figure out how to make `github.com/google/go-tpm-tools/simulator` to compile with bazel and cgo
-
 
 for now, w'ere using the swtpm
 ```bash
-$ bazel test --test_env CICD_SA_PEM --test_env CICD_SA_EMAIL  --test_env CICD_SA_JSON  :go_default_test
+$ bazelisk test --test_env CICD_SA_PEM --test_env CICD_SA_EMAIL  --test_env CICD_SA_JSON  :go_default_test
 
   INFO: Analyzed target //:go_default_test (0 packages loaded, 0 targets configured).
   INFO: Found 1 test target...

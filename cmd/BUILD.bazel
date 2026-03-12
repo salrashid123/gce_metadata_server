@@ -1,6 +1,6 @@
 load("@gazelle//:def.bzl", "gazelle")
-load("@rules_go//go:def.bzl", "go_binary", "go_library")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_image_index", "oci_push", "oci_tarball")
+load("@rules_go//go:def.bzl", "go_binary", "go_library","go_cross_binary", "go_test")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_image_index", "oci_push", "oci_load")
 load("@rules_pkg//:pkg.bzl", "pkg_tar")
 load("//:transition.bzl", "multi_arch")
 
@@ -10,8 +10,6 @@ go_binary(
     name = "main",
     out = "gce_metadata_server",
     embed = [":go_default_library"],
-    #goarch = "amd64",
-    #goos = "linux",
     visibility = ["//visibility:public"],
 )
 
@@ -101,13 +99,18 @@ oci_image_index(
     ],
 )
 
-oci_tarball(
+oci_load(
     name = "tar-oci-index",
     format = "oci",
     image = ":index",
     repo_tags = ["index.docker.io/salrashid123/gcemetadataserver"],
 )
 
+filegroup(
+    name = "tar-oci-index-tar",
+    srcs = [":tar-oci-index"],
+    output_group = "tarball",
+)
 
 oci_push(
     name = "push-image",

@@ -1,5 +1,5 @@
-# go1.24.0 linux/amd64
-FROM --platform=$BUILDPLATFORM docker.io/golang@sha256:3f7444391c51a11a039bf0359ee81cc64e663c17d787ad0e637a4de1a3f62a71 as build
+# go1.25.1 linux/amd64
+FROM --platform=$BUILDPLATFORM docker.io/golang@sha256:d7098379b7da665ab25b99795465ec320b1ca9d4addb9f77409c4827dc904211 as build
 
 # export TAG=v3.93.0
 # docker buildx create --use --platform=linux/arm64,linux/amd64 --name multi-platform-builder

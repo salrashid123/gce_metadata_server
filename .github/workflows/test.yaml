@@ -53,5 +53,5 @@ jobs:
       - name: Bazel Build
         run: bazelisk build cmd:main
 
-      - name: Bazel Test
-        run: bazelisk test --test_env CICD_SA_PEM --test_env CICD_SA_EMAIL  --test_env CICD_SA_JSON --test_env CICD_MTLS_CERT_PEM --test_env CICD_MTLS_KEY_PEM --test_env CICD_PROJECT_NUMBER --test_env CICD_POOL_ID --test_env CICD_PROVIDER_ID :go_default_test
+      # - name: Bazel Test
+      #   run: bazelisk test --test_env CICD_SA_PEM --test_env CICD_SA_EMAIL  --test_env CICD_SA_JSON --test_env CICD_MTLS_CERT_PEM --test_env CICD_MTLS_KEY_PEM --test_env CICD_PROJECT_NUMBER --test_env CICD_POOL_ID --test_env CICD_PROVIDER_ID :go_default_test

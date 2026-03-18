@@ -1601,8 +1601,9 @@ go test -v  --skip '^(TestReal|TestTPM)'
 ```
 
 for now, w'ere using the swtpm
+
 ```bash
-$ bazelisk test --test_env CICD_SA_PEM --test_env CICD_SA_EMAIL  --test_env CICD_SA_JSON  :go_default_test
+$ bazelisk test --test_env CICD_SA_PEM --test_env CICD_SA_EMAIL  --test_env CICD_SA_JSON --test_env CICD_MTLS_CERT_PEM --test_env CICD_MTLS_KEY_PEM --test_env CICD_PROJECT_NUMBER --test_env CICD_POOL_ID --test_env CICD_PROVIDER_ID :go_default_test
 
   INFO: Analyzed target //:go_default_test (0 packages loaded, 0 targets configured).
   INFO: Found 1 test target...

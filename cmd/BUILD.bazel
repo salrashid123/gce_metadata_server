@@ -115,6 +115,6 @@ filegroup(
 oci_push(
     name = "push-image",
     image = ":index",
-    remote_tags = ["latest", "4.2.3"],
+    remote_tags = ["latest", "4.2.4"],
     repository = "index.docker.io/salrashid123/gcemetadataserver",
 )

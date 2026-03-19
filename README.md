@@ -93,16 +93,16 @@ func TestSomething(t *testing.T) {
   err = f.Start()
   defer f.Shutdown()
 
-  // optionally set a env var google sdk libraries understand
-  // t.Setenv("GCE_METADATA_HOST", "127.0.0.1:8080")
+  // set a env var google sdk libraries understand
+  t.Setenv("GCE_METADATA_HOST", "127.0.0.1:8080")
   // do tests here, eg with "cloud.google.com/go/compute/metadata"
-  // mid, _ := metadata.ProjectID()
+  mid, _ := metadata.ProjectID()
 
   // or call it directly
-  // client := &http.Client{}
-  // req, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1:8080/computeMetadata/v1/project/project-id", nil)
-  // req.Header.Set("Metadata-Flavor", "Google")
-  // res, _ := client.Do(req)  
+  client := &http.Client{}
+  req, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1:8080/computeMetadata/v1/project/project-id", nil)
+  req.Header.Set("Metadata-Flavor", "Google")
+  res, _ := client.Do(req)  
 }
 ```
 
@@ -1333,7 +1333,7 @@ $ bazelisk version
 bazelisk run cmd:main -- --configFile=`pwd`/config.json  -port :8080 --serviceAccountFile=`pwd`/certs/metadata-sa.json 
 
 ## to build the oci image tar
-# bazelisk build cmd:tar-oci-index
+# bazelisk build cmd:tar-oci-index-tar
 
 ## to push the image a repo
 bazelisk run cmd:push-image  
